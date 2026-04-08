@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
 .DS_Store
+.venv/
+build/
+dist/
 
 # build/version artifacts
 version.json
@@ -10,3 +13,11 @@ public/songs/
 public/songs/**
 public/preview/
 *.log
+
+# local editor project artifacts
+taiko-editor/.venv/
+taiko-editor/build/
+taiko-editor/dist/
+taiko-editor/__pycache__/
+taiko-editor/build_log.txt
+taiko-editor/run_log.txt

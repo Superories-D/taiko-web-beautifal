@@ -1,4 +1,8 @@
 /.git
 /__pycache__
+/taiko-editor/.venv
+/taiko-editor/build
+/taiko-editor/dist
+/taiko-editor/__pycache__
 
 /public/songs

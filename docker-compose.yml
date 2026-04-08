@@ -1,0 +1,38 @@
+services:
+  app:
+    build:
+      context: .
+    container_name: taiko-web-app
+    depends_on:
+      - mongo
+      - redis
+    environment:
+      PYTHONUNBUFFERED: "1"
+      TAIKO_WEB_MONGO_HOST: mongo:27017
+      TAIKO_WEB_REDIS_HOST: redis
+      REDIS_URI: redis://redis:6379/0
+      TAIKO_WEB_SONGS_DIR: /data/songs
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    volumes:
+      - ./config.py:/app/config.py:ro
+      - ${TAIKO_WEB_DATA_DIR:-/srv/taiko-web-data}/songs:/data/songs
+
+  mongo:
+    container_name: taiko-web-mongo
+    image: mongo:7.0
+    restart: unless-stopped
+    volumes:
+      - ${TAIKO_WEB_DATA_DIR:-/srv/taiko-web-data}/mongo:/data/db
+
+  redis:
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+    container_name: taiko-web-redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - ${TAIKO_WEB_DATA_DIR:-/srv/taiko-web-data}/redis:/data

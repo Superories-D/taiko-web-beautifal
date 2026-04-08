@@ -1,106 +1,291 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
-if [ "${EUID}" -ne 0 ]; then echo "需要 root 权限"; exit 1; fi
-
-. /etc/os-release || true
-CODENAME=${VERSION_CODENAME:-}
-VERSION=${VERSION_ID:-}
-
-echo "更新系统软件源..."
-apt-get update -y
-echo "安装基础依赖..."
-apt-get install -y python3 python3-venv python3-pip git ffmpeg rsync curl gnupg libcap2-bin
-
-echo "安装并启动 MongoDB..."
-MONGO_READY=false
-if ! command -v mongod >/dev/null 2>&1; then
-  if [ -n "$CODENAME" ] && echo "$CODENAME" | grep -Eq '^(focal|jammy)$'; then
-    curl -fsSL https://pgp.mongodb.com/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg || true
-    echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu ${CODENAME}/mongodb-org/7.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-7.0.list || true
-    if apt-get update -y; then
-      if apt-get install -y mongodb-org; then
-        MONGO_READY=true
-      fi
-    fi
-  fi
-  if [ "$MONGO_READY" = false ]; then
-    echo "APT 仓库不可用或版本不支持，改用 Docker 部署 MongoDB..."
-    rm -f /etc/apt/sources.list.d/mongodb-org-7.0.list || true
-    apt-get install -y docker.io
-    systemctl enable --now docker || true
-    mkdir -p /var/lib/mongo
-    if ! docker ps -a --format '{{.Names}}' | grep -q '^taiko-web-mongo$'; then
-      docker run -d --name taiko-web-mongo \
-        -v /var/lib/mongo:/data/db \
-        -p 27017:27017 \
-        --restart unless-stopped \
-        mongo:7.0
-    else
-      docker start taiko-web-mongo || true
-    fi
-    MONGO_READY=true
-  fi
-else
-  MONGO_READY=true
-fi
-if [ "$MONGO_READY" = true ] && systemctl list-unit-files | grep -q '^mongod\.service'; then
-  systemctl enable mongod || true
-  systemctl restart mongod || systemctl start mongod || true
+if [ "${EUID}" -ne 0 ]; then
+  echo "Root privileges are required."
+  exit 1
 fi
 
-echo "安装并启动 Redis..."
-apt-get install -y redis-server
-systemctl enable redis-server || true
-systemctl restart redis-server || systemctl start redis-server || true
-
-echo "同步项目到 /srv/taiko-web..."
-mkdir -p /srv/taiko-web
 SRC_DIR=$(cd "$(dirname "$0")" && pwd)
-rsync -a --delete --exclude '.git' --exclude '.venv' "$SRC_DIR/" /srv/taiko-web/
+INSTALL_DIR=${INSTALL_DIR:-/srv/taiko-web}
+DATA_DIR=${DATA_DIR:-/srv/taiko-web-data}
+SERVICE_NAME=taiko-web
+COMPOSE_PROJECT_NAME=taiko-web
+APP_USER=${APP_USER:-www-data}
+APP_GROUP=${APP_GROUP:-www-data}
 
-echo "预创建歌曲存储目录..."
-mkdir -p /srv/taiko-web/public/songs
+log() {
+  echo "[taiko-web] $*"
+}
 
-echo "创建并安装 Python 虚拟环境..."
-python3 -m venv /srv/taiko-web/.venv
-/srv/taiko-web/.venv/bin/pip install -U pip
-/srv/taiko-web/.venv/bin/pip install -r /srv/taiko-web/requirements.txt
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "Missing command: $1"
+    exit 1
+  }
+}
 
-if [ ! -f /srv/taiko-web/config.py ] && [ -f /srv/taiko-web/config.example.py ]; then
-  cp /srv/taiko-web/config.example.py /srv/taiko-web/config.py
-fi
+compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    docker-compose "$@"
+  else
+    echo "docker compose is not available."
+    exit 1
+  fi
+}
 
-chown -R www-data:www-data /srv/taiko-web
+apt_install() {
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+  apt-get install -y "$@"
+}
 
-echo "创建 systemd 服务..."
-cat >/etc/systemd/system/taiko-web.service <<'EOF'
+ensure_base_sync_tools() {
+  apt_install rsync curl ca-certificates gnupg
+}
+
+sync_source() {
+  mkdir -p "$INSTALL_DIR"
+  rsync -a --delete \
+    --exclude '.git' \
+    --exclude '.venv' \
+    --exclude 'config.py' \
+    --exclude 'public/songs' \
+    --exclude 'taiko-editor/.venv' \
+    --exclude 'taiko-editor/build' \
+    --exclude 'taiko-editor/dist' \
+    "$SRC_DIR/" "$INSTALL_DIR/"
+}
+
+ensure_config() {
+  if [ ! -f "$INSTALL_DIR/config.py" ] && [ -f "$INSTALL_DIR/config.example.py" ]; then
+    cp "$INSTALL_DIR/config.example.py" "$INSTALL_DIR/config.py"
+  fi
+}
+
+ensure_data_dirs() {
+  mkdir -p "$DATA_DIR/songs" "$DATA_DIR/mongo" "$DATA_DIR/redis"
+}
+
+write_compose_env() {
+  cat >"$INSTALL_DIR/.env" <<EOF
+COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT_NAME
+TAIKO_WEB_DATA_DIR=$DATA_DIR
+EOF
+}
+
+write_systemd_service() {
+  cat >/etc/systemd/system/${SERVICE_NAME}.service <<EOF
 [Unit]
 Description=Taiko Web
-After=network.target mongod.service redis-server.service
+After=network.target mongod.service redis-server.service docker.service
+Wants=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/srv/taiko-web
+WorkingDirectory=$INSTALL_DIR
 Environment=PYTHONUNBUFFERED=1
-Environment=TAIKO_WEB_SONGS_DIR=/srv/taiko-web/public/songs
-ExecStart=/srv/taiko-web/.venv/bin/gunicorn -b 0.0.0.0:80 app:app
+Environment=TAIKO_WEB_SONGS_DIR=$DATA_DIR/songs
+Environment=TAIKO_WEB_MONGO_HOST=127.0.0.1:27017
+Environment=TAIKO_WEB_REDIS_HOST=127.0.0.1
+Environment=REDIS_URI=redis://127.0.0.1:6379/0
+ExecStart=$INSTALL_DIR/.venv/bin/gunicorn -b 0.0.0.0:80 app:app
 Restart=always
-User=www-data
-Group=www-data
+User=$APP_USER
+Group=$APP_GROUP
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
 EOF
+}
 
-systemctl daemon-reload
-systemctl enable taiko-web
-systemctl restart taiko-web
+stop_direct_service() {
+  systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+  systemctl disable "$SERVICE_NAME" >/dev/null 2>&1 || true
+}
 
-if command -v ufw >/dev/null 2>&1; then
-  ufw allow 80/tcp || true
-fi
+remove_direct_service() {
+  stop_direct_service
+  rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+  systemctl daemon-reload || true
+}
 
-echo "部署完成（直接监听 80 端口）"
+ensure_docker() {
+  apt_install docker.io
+  if ! apt-get install -y docker-compose-plugin; then
+    apt-get install -y docker-compose || true
+  fi
+  systemctl enable --now docker
+  require_cmd docker
+}
+
+install_mongodb_direct() {
+  if command -v mongod >/dev/null 2>&1; then
+    return 0
+  fi
+
+  . /etc/os-release || true
+  local codename="${VERSION_CODENAME:-}"
+
+  if [ -n "$codename" ] && echo "$codename" | grep -Eq '^(focal|jammy)$'; then
+    curl -fsSL https://pgp.mongodb.com/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg
+    echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu ${codename}/mongodb-org/7.0 multiverse" \
+      > /etc/apt/sources.list.d/mongodb-org-7.0.list
+    apt-get update -y
+    apt-get install -y mongodb-org
+    return 0
+  fi
+
+  return 1
+}
+
+remove_container_stack() {
+  if ! command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
+    (
+      cd "$INSTALL_DIR"
+      compose down --remove-orphans >/dev/null 2>&1 || true
+    )
+  fi
+
+  docker rm -f taiko-web-app taiko-web-mongo taiko-web-redis >/dev/null 2>&1 || true
+}
+
+ensure_direct_datastores() {
+  apt_install redis-server
+  systemctl enable redis-server || true
+  systemctl restart redis-server || systemctl start redis-server || true
+
+  if install_mongodb_direct; then
+    systemctl enable mongod || true
+    systemctl restart mongod || systemctl start mongod || true
+    return 0
+  fi
+
+  log "MongoDB direct install is unavailable on this system; using a MongoDB container instead."
+  ensure_docker
+  if ! docker ps -a --format '{{.Names}}' | grep -q '^taiko-web-mongo-direct$'; then
+    docker run -d \
+      --name taiko-web-mongo-direct \
+      --restart unless-stopped \
+      -p 27017:27017 \
+      -v "$DATA_DIR/mongo:/data/db" \
+      mongo:7.0
+  else
+    docker start taiko-web-mongo-direct >/dev/null 2>&1 || true
+  fi
+}
+
+deploy_direct() {
+  log "Starting direct deployment."
+  ensure_base_sync_tools
+  apt_install python3 python3-venv python3-pip git ffmpeg libcap2-bin
+  ensure_data_dirs
+  ensure_direct_datastores
+  remove_container_stack
+  sync_source
+  ensure_config
+  python3 -m venv "$INSTALL_DIR/.venv"
+  "$INSTALL_DIR/.venv/bin/pip" install -U pip
+  "$INSTALL_DIR/.venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+  chown -R "$APP_USER:$APP_GROUP" "$INSTALL_DIR" "$DATA_DIR"
+  write_systemd_service
+  systemctl daemon-reload
+  systemctl enable "$SERVICE_NAME"
+  systemctl restart "$SERVICE_NAME"
+  log "Direct deployment completed."
+  log "Persistent data directory: $DATA_DIR"
+}
+
+deploy_container() {
+  log "Starting container deployment."
+  ensure_base_sync_tools
+  ensure_docker
+  ensure_data_dirs
+  stop_direct_service
+  sync_source
+  ensure_config
+  write_compose_env
+  (
+    cd "$INSTALL_DIR"
+    compose up -d --build
+  )
+  log "Container deployment completed."
+  log "Persistent data directory: $DATA_DIR"
+}
+
+upgrade_container() {
+  log "Starting container-only upgrade."
+  ensure_base_sync_tools
+  ensure_docker
+  ensure_data_dirs
+  sync_source
+  ensure_config
+  write_compose_env
+  (
+    cd "$INSTALL_DIR"
+    compose up -d mongo redis
+    compose up -d --build app
+  )
+  log "Container upgrade completed."
+  log "Persistent data directory kept intact: $DATA_DIR"
+}
+
+uninstall_all() {
+  log "Starting uninstall."
+  remove_direct_service
+  if command -v docker >/dev/null 2>&1; then
+    remove_container_stack
+    docker rm -f taiko-web-mongo-direct >/dev/null 2>&1 || true
+  fi
+  rm -rf "$INSTALL_DIR"
+  log "Application files removed."
+  log "Persistent data directory preserved: $DATA_DIR"
+}
+
+print_menu() {
+  cat <<'EOF'
+Choose an action:
+  1) Deploy (container)
+  2) Deploy (direct)
+  3) Upgrade (container only)
+  4) Uninstall
+EOF
+}
+
+main() {
+  local action="${1:-}"
+
+  if [ -z "$action" ]; then
+    print_menu
+    read -r -p "Enter choice [1-4]: " choice
+    case "$choice" in
+      1) action="deploy-container" ;;
+      2) action="deploy-direct" ;;
+      3) action="upgrade-container" ;;
+      4) action="uninstall" ;;
+      *) echo "Invalid choice."; exit 1 ;;
+    esac
+  fi
+
+  case "$action" in
+    deploy-container) deploy_container ;;
+    deploy-direct) deploy_direct ;;
+    upgrade-container) upgrade_container ;;
+    uninstall) uninstall_all ;;
+    *)
+      echo "Unknown command: $action"
+      echo "Available commands: deploy-container | deploy-direct | upgrade-container | uninstall"
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

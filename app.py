@@ -37,6 +37,17 @@ from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from redis import Redis
 
+
+APP_ROOT = pathlib.Path(__file__).resolve().parent
+
+
+def path_from_env(name, default):
+    return pathlib.Path(os.environ.get(name, str(default))).resolve()
+
+
+SONGS_DIR = path_from_env('TAIKO_WEB_SONGS_DIR', APP_ROOT / 'public' / 'songs')
+
+
 def take_config(name, required=False):
     if hasattr(config, name):
         return getattr(config, name)
@@ -905,20 +916,20 @@ def route_api_privacy():
 
 
 def make_preview(song_id, song_type, song_ext, preview):
-    song_path = 'public/songs/%s/main.%s' % (song_id, song_ext)
-    prev_path = 'public/songs/%s/preview.mp3' % song_id
+    song_path = SONGS_DIR / str(song_id) / f'main.{song_ext}'
+    prev_path = SONGS_DIR / str(song_id) / 'preview.mp3'
 
-    if os.path.isfile(song_path) and not os.path.isfile(prev_path):
+    if song_path.is_file() and not prev_path.is_file():
         if not preview or preview <= 0:
             print('Skipping #%s due to no preview' % song_id)
             return False
 
         print('Making preview.mp3 for song #%s' % song_id)
-        ff = FFmpeg(inputs={song_path: '-ss %s' % preview},
-                    outputs={prev_path: '-codec:a libmp3lame -ar 32000 -b:a 92k -y -loglevel panic'})
+        ff = FFmpeg(inputs={str(song_path): '-ss %s' % preview},
+                    outputs={str(prev_path): '-codec:a libmp3lame -ar 32000 -b:a 92k -y -loglevel panic'})
         ff.run()
 
-    return prev_path
+    return str(prev_path)
 
 error_pages = take_config('ERROR_PAGES') or {}
 
@@ -954,7 +965,7 @@ def send_assets(ref):
 
 @app.route(basedir + "songs/<path:ref>")
 def send_songs(ref):
-    return cache_wrap(flask.send_from_directory("public/songs", ref), 604800)
+    return cache_wrap(flask.send_from_directory(str(SONGS_DIR), ref), 604800)
 
 @app.route(basedir + "manifest.json")
 def send_manifest():
@@ -1039,13 +1050,8 @@ def upload_file():
         except Exception:
             pass
 
-        base_env = os.getenv("TAIKO_WEB_SONGS_DIR")
-        if base_env:
-            base_dir = pathlib.Path(base_env)
-        else:
-            base_dir = pathlib.Path(__file__).resolve().parent / "public" / "songs"
-        base_dir.mkdir(parents=True, exist_ok=True)
-        target_dir = base_dir / generated_id
+        SONGS_DIR.mkdir(parents=True, exist_ok=True)
+        target_dir = SONGS_DIR / generated_id
         target_dir.mkdir(parents=True, exist_ok=True)
 
         # TJAを保存

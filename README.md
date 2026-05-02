@@ -82,6 +82,28 @@ http://<服务器IP>/
    sudo /srv/taiko-web/.venv/bin/gunicorn -b 0.0.0.0:80 app:app
    ```
 
+
+## 更新代码（直接部署模式）
+
+如果你当前是 **direct 部署**（`systemd + gunicorn`，数据库本机/容器均可），现在可以直接执行：
+
+```bash
+sudo bash setup.sh upgrade-direct
+```
+
+这个命令会：
+- 同步最新代码到 `/srv/taiko-web`（保留 `config.py` 与数据目录）
+- 更新虚拟环境依赖（`requirements.txt`）
+- 校验并拉起 Redis / Mongo（Mongo 不可直装时继续使用 `taiko-web-mongo-direct` 容器）
+- 重写并重载 `systemd` 服务后重启 `taiko-web`
+
+常用检查命令：
+
+```bash
+systemctl status taiko-web --no-pager
+journalctl -u taiko-web -n 100 --no-pager
+```
+
 ## 手动部署（可选）
 
 1. 安装依赖：

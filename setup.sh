@@ -238,6 +238,32 @@ upgrade_container() {
   log "Persistent data directory kept intact: $DATA_DIR"
 }
 
+
+upgrade_direct() {
+  log "Starting direct upgrade."
+  ensure_base_sync_tools
+  apt_install python3 python3-venv python3-pip git ffmpeg libcap2-bin
+  ensure_data_dirs
+  ensure_direct_datastores
+  remove_container_stack
+  sync_source
+  ensure_config
+
+  if [ ! -x "$INSTALL_DIR/.venv/bin/python3" ]; then
+    python3 -m venv "$INSTALL_DIR/.venv"
+  fi
+  "$INSTALL_DIR/.venv/bin/pip" install -U pip
+  "$INSTALL_DIR/.venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+
+  chown -R "$APP_USER:$APP_GROUP" "$INSTALL_DIR" "$DATA_DIR"
+  write_systemd_service
+  systemctl daemon-reload
+  systemctl enable "$SERVICE_NAME"
+  systemctl restart "$SERVICE_NAME"
+  log "Direct upgrade completed."
+  log "Persistent data directory kept intact: $DATA_DIR"
+}
+
 uninstall_all() {
   log "Starting uninstall."
   remove_direct_service
@@ -256,7 +282,8 @@ Choose an action:
   1) Deploy (container)
   2) Deploy (direct)
   3) Upgrade (container only)
-  4) Uninstall
+  4) Upgrade (direct)
+  5) Uninstall
 EOF
 }
 
@@ -265,12 +292,13 @@ main() {
 
   if [ -z "$action" ]; then
     print_menu
-    read -r -p "Enter choice [1-4]: " choice
+    read -r -p "Enter choice [1-5]: " choice
     case "$choice" in
       1) action="deploy-container" ;;
       2) action="deploy-direct" ;;
       3) action="upgrade-container" ;;
-      4) action="uninstall" ;;
+      4) action="upgrade-direct" ;;
+      5) action="uninstall" ;;
       *) echo "Invalid choice."; exit 1 ;;
     esac
   fi
@@ -279,10 +307,11 @@ main() {
     deploy-container) deploy_container ;;
     deploy-direct) deploy_direct ;;
     upgrade-container) upgrade_container ;;
+    upgrade-direct) upgrade_direct ;;
     uninstall) uninstall_all ;;
     *)
       echo "Unknown command: $action"
-      echo "Available commands: deploy-container | deploy-direct | upgrade-container | uninstall"
+      echo "Available commands: deploy-container | deploy-direct | upgrade-container | upgrade-direct | uninstall"
       exit 1
       ;;
   esac

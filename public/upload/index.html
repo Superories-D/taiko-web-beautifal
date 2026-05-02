@@ -3,38 +3,50 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>太鼓ウェブあっぷろーだー</title>
+    <title>太鼓ウェブ曲投稿</title>
     <link rel="stylesheet" href="style.css">
-    <script src="upload.js"></script>
+    <script src="upload.js" defer></script>
   </head>
   <body>
-    <h1>太鼓ウェブあっぷろーだー</h1>
+    <main class="upload-shell">
+      <header class="upload-header">
+        <h1>太鼓ウェブ 曲投稿</h1>
+        <p>譜面（.tja）と音源をまとめてアップロードできます。APIエンドポイントは必要に応じて変更可能です。</p>
+      </header>
 
-    <form id="upload-form" enctype="multipart/form-data">
-      <label for="file_tja">TJA ファイル:</label>
-      <input type="file" name="file_tja" accept=".tja" required>
+      <form id="upload-form" class="upload-card" enctype="multipart/form-data">
+        <label for="api_endpoint">API エンドポイント</label>
+        <input id="api_endpoint" name="api_endpoint" type="url" value="/api/upload" required>
 
-      <label for="file_music">音楽ファイル:</label>
-      <input type="file" name="file_music" accept=".ogg,.mp3,.wav" required>
+        <label for="file_tja">TJA ファイル</label>
+        <input id="file_tja" type="file" name="file_tja" accept=".tja" required>
 
-      <label for="song_type">曲のタイプ:</label>
-      <select name="song_type" required>
-        <option value="01 Pop">01 Pop</option>
-        <option value="02 Anime">02 Anime</option>
-        <option value="03 Vocaloid">03 Vocaloid</option>
-        <option value="04 Children and Folk">04 Children and Folk</option>
-        <option value="05 Variety">05 Variety</option>
-        <option value="06 Classical">06 Classical</option>
-        <option value="07 Game Music">07 Game Music</option>
-        <option value="08 Live Festival Mode">08 Live Festival Mode</option>
-        <option value="09 Namco Original">09 Namco Original</option>
-        <option value="10 Taiko Towers">10 Taiko Towers</option>
-        <option value="11 Dan Dojo">11 Dan Dojo</option>
-      </select>
-    </form>
+        <label for="file_music">音楽ファイル</label>
+        <input id="file_music" type="file" name="file_music" accept=".ogg,.mp3,.wav,.m4a,.flac" required>
 
-    <button type="button" onclick="uploadFiles()">今すぐ投稿！ (1分ほどかかる場合があります)</button>
+        <label for="song_type">曲カテゴリ</label>
+        <select id="song_type" name="song_type" required>
+          <option value="01 Pop">01 Pop</option>
+          <option value="02 Anime">02 Anime</option>
+          <option value="03 Vocaloid">03 Vocaloid</option>
+          <option value="04 Children and Folk">04 Children and Folk</option>
+          <option value="05 Variety">05 Variety</option>
+          <option value="06 Classical">06 Classical</option>
+          <option value="07 Game Music">07 Game Music</option>
+          <option value="08 Live Festival Mode">08 Live Festival Mode</option>
+          <option value="09 Namco Original">09 Namco Original</option>
+          <option value="10 Taiko Towers">10 Taiko Towers</option>
+          <option value="11 Dan Dojo">11 Dan Dojo</option>
+        </select>
 
-    <div id="error-view"></div>
+        <button id="submit-button" type="submit">今すぐ投稿</button>
+      </form>
+
+      <section class="upload-card" aria-live="polite">
+        <h2>投稿ステータス</h2>
+        <p id="status-view">待機中です。</p>
+        <pre id="error-view"></pre>
+      </section>
+    </main>
   </body>
 </html>

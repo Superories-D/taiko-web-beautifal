@@ -11,6 +11,9 @@ class Loader{
 		this.errorMessages = []
 		this.songSearchGradient = "linear-gradient(to top, rgba(245, 246, 252, 0.08), #ff5963), "
 		this.backgroundPromises = []
+		this.backgroundRetryBaseDelay = 3000
+		this.backgroundRetryMaxDelay = 60000
+		this.backgroundRetryLimit = 5
 		this.imageLoadPromises = {}
 		this.soundLoadPromises = {}
 		
@@ -493,6 +496,44 @@ class Loader{
 		})
 		return promise
 	}
+	addBackgroundTask(task, url, options){
+		options = options || {}
+		var retries = options.retries == null ? this.backgroundRetryLimit : options.retries
+		var baseDelay = options.baseDelay || this.backgroundRetryBaseDelay
+		var maxDelay = options.maxDelay || this.backgroundRetryMaxDelay
+		var attempt = 0
+		var run = () => {
+			attempt++
+			var promise = Promise.resolve().then(task)
+			this.backgroundPromises.push(promise)
+			promise.catch(response => {
+				var error = Array.isArray(response) ? response[0] : response
+				if(url){
+					error = (error ? error + ": " : "") + url
+				}
+				if(attempt <= retries){
+					var delay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay)
+					console.warn("Background preload failed, retrying", {
+						url: url,
+						attempt: attempt,
+						nextRetryMs: delay,
+						error: error || response
+					})
+					pageEvents.send("background-load-retry", {
+						url: url,
+						attempt: attempt,
+						nextRetryMs: delay
+					})
+					setTimeout(run, delay)
+				}else{
+					console.warn("Background preload failed", error || response)
+					pageEvents.send("background-load-error", url || error || response)
+				}
+			})
+			return promise
+		}
+		return run()
+	}
 	soundUrl(name){
 		return gameConfig.assets_baseurl + "audio/" + name
 	}
@@ -524,8 +565,8 @@ class Loader{
 		if(assets.sounds[id]){
 			play(assets.sounds[id])
 		}else{
-			this.loadSound(name, snd.musicGain).then(play, response => {
-				this.addBackgroundPromise(Promise.reject(response), this.soundUrl(name))
+			this.addBackgroundTask(() => this.loadSound(name, snd.musicGain).then(play), this.soundUrl(name), {
+				baseDelay: 1000
 			})
 		}
 	}
@@ -610,7 +651,7 @@ class Loader{
 		this.preloadGameImages()
 		this.preloadComboVoices()
 		assets.audioMusic.forEach(name => {
-			this.addBackgroundPromise(this.loadSound(name, snd.musicGain), this.soundUrl(name))
+			this.addBackgroundTask(() => this.loadSound(name, snd.musicGain), this.soundUrl(name))
 		})
 	}
 	preloadComboVoices(){
@@ -620,15 +661,14 @@ class Loader{
 		}
 		names.forEach(name => {
 			var id = this.getFilename(name)
-			var promise = this.loadSound(name, snd.sfxGain).then(() => {
+			this.addBackgroundTask(() => this.loadSound(name, snd.sfxGain).then(() => {
 				if(!assets.sounds[id + "_p1"]){
 					assets.sounds[id + "_p1"] = assets.sounds[id].copy(snd.sfxGainL)
 				}
 				if(!assets.sounds[id + "_p2"]){
 					assets.sounds[id + "_p2"] = assets.sounds[id].copy(snd.sfxGainR)
 				}
-			})
-			this.addBackgroundPromise(promise, this.soundUrl(name))
+			}), this.soundUrl(name))
 		})
 	}
 	preloadGameImages(){
@@ -646,7 +686,7 @@ class Loader{
 		var touch = /Android|iPhone|iPad/.test(navigator.userAgent)
 		names.forEach(name => {
 			var url = gameConfig.assets_baseurl + "img/" + name + ".png"
-			this.addBackgroundPromise(this.loadScaledImage(name, url, {
+			this.addBackgroundTask(() => this.loadScaledImage(name, url, {
 				force: touch && name.startsWith("bg_song_")
 			}), url)
 		})

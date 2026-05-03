@@ -1,30 +1,38 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>太鼓ウェブ曲投稿</title>
+    <meta name="description" content="Upload a TJA chart and audio file to Taiko Web.">
+    <title>Taiko Web Song Upload</title>
+    <link rel="icon" href="../assets/img/favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
     <link rel="stylesheet" href="style.css">
     <script src="upload.js" defer></script>
   </head>
   <body>
     <main class="upload-shell">
       <header class="upload-header">
-        <h1>太鼓ウェブ 曲投稿</h1>
-        <p>譜面（.tja）と音源をまとめてアップロードできます。APIエンドポイントは必要に応じて変更可能です。</p>
+        <img src="../assets/img/favicon-192.png" alt="" class="upload-mark">
+        <div>
+          <p class="eyebrow">Taiko Web Tools</p>
+          <h1>Song Upload</h1>
+          <p>Upload a TJA chart with its audio file. You can change the API endpoint when running a custom server.</p>
+          <p class="locale-note">Supports 中文, 日本語, and 한국어 song metadata inside TJA files.</p>
+        </div>
       </header>
 
       <form id="upload-form" class="upload-card" enctype="multipart/form-data">
-        <label for="api_endpoint">API エンドポイント</label>
+        <label for="api_endpoint">API endpoint</label>
         <input id="api_endpoint" name="api_endpoint" type="url" value="/api/upload" required>
 
-        <label for="file_tja">TJA ファイル</label>
+        <label for="file_tja">TJA chart file</label>
         <input id="file_tja" type="file" name="file_tja" accept=".tja" required>
 
-        <label for="file_music">音楽ファイル</label>
+        <label for="file_music">Audio file</label>
         <input id="file_music" type="file" name="file_music" accept=".ogg,.mp3,.wav,.m4a,.flac" required>
 
-        <label for="song_type">曲カテゴリ</label>
+        <label for="song_type">Song category</label>
         <select id="song_type" name="song_type" required>
           <option value="01 Pop">01 Pop</option>
           <option value="02 Anime">02 Anime</option>
@@ -39,12 +47,12 @@
           <option value="11 Dan Dojo">11 Dan Dojo</option>
         </select>
 
-        <button id="submit-button" type="submit">今すぐ投稿</button>
+        <button id="submit-button" type="submit">Upload Song</button>
       </form>
 
       <section class="upload-card" aria-live="polite">
-        <h2>投稿ステータス</h2>
-        <p id="status-view">待機中です。</p>
+        <h2>Upload Status</h2>
+        <p id="status-view">Waiting for files.</p>
         <pre id="error-view"></pre>
       </section>
     </main>

@@ -1,34 +1,64 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
 	<meta charset="utf-8">
-	<title>太鼓ウェブ - Taiko Web | (ﾟ∀ﾟ)</title>
-	<link rel="icon" href="{{config.assets_baseurl}}img/favicon.png" type="image/png">
-	<meta name="viewport" content="width=device-width, user-scalable=no">
+	<title>Taiko Web | Browser Rhythm Game Simulator</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+	<meta name="description"
+		content="Play Taiko Web, a fast HTML5 taiko rhythm game simulator for desktop, tablet, and mobile browsers. Search songs, import custom TJA charts, and play with keyboard, touch, or controllers.">
+	<meta name="keywords"
+		content="taiko, Taiko Web, Taiko no Tatsujin, rhythm game, browser game, HTML5 game, drum game, custom songs, TJA, online taiko, 太鼓, 太鼓网页, 太鼓網頁, 太鼓の達人, 리듬 게임">
+	<meta name="application-name" content="Taiko Web">
+	<meta name="theme-color" content="#ff5a3d">
+	<meta name="color-scheme" content="only light">
+	<meta name="format-detection" content="telephone=no">
+	<meta name="robots" content="index,follow,noimageindex">
+
+	<meta property="og:type" content="website">
+	<meta property="og:site_name" content="Taiko Web">
+	<meta property="og:title" content="Taiko Web | Browser Rhythm Game Simulator">
+	<meta property="og:description"
+		content="A playful browser-based taiko rhythm game simulator with song search, custom songs, touch controls, and global language support.">
+	<meta property="og:image" content="{{config.assets_baseurl}}img/favicon-512.png">
+	<meta property="og:url" content="https://taikoapp.uk/">
+	<meta name="twitter:card" content="summary">
+	<meta name="twitter:title" content="Taiko Web">
+	<meta name="twitter:description" content="Play taiko rhythm charts in your browser.">
+	<meta name="twitter:image" content="{{config.assets_baseurl}}img/favicon-512.png">
+
+	<link rel="canonical" href="https://taikoapp.uk/">
+	<link rel="icon" href="{{config.assets_baseurl}}img/favicon.ico" sizes="any">
+	<link rel="icon" href="{{config.assets_baseurl}}img/favicon-32.png" type="image/png" sizes="32x32">
+	<link rel="icon" href="{{config.assets_baseurl}}img/favicon-16.png" type="image/png" sizes="16x16">
+	<link rel="apple-touch-icon" href="{{config.assets_baseurl}}img/apple-touch-icon.png">
+	<link rel="manifest" href="manifest.json">
+
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap">
-	<meta name="description"
-		content="2026年最新の無料オンラインゲームの パソコンとスマホのブラウザ向けの太鼓の達人シミュレータ 🥁 Taiko no Tatsujin rhythm game simulator for desktop and mobile browsers">
-	<meta name="keywords"
-		content="taiko no tatsujin, taiko, don chan, online, rhythm, browser, html5, game, for browsers, pc, arcade, emulator, free, download, website, 太鼓の達人, 太鼓ウェブ, 太鼓之達人, 太鼓達人, 太鼓网页, 网页版, 太鼓網頁, 網頁版, 태고의 달인, 태고 웹">
-	<meta name="robots" content="notranslate">
-	<meta name="robots" content="noimageindex">
-	<meta name="color-scheme" content="only light">
-
-	<link rel="canonical" href="https://taikoapp.uk/" />
 
 	<link rel="stylesheet" href="src/css/loader.css?{{version.commit_short}}">
-	<link rel="manifest" href="manifest.json">
+
+	<script type="application/ld+json">
+	{
+		"@context": "https://schema.org",
+		"@type": "VideoGame",
+		"name": "Taiko Web",
+		"applicationCategory": "Game",
+		"operatingSystem": "Web browser",
+		"genre": ["Rhythm", "Music"],
+		"inLanguage": ["en", "ja", "zh-Hans", "zh-Hant", "ko"],
+		"description": "A browser-based taiko rhythm game simulator with song search and custom chart support.",
+		"url": "https://taikoapp.uk/"
+	}
+	</script>
 
 	<script src="src/js/assets.js?{{version.commit_short}}"></script>
 	<script src="src/js/strings.js?{{version.commit_short}}"></script>
 	<script src="src/js/pageevents.js?{{version.commit_short}}"></script>
 	<script src="src/js/loader.js?{{version.commit_short}}"></script>
-
 	<script src="src/js/lib/jszip.js"></script>
-
 </head>
 
 <body>
@@ -48,7 +78,7 @@
 	<noscript>
 		<div data-nosnippet id="unsupportedBrowser">
 			<div id="unsupportedWarn">!</div>
-			<span>太鼓ウェブはJavaScriptを有効にする必要があります。<br>Taiko Web requires JavaScript to be enabled in the browser.</span>
+			<span>Taiko Web requires JavaScript to be enabled in your browser.<br>太鼓网页需要启用 JavaScript。<br>太鼓ウェブを遊ぶには JavaScript を有効にしてください。</span>
 		</div>
 	</noscript>
 </body>

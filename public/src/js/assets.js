@@ -92,10 +92,10 @@ var assets = {
 		".settings-outer": "bg_settings.png",
 		"#touch-pause-btn": "touch_pause.png",
 		"#touch-full-btn": "touch_fullscreen.png",
+		"#song-search-btn": "search_icon.png",
 		"#gamepad-bg, #gamepad-buttons": "settings_gamepad.png",
 		".song-search-result-crown": "crown.png",
-		".song-search-tip-error": "miss.png",
-		"#song-search": "bg_search.png"
+		".song-search-tip-error": "miss.png"
 	},
 	"audioSfx": [
 		"se_pause.ogg",

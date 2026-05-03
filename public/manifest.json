@@ -1,3 +1,26 @@
 {
-	"display": "standalone"
+	"name": "Taiko Web",
+	"short_name": "Taiko",
+	"description": "A browser-based taiko rhythm game simulator with song search and custom chart support.",
+	"lang": "en",
+	"start_url": ".",
+	"scope": ".",
+	"display": "standalone",
+	"orientation": "landscape",
+	"background_color": "#ff7a3d",
+	"theme_color": "#ff5a3d",
+	"icons": [
+		{
+			"src": "assets/img/favicon-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "assets/img/favicon-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any"
+		}
+	]
 }

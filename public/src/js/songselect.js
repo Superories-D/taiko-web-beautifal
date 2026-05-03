@@ -412,6 +412,8 @@ class SongSelect {
 		this.typeLabel.style.zIndex = "10"
 		this.songSelect.appendChild(this.typeLabel)
 		this.updateTypeLabel()
+		this.searchButton = document.getElementById("song-search-btn")
+		pageEvents.add(this.searchButton, ["click", "touchend"], this.openSearchFromButton.bind(this))
 		var cat = this.songs[this.selectedSong].originalCategory
 		this.drawBackground(cat)
 
@@ -484,6 +486,7 @@ class SongSelect {
 		pageEvents.add(loader.screen, ["mousedown", "touchstart"], this.mouseDown.bind(this))
 		pageEvents.add(this.canvas, "touchend", this.touchEnd.bind(this))
 		if (touchEnabled && fullScreenSupported) {
+			this.songSelect.classList.add("touch-fullscreen-enabled")
 			this.touchFullBtn = document.getElementById("touch-full-btn")
 			this.touchFullBtn.style.display = "block"
 			pageEvents.add(this.touchFullBtn, "touchend", toggleFullscreen)
@@ -622,6 +625,21 @@ class SongSelect {
 
 	updateTypeLabel() {
 		this.setAltText(this.typeLabel, this.songTypes[this.songTypeIndex])
+	}
+
+	openSearchFromButton(event) {
+		event.preventDefault()
+		event.stopPropagation()
+		if (this.state.screen === "song" && !this.search.opened) {
+			this.search.display(true)
+		}
+	}
+
+	updateSearchButtonVisibility() {
+		if (!this.songSelect || !this.searchButton) {
+			return
+		}
+		this.songSelect.classList.toggle("search-button-visible", this.state.screen === "song" && !this.search.opened)
 	}
 
 	changeType(delta) {
@@ -1368,6 +1386,7 @@ class SongSelect {
 		var selectedWidth = this.songAsset.width
 
 		this.search.redraw()
+		this.updateSearchButtonVisibility()
 
 		if (this.wheelScrolls !== 0 && !this.state.locked && ms >= this.wheelTimer + 20) {
 			if (p2.session) {
@@ -3238,11 +3257,13 @@ class SongSelect {
 		})
 		pageEvents.remove(loader.screen, ["mousemove", "mouseleave", "mousedown", "touchstart"])
 		pageEvents.remove(this.canvas, ["touchend", "wheel"])
+		pageEvents.remove(this.searchButton, ["click", "touchend"])
 		pageEvents.remove(p2, "message")
 		if (this.touchEnabled && fullScreenSupported) {
 			pageEvents.remove(this.touchFullBtn, "click")
 			delete this.touchFullBtn
 		}
+		delete this.searchButton
 		delete this.selectable
 		delete this.ctx
 		delete this.canvas

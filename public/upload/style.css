@@ -7,12 +7,14 @@
 }
 
 :root {
-  --bg1: #6a5cff;
-  --bg2: #2ec5ff;
+  --bg1: #ff7a3d;
+  --bg2: #20b7c8;
   --panel: rgba(255, 255, 255, 0.95);
-  --line: #d5daf3;
-  --text: #1e2440;
-  --brand: #ff9f1a;
+  --line: #ffd3b5;
+  --text: #221426;
+  --muted: #6b5b6f;
+  --brand: #ff6b2c;
+  --accent: #ffe15a;
 }
 
 * { box-sizing: border-box; }
@@ -22,7 +24,10 @@ body {
   min-height: 100vh;
   font-family: "Roboto", sans-serif;
   color: var(--text);
-  background: linear-gradient(140deg, var(--bg1), var(--bg2));
+  background:
+    radial-gradient(circle at 20% 12%, rgba(255, 225, 90, 0.65), transparent 28rem),
+    radial-gradient(circle at 85% 20%, rgba(255, 255, 255, 0.34), transparent 24rem),
+    linear-gradient(140deg, var(--bg1), var(--bg2));
   padding: 1.2rem;
 }
 
@@ -37,13 +42,33 @@ body {
 .upload-card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 8px;
   padding: 1rem 1.2rem;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
 }
 
+.upload-header {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.upload-mark {
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 1.2rem;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 4px #fff, 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
 h1, h2, p { margin: 0; }
-.upload-header p { margin-top: 0.5rem; opacity: 0.85; }
+.upload-header p { margin-top: 0.5rem; color: var(--muted); }
+.eyebrow {
+  color: var(--brand) !important;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.locale-note { font-size: 0.95rem; }
 
 .upload-card {
   display: grid;
@@ -53,7 +78,7 @@ h1, h2, p { margin: 0; }
 label { font-weight: 700; }
 input, select, button {
   font: inherit;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--line);
   padding: 0.7rem 0.8rem;
 }
@@ -61,11 +86,18 @@ input, select, button {
 button {
   cursor: pointer;
   border: 0;
-  background: linear-gradient(180deg, #ffc54d, var(--brand));
+  background: linear-gradient(180deg, var(--accent), var(--brand));
   color: #352300;
   font-weight: 700;
+  box-shadow: 0 4px 0 #b94815;
 }
 button:disabled { opacity: 0.65; cursor: wait; }
 
 #status-view { font-weight: 700; }
 #error-view { margin: 0; color: #bf1020; white-space: pre-wrap; }
+
+@media (max-width: 620px) {
+  body { padding: 0.75rem; }
+  .upload-header { align-items: flex-start; }
+  .upload-mark { width: 4rem; height: 4rem; border-radius: 0.9rem; }
+}

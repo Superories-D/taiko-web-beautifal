@@ -10,7 +10,7 @@ async function uploadFiles(event) {
   formData.delete("api_endpoint");
 
   errorView.textContent = "";
-  statusView.textContent = "アップロード中です…";
+  statusView.textContent = "Uploading...";
   submitButton.disabled = true;
 
   try {
@@ -33,14 +33,14 @@ async function uploadFiles(event) {
 
     const success = !data || data.success !== false;
     if (!success) {
-      throw new Error(data.error || "アップロードに失敗しました。");
+      throw new Error(data.error || "Upload failed.");
     }
 
-    statusView.textContent = "投稿に成功しました！反映まで少し時間がかかる場合があります。";
+    statusView.textContent = "Upload complete. It may take a moment before the song appears in the list.";
     form.reset();
     document.querySelector("#api_endpoint").value = endpoint || "/api/upload";
   } catch (error) {
-    statusView.textContent = "投稿に失敗しました。";
+    statusView.textContent = "Upload failed.";
     errorView.textContent = String(error);
   } finally {
     submitButton.disabled = false;

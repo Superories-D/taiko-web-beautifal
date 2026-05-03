@@ -149,6 +149,9 @@ class Settings{
 		return this.allLanguages[0]
 	}
 	setLang(lang, noEvent){
+		if(!lang.font){
+			lang.font = defaultUiFont
+		}
 		strings = lang
 		var boldFonts = strings.font === "Microsoft YaHei, sans-serif"
 		loader.screen.style.fontFamily = strings.font
@@ -160,6 +163,9 @@ class Settings{
 		}
 	}
 	addLang(lang, forceSet){
+		if(!lang.font){
+			lang.font = defaultUiFont
+		}
 		allStrings[lang.id] = lang
 		if(lang.categories){
 			assets.categories.forEach(category => {

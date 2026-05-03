@@ -6,7 +6,29 @@ class Search{
 		this.songSelect = songSelect
 		this.opened = false
 		this.enabled = true
-		
+		this.filterAliases = {
+			easy: "easy", "\u304b\u3093\u305f\u3093": "easy", "\u7b80\u5355": "easy", "\u7c21\u55ae": "easy", "\uc26c\uc6c0": "easy",
+			normal: "normal", "\u3075\u3064\u3046": "normal", "\u666e\u901a": "normal", "\ubcf4\ud1b5": "normal",
+			hard: "hard", "\u3080\u305a\u304b\u3057\u3044": "hard", "\u56f0\u96be": "hard", "\u56f0\u96e3": "hard", "\uc5b4\ub824\uc6c0": "hard",
+			oni: "oni", extreme: "oni", "\u304a\u306b": "oni", "\u9b54\u738b": "oni", "\u9b3c": "oni", "\uadc0\uc2e0": "oni",
+			ura: "ura", "\u88cf": "ura",
+			clear: "clear", "\u901a\u5173": "clear", "\u901a\u95dc": "clear", "\u30af\u30ea\u30a2": "clear",
+			silver: "silver", "\u94f6": "silver", "\u9280": "silver",
+			gold: "gold", "\u91d1": "gold",
+			genre: "genre", category: "genre", "\u7c7b\u578b": "genre", "\u985e\u578b": "genre", "\u30b8\u30e3\u30f3\u30eb": "genre",
+			lyrics: "lyrics", lyric: "lyrics", "\u6b4c\u8bcd": "lyrics", "\u6b4c\u8a5e": "lyrics",
+			creative: "creative", "\u521b\u4f5c": "creative", "\u5275\u4f5c": "creative",
+			played: "played", "\u5df2\u73a9": "played", "\u5df2\u904a\u73a9": "played",
+			maker: "maker", creator: "maker", author: "maker", "\u5236\u4f5c\u8005": "maker", "\u88fd\u4f5c\u8005": "maker",
+			diverge: "diverge", branch: "diverge", "\u5206\u6b67": "diverge",
+			random: "random", "\u968f\u673a": "random", "\u96a8\u6a5f": "random",
+			all: "all", "\u5168\u90e8": "all"
+		}
+		this.valueAliases = {
+			yes: "yes", y: "yes", true: "yes", "1": "yes", "\u662f": "yes", "\u6709": "yes", "\u3042\u308a": "yes", "\ub124": "yes",
+			no: "no", n: "no", false: "no", "0": "no", "\u5426": "no", "\u65e0": "no", "\u7121": "no", "\u306a\u3057": "no", "\uc544\ub2c8\uc694": "no",
+			any: "any", "\u4efb\u610f": "any", "\u4efb\u4f55": "any", "\u3059\u3079\u3066": "any", "\u5168\u90e8": "any"
+		}
 		this.style = document.createElement("style")
 		var css = []
 		for(var i in this.songSelect.songSkin){
@@ -34,15 +56,50 @@ class Search{
 	}
 
 	normalizeString(string){
-		string = string
-			.replace('’', '\'').replace('“', '"').replace('”', '"')
-			.replace('。', '.').replace('，', ',').replace('、', ',')
+		string = (string || "")
+			.replace(/[\u2018\u2019]/g, "'")
+			.replace(/[\u201c\u201d]/g, '"')
+			.replace(/[\u3002\uff0e]/g, ".")
+			.replace(/[\uff0c\u3001]/g, ",")
+			.replace(/\uff1a/g, ":")
+			.replace(/\u3000/g, " ")
 
 		kanaPairs.forEach(pair => {
 			string = string.replace(pair[1], pair[0])
 		})
 
 		return string.normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+	}
+
+	normalizeToken(string){
+		return this.normalizeString(string).trim().toLowerCase()
+	}
+
+	getFilterName(name){
+		return this.filterAliases[this.normalizeToken(name)]
+	}
+
+	getFilterValue(value){
+		var normalized = this.normalizeToken(value)
+		return this.valueAliases[normalized] || normalized
+	}
+
+	getCategoryAliases(cat){
+		var aliases = []
+		if(cat.title){
+			aliases.push(cat.title)
+		}
+		if(cat.aliases){
+			aliases = aliases.concat(cat.aliases)
+		}
+		if(cat.title_lang){
+			Object.keys(cat.title_lang).forEach(lang => {
+				if(cat.title_lang[lang]){
+					aliases.push(cat.title_lang[lang])
+				}
+			})
+		}
+		return aliases.map(alias => this.normalizeToken(alias))
 	}
 	
 	perform(query){
@@ -51,23 +108,25 @@ class Search{
 		
 		var querySplit = query.split(" ").filter(word => {
 			if(word.length > 0){
-				var parts = word.toLowerCase().split(":")
+				var parts = word.split(":")
 				if(parts.length > 1){
-					switch(parts[0]){
+					var filter = this.getFilterName(parts[0])
+					var value = this.getFilterValue(parts.slice(1).join(":"))
+					switch(filter){
 						case "easy":
 						case "normal":
 						case "hard":
 						case "oni":
 						case "ura":
-							var range = this.parseRange(parts[1])
+							var range = this.parseRange(value)
 							if(range){
-								filters[parts[0]] = range
+								filters[filter] = range
 							}
 							break
 						case "extreme":
-							var range = this.parseRange(parts[1])
+							var range = this.parseRange(value)
 							if(range){
-								filters.oni = this.parseRange(parts[1])
+								filters.oni = range
 							}
 							break
 						case "clear":
@@ -81,7 +140,7 @@ class Search{
 						case "diverge":
 						case "random":
 						case "all":
-							filters[parts[0]] = parts[1]
+							filters[filter] = value
 							break
 						default:
 							return true
@@ -153,9 +212,9 @@ class Search{
 						break
 					case "genre":
 						var cat = assets.categories.find(cat => cat.id === song.category_id)
-						var aliases = cat.aliases ? cat.aliases.concat([cat.title]) : [cat.title]
+						var aliases = cat ? this.getCategoryAliases(cat) : []
 						
-						if(aliases.find(alias => alias.toLowerCase() === value.toLowerCase())){
+						if(aliases.find(alias => alias === this.normalizeToken(value))){
 							passedFilters++
 						}
 						break

@@ -70,6 +70,10 @@ SONG_TYPES = [
     "10 Taiko Towers",
     "11 Dan Dojo",
 ]
+DAILY_CHALLENGE_SONG_TYPES = {"03 Vocaloid", "07 Game Music", "09 Namco Original"}
+DAILY_CHALLENGE_DIFFICULTIES = ("oni", "ura")
+DAILY_CHALLENGE_MIN_STARS = 6
+DAILY_CHALLENGE_MAX_STARS = 10
 
 redis_config = dict(take_config('REDIS', required=True))
 redis_config['CACHE_REDIS_HOST'] = os.environ.get("TAIKO_WEB_REDIS_HOST") or redis_config['CACHE_REDIS_HOST']
@@ -202,6 +206,27 @@ def song_public_payload(song):
         output['song_skin'] = None
     output.pop('skin_id', None)
     return output
+
+
+def daily_challenge_candidates():
+    songs = db.songs.find({
+        'enabled': True,
+        'song_type': {'$in': list(DAILY_CHALLENGE_SONG_TYPES)}
+    })
+    candidates = []
+    for song in songs:
+        courses = song.get('courses') or {}
+        for difficulty in DAILY_CHALLENGE_DIFFICULTIES:
+            course = courses.get(difficulty)
+            if not course:
+                continue
+            stars = course.get('stars')
+            if (
+                isinstance(stars, int)
+                and DAILY_CHALLENGE_MIN_STARS <= stars <= DAILY_CHALLENGE_MAX_STARS
+            ):
+                candidates.append((song, difficulty))
+    return sorted(candidates, key=lambda item: (item[0].get('id', 0), item[1]))
 
 
 def generate_hash(id, form):
@@ -1007,15 +1032,12 @@ def route_api_leaderboard_get():
 @app.cache.cached(timeout=300)
 def route_api_daily_challenge():
     today = datetime.utcnow().strftime('%Y-%m-%d')
-    songs = list(db.songs.find({'enabled': True}))
-    songs = [song for song in songs if song.get('courses') and any(song['courses'].values())]
-    if not songs:
+    candidates = daily_challenge_candidates()
+    if not candidates:
         return jsonify({'status': 'ok', 'date': today, 'song': None})
 
     seed = int(hashlib.md5(today.encode('utf-8')).hexdigest(), 16)
-    song = sorted(songs, key=lambda item: item.get('id', 0))[seed % len(songs)]
-    available = [diff for diff in ['oni', 'hard', 'normal', 'easy', 'ura'] if song.get('courses', {}).get(diff)]
-    difficulty = available[seed % len(available)]
+    song, difficulty = candidates[seed % len(candidates)]
     return jsonify({
         'status': 'ok',
         'date': today,

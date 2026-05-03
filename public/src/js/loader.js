@@ -608,8 +608,27 @@ class Loader{
 		}
 		this.backgroundPreloadStarted = true
 		this.preloadGameImages()
+		this.preloadComboVoices()
 		assets.audioMusic.forEach(name => {
 			this.addBackgroundPromise(this.loadSound(name, snd.musicGain), this.soundUrl(name))
+		})
+	}
+	preloadComboVoices(){
+		var names = ["v_combo_50.ogg"]
+		for(var combo = 100; combo <= 5000; combo += 100){
+			names.push("v_combo_" + combo + ".ogg")
+		}
+		names.forEach(name => {
+			var id = this.getFilename(name)
+			var promise = this.loadSound(name, snd.sfxGain).then(() => {
+				if(!assets.sounds[id + "_p1"]){
+					assets.sounds[id + "_p1"] = assets.sounds[id].copy(snd.sfxGainL)
+				}
+				if(!assets.sounds[id + "_p2"]){
+					assets.sounds[id + "_p2"] = assets.sounds[id].copy(snd.sfxGainR)
+				}
+			})
+			this.addBackgroundPromise(promise, this.soundUrl(name))
 		})
 	}
 	preloadGameImages(){

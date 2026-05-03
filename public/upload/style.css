@@ -7,8 +7,8 @@
 }
 
 :root {
-  --bg1: #ff7a3d;
-  --bg2: #20b7c8;
+  --bg1: #fff4df;
+  --bg2: #35c2c9;
   --panel: rgba(255, 255, 255, 0.95);
   --line: #ffd3b5;
   --text: #221426;
@@ -25,9 +25,12 @@ body {
   font-family: "Roboto", sans-serif;
   color: var(--text);
   background:
-    radial-gradient(circle at 20% 12%, rgba(255, 225, 90, 0.65), transparent 28rem),
-    radial-gradient(circle at 85% 20%, rgba(255, 255, 255, 0.34), transparent 24rem),
-    linear-gradient(140deg, var(--bg1), var(--bg2));
+    radial-gradient(circle at 8% 12%, rgba(255, 255, 255, 0.72) 0 2.5rem, transparent 2.6rem),
+    radial-gradient(circle at 88% 18%, rgba(255, 225, 90, 0.45) 0 3rem, transparent 3.1rem),
+    radial-gradient(circle at 28% 82%, rgba(255, 122, 61, 0.22) 0 3.5rem, transparent 3.6rem),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.14) 0 0.75rem, transparent 0.75rem 1.5rem),
+    linear-gradient(135deg, var(--bg1) 0%, #ffe2a8 34%, var(--bg2) 100%);
+  background-attachment: fixed;
   padding: 1.2rem;
 }
 

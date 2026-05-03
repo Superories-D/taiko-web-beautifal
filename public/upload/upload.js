@@ -6,8 +6,7 @@ async function uploadFiles(event) {
   const errorView = document.querySelector("#error-view");
 
   const formData = new FormData(form);
-  const endpoint = (formData.get("api_endpoint") || "").toString().trim();
-  formData.delete("api_endpoint");
+  const endpoint = "/api/upload";
 
   errorView.textContent = "";
   statusView.textContent = "Uploading...";
@@ -38,7 +37,6 @@ async function uploadFiles(event) {
 
     statusView.textContent = "Upload complete. It may take a moment before the song appears in the list.";
     form.reset();
-    document.querySelector("#api_endpoint").value = endpoint || "/api/upload";
   } catch (error) {
     statusView.textContent = "Upload failed.";
     errorView.textContent = String(error);

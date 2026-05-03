@@ -4,8 +4,9 @@ body {
 	width: 100%;
 	height: 100%;
 	background:
-		linear-gradient(180deg, rgba(14, 20, 54, 0.16), rgba(255, 99, 52, 0.18)),
-		url("../../assets/img/ai_loader_stage.png") center / cover no-repeat,
+		radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.32) 0 7vmin, transparent 7.2vmin),
+		radial-gradient(circle at 82% 16%, rgba(255, 225, 90, 0.28) 0 8vmin, transparent 8.2vmin),
+		repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 1.2vmin, transparent 1.2vmin 2.4vmin),
 		linear-gradient(135deg, #ff7a3d 0%, #f44c45 45%, #20b7c8 100%);
 	position: absolute;
 	user-select: none;
@@ -25,9 +26,10 @@ body {
 
 #screen.pattern-bg {
 	background:
-		linear-gradient(180deg, rgba(14, 20, 54, 0.16), rgba(255, 99, 52, 0.18)),
-		url("../../assets/img/ai_loader_stage.png") center / cover no-repeat,
-		#ff7a3d;
+		radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.32) 0 7vmin, transparent 7.2vmin),
+		radial-gradient(circle at 82% 16%, rgba(255, 225, 90, 0.28) 0 8vmin, transparent 8.2vmin),
+		repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 1.2vmin, transparent 1.2vmin 2.4vmin),
+		linear-gradient(135deg, #ff7a3d 0%, #f44c45 45%, #20b7c8 100%);
 }
 
 #assets,

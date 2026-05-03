@@ -86,7 +86,6 @@ var assets = {
 	"cssBackground": {
 		"#title-screen": "title-screen.png",
 		"#loading-don": "dancing-don.gif",
-		".pattern-bg": "bg-pattern-1.png",
 		".song-search-result-course::before": "difficulty.png",
 		"#song-select": "bg_genre_def.png",
 		".settings-outer": "bg_settings.png",

@@ -236,10 +236,11 @@ class SettingsView{
 		this.customSettings = !!settingsItems
 		this.settingsItems = settingsItems || settings.items
 		this.locked = false
+		this.closed = false
 		
 		loader.changePage("settings", tutorial)
 		if(!noSoundStart){
-			assets.sounds["bgm_settings"].playLoop(0.1, false, 0, 1.392, 26.992)
+			loader.playBgm("bgm_settings.mp3", [0.1, false, 0, 1.392, 26.992], () => !this.closed)
 		}
 		this.defaultButton = document.getElementById("settings-default")
 		this.viewOuter = this.getElement("view-outer")
@@ -1255,10 +1256,11 @@ class SettingsView{
 		return Date.now()
 	}
 	clean(noSoundStop){
+		this.closed = true
 		this.redrawRunning = false
 		this.keyboard.clean()
 		this.gamepad.clean()
-		if(!noSoundStop){
+		if(!noSoundStop && assets.sounds["bgm_settings"]){
 			assets.sounds["bgm_settings"].stop()
 		}
 		pageEvents.remove(window, ["mouseup", "touchstart", "touchmove", "touchend", "blur"], this.windowSymbol)
@@ -1319,6 +1321,9 @@ class SettingsView{
 					}
 					delete assets.image[i]
 				}
+			}
+			if(loader && loader.startBackgroundPreload){
+				loader.startBackgroundPreload(true)
 			}
 		}
 	}

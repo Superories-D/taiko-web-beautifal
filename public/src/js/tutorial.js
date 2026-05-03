@@ -6,7 +6,8 @@ class Tutorial{
 		this.fromSongSel = fromSongSel
 		this.songId = songId
 		loader.changePage("tutorial", true)
-		assets.sounds["bgm_setsume"].playLoop(0.1, false, 0, 1.054, 16.054)
+		this.closed = false
+		loader.playBgm("bgm_setsume.mp3", [0.1, false, 0, 1.054, 16.054], () => !this.closed)
 		this.endButton = this.getElement("view-end-button")
 		
 		this.tutorialTitle = this.getElement("view-title")
@@ -173,10 +174,13 @@ class Tutorial{
 		this.tutorialDiv.appendChild(par)
 	}
 	clean(){
+		this.closed = true
 		this.keyboard.clean()
 		this.gamepad.clean()
 		pageEvents.remove(this.endButton, ["mousedown", "touchstart"])
-		assets.sounds["bgm_setsume"].stop()
+		if(assets.sounds["bgm_setsume"]){
+			assets.sounds["bgm_setsume"].stop()
+		}
 		delete this.tutorialTitle
 		delete this.endButton
 		delete this.tutorialDiv

@@ -7,15 +7,6 @@ class LoadSong{
 		this.autoPlayEnabled = autoPlayEnabled
 		this.multiplayer = multiplayer
 		this.touchEnabled = touchEnabled
-		var resolution = settings.getItem("resolution")
-		this.imgScale = 1
-		if(resolution === "medium"){
-			this.imgScale = 0.75
-		}else if(resolution === "low"){
-			this.imgScale = 0.5
-		}else if(resolution === "lowest"){
-			this.imgScale = 0.25
-		}
 		
 		loader.changePage("loadsong", true)
 		var loadingText = document.getElementById("loading-text")
@@ -102,21 +93,22 @@ class LoadSong{
 				if((prefix + filename) in assets.image){
 					continue
 				}
-				let img = document.createElement("img")
 				let force = imgLoad[i].type === "song" && this.touchEnabled
-				if(!songObj.custom){
-					img.crossOrigin = "anonymous"
-				}
-				let promise = pageEvents.load(img)
-				this.addPromise(promise.then(() => {
-					return this.scaleImg(img, filename, prefix, force)
-				}), songObj.custom ? filename + ".png" : skinBase + filename + ".png")
 				if(songObj.custom){
+					let img = document.createElement("img")
+					let promise = pageEvents.load(img)
+					this.addPromise(promise.then(() => {
+						return this.scaleImg(img, filename, prefix, force)
+					}), filename + ".png")
 					this.addPromise(song.songSkin[filename + ".png"].blob().then(blob => {
 						img.src = URL.createObjectURL(blob)
 					}), song.songSkin[filename + ".png"].url)
 				}else{
-					img.src = skinBase + filename + ".png"
+					let url = skinBase + filename + ".png"
+					this.addPromise(loader.loadScaledImage(filename, url, {
+						prefix: prefix,
+						force: force
+					}), url)
 				}
 			}
 		}
@@ -147,13 +139,8 @@ class LoadSong{
 			}, () => {}), songObj.lyricsFile.url)
 		}
 		if(this.touchEnabled && !assets.image["touch_drum"]){
-			let img = document.createElement("img")
-			img.crossOrigin = "anonymous"
 			var url = gameConfig.assets_baseurl + "img/touch_drum.png"
-			this.addPromise(pageEvents.load(img).then(() => {
-				return this.scaleImg(img, "touch_drum", "")
-			}), url)
-			img.src = url
+			this.addPromise(loader.loadScaledImage("touch_drum", url), url)
 		}
 		var resultsImg = [
 			"results_flowers",
@@ -163,13 +150,8 @@ class LoadSong{
 		]
 		resultsImg.forEach(id => {
 			if(!assets.image[id]){
-				var img = document.createElement("img")
-				img.crossOrigin = "anonymous"
 				var url = gameConfig.assets_baseurl + "img/" + id + ".png"
-				this.addPromise(pageEvents.load(img).then(() => {
-					return this.scaleImg(img, id, "")
-				}), url)
-				img.src = url
+				this.addPromise(loader.loadScaledImage(id, url), url)
 			}
 		})
 		if(songObj.volume && songObj.volume !== 1){
@@ -231,49 +213,17 @@ class LoadSong{
 			for(var letter = 0; letter < (stage ? 1 : 2); letter++){
 				let filenameAb = filenames[i] + (stage ? "" : (letter === 0 ? "a" : "b"))
 				if(!(filenameAb in assets.image)){
-					let img = document.createElement("img")
 					let force = filenameAb.startsWith("bg_song_") && this.touchEnabled
-					img.crossOrigin = "anonymous"
 					var url = gameConfig.assets_baseurl + "img/" + filenameAb + ".png"
-					this.addPromise(pageEvents.load(img).then(() => {
-						return this.scaleImg(img, filenameAb, "", force)
+					this.addPromise(loader.loadScaledImage(filenameAb, url, {
+						force: force
 					}), url)
-					img.src = url
 				}
 			}
 		}
 	}
 	scaleImg(img, filename, prefix, force){
-		return new Promise((resolve, reject) => {
-			var scale = this.imgScale
-			if(force && scale > 0.5){
-				scale = 0.5
-			}
-			var canvas = document.createElement("canvas")
-			var w = Math.floor(img.width * scale)
-			var h = Math.floor(img.height * scale)
-			canvas.width = Math.max(1, w)
-			canvas.height = Math.max(1, h)
-			var ctx = canvas.getContext("2d")
-			ctx.drawImage(img, 0, 0, w, h)
-			var saveScaled = url => {
-				let img2 = document.createElement("img")
-				pageEvents.load(img2).then(() => {
-					assets.image[prefix + filename] = img2
-					loader.assetsDiv.appendChild(img2)
-					resolve()
-				}, reject)
-				img2.id = prefix + filename
-				img2.src = url
-			}
-			if("toBlob" in canvas){
-				canvas.toBlob(blob => {
-					saveScaled(URL.createObjectURL(blob))
-				})
-			}else{
-				saveScaled(canvas.toDataURL())
-			}
-		})
+		return loader.scaleImage(img, filename, prefix, force)
 	}
 	randInt(min, max){
 		return Math.floor(Math.random() * (max - min + 1)) + min

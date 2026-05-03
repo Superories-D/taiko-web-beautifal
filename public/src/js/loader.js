@@ -10,6 +10,9 @@ class Loader{
 		this.startTime = Date.now()
 		this.errorMessages = []
 		this.songSearchGradient = "linear-gradient(to top, rgba(245, 246, 252, 0.08), #ff5963), "
+		this.backgroundPromises = []
+		this.imageLoadPromises = {}
+		this.soundLoadPromises = {}
 		
 		this.initWorkers()
 		
@@ -239,7 +242,6 @@ class Loader{
 				"categories"
 			].length +
 			assets.audioSfx.length +
-			assets.audioMusic.length +
 			assets.audioSfxLR.length +
 			assets.audioSfxLoud.length +
 			(gameConfig.accounts ? 1 : 0)
@@ -327,9 +329,6 @@ class Loader{
 			assets.audioSfx.forEach(name => {
 				this.addPromise(this.loadSound(name, snd.sfxGain), this.soundUrl(name))
 			})
-			assets.audioMusic.forEach(name => {
-				this.addPromise(this.loadSound(name, snd.musicGain), this.soundUrl(name))
-			})
 			assets.audioSfxLR.forEach(name => {
 				this.addPromise(this.loadSound(name, snd.sfxGain).then(sound => {
 					var id = this.getFilename(name)
@@ -373,7 +372,9 @@ class Loader{
 			if(localStorage.getItem("lastSearchQuery")){
 				localStorage.removeItem("lastSearchQuery")
 			}
-			
+
+			this.startBackgroundPreload()
+
 			Promise.all(this.promises).then(() => {
 				if(this.error){
 					return
@@ -480,13 +481,155 @@ class Loader{
 			return this.errorMsg(response, url)
 		})
 	}
+	addBackgroundPromise(promise, url){
+		this.backgroundPromises.push(promise)
+		promise.catch(response => {
+			var error = Array.isArray(response) ? response[0] : response
+			if(url){
+				error = (error ? error + ": " : "") + url
+			}
+			console.warn("Background preload failed", error || response)
+			pageEvents.send("background-load-error", url || error || response)
+		})
+		return promise
+	}
 	soundUrl(name){
 		return gameConfig.assets_baseurl + "audio/" + name
 	}
 	loadSound(name, gain){
 		var id = this.getFilename(name)
-		return gain.load(new RemoteFile(this.soundUrl(name))).then(sound => {
+		if(assets.sounds[id]){
+			return Promise.resolve(assets.sounds[id])
+		}
+		if(this.soundLoadPromises[id]){
+			return this.soundLoadPromises[id]
+		}
+		this.soundLoadPromises[id] = gain.load(new RemoteFile(this.soundUrl(name))).then(sound => {
 			assets.sounds[id] = sound
+			delete this.soundLoadPromises[id]
+			return sound
+		}, response => {
+			delete this.soundLoadPromises[id]
+			return Promise.reject(response)
+		})
+		return this.soundLoadPromises[id]
+	}
+	playBgm(name, args, shouldPlay){
+		var id = this.getFilename(name)
+		var play = sound => {
+			if(!shouldPlay || shouldPlay()){
+				sound.playLoop.apply(sound, args)
+			}
+		}
+		if(assets.sounds[id]){
+			play(assets.sounds[id])
+		}else{
+			this.loadSound(name, snd.musicGain).then(play, response => {
+				this.addBackgroundPromise(Promise.reject(response), this.soundUrl(name))
+			})
+		}
+	}
+	loadScaledImage(filename, url, options){
+		options = options || {}
+		var prefix = options.prefix || ""
+		var id = prefix + filename
+		if(assets.image[id]){
+			return Promise.resolve(assets.image[id])
+		}
+		if(this.imageLoadPromises[id]){
+			return this.imageLoadPromises[id]
+		}
+		var img = document.createElement("img")
+		if(options.crossOrigin !== false){
+			img.crossOrigin = "anonymous"
+		}
+		this.imageLoadPromises[id] = pageEvents.load(img).then(() => {
+			return this.scaleImage(img, filename, prefix, options.force)
+		}).then(image => {
+			delete this.imageLoadPromises[id]
+			return image
+		}, response => {
+			delete this.imageLoadPromises[id]
+			return Promise.reject(response)
+		})
+		img.src = url
+		return this.imageLoadPromises[id]
+	}
+	scaleImage(img, filename, prefix, force){
+		return new Promise((resolve, reject) => {
+			var scale = this.getImageScale(force)
+			var canvas = document.createElement("canvas")
+			var w = Math.floor(img.width * scale)
+			var h = Math.floor(img.height * scale)
+			canvas.width = Math.max(1, w)
+			canvas.height = Math.max(1, h)
+			var ctx = canvas.getContext("2d")
+			ctx.drawImage(img, 0, 0, w, h)
+			var saveScaled = url => {
+				var id = (prefix || "") + filename
+				let img2 = document.createElement("img")
+				pageEvents.load(img2).then(() => {
+					assets.image[id] = img2
+					this.assetsDiv.appendChild(img2)
+					resolve(img2)
+				}, reject)
+				img2.id = id
+				img2.src = url
+			}
+			if("toBlob" in canvas){
+				canvas.toBlob(blob => {
+					saveScaled(URL.createObjectURL(blob))
+				})
+			}else{
+				saveScaled(canvas.toDataURL())
+			}
+		})
+	}
+	getImageScale(force){
+		var scale = 1
+		if(typeof settings !== "undefined" && settings){
+			var resolution = settings.getItem("resolution")
+			if(resolution === "medium"){
+				scale = 0.75
+			}else if(resolution === "low"){
+				scale = 0.5
+			}else if(resolution === "lowest"){
+				scale = 0.25
+			}
+		}
+		if(force && scale > 0.5){
+			scale = 0.5
+		}
+		return scale
+	}
+	startBackgroundPreload(force){
+		if(this.backgroundPreloadStarted && !force){
+			return
+		}
+		this.backgroundPreloadStarted = true
+		this.preloadGameImages()
+		assets.audioMusic.forEach(name => {
+			this.addBackgroundPromise(this.loadSound(name, snd.musicGain), this.soundUrl(name))
+		})
+	}
+	preloadGameImages(){
+		var names = []
+		for(var i = 1; i <= 5; i++){
+			names.push("bg_song_" + i + "a", "bg_song_" + i + "b")
+		}
+		for(var i = 1; i <= 3; i++){
+			names.push("bg_stage_" + i)
+		}
+		for(var i = 1; i <= 6; i++){
+			names.push("bg_don_" + i + "a", "bg_don_" + i + "b", "bg_don2_" + i + "a", "bg_don2_" + i + "b")
+		}
+		names.push("touch_drum", "results_flowers", "results_mikoshi", "results_tetsuohana", "results_tetsuohana2")
+		var touch = /Android|iPhone|iPad/.test(navigator.userAgent)
+		names.forEach(name => {
+			var url = gameConfig.assets_baseurl + "img/" + name + ".png"
+			this.addBackgroundPromise(this.loadScaledImage(name, url, {
+				force: touch && name.startsWith("bg_song_")
+			}), url)
 		})
 	}
 	getFilename(name){
@@ -596,6 +739,7 @@ class Loader{
 		}
 	}
 	changePage(name, patternBg){
+		this.pageName = name
 		this.screen.innerHTML = assets.pages[name]
 		this.screen.classList[patternBg ? "add" : "remove"]("pattern-bg")
 	}

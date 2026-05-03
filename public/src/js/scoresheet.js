@@ -70,12 +70,13 @@ class Scoresheet {
 		}
 
 		this.scoreSaved = false
+		this.closed = false
 		this.redrawRunning = true
 		this.redrawBind = this.redraw.bind(this)
 		this.redraw()
 
 		assets.sounds["v_results"].play()
-		assets.sounds["bgm_result"].playLoop(3, false, 0, 0.847, 17.689)
+		loader.playBgm("bgm_result.mp3", [3, false, 0, 0.847, 17.689], () => !this.closed)
 
 		this.session = p2.session
 		if (this.session) {
@@ -999,11 +1000,14 @@ class Scoresheet {
 	}
 
 	clean() {
+		this.closed = true
 		this.keyboard.clean()
 		this.gamepad.clean()
 		this.draw.clean()
 		this.canvasCache.clean()
-		assets.sounds["bgm_result"].stop()
+		if(assets.sounds["bgm_result"]){
+			assets.sounds["bgm_result"].stop()
+		}
 		snd.buffer.loadSettings()
 		this.redrawRunning = false
 		pageEvents.remove(this.canvas, ["mousedown", "touchstart"])

@@ -342,7 +342,8 @@ class SongSelect {
 		this.selectedDiff = 0
 		this.lastCurrentSong = {}
 		this.lastRandom = false
-		assets.sounds["bgm_songsel"].playLoop(0.1, false, 0, 1.442, 3.506)
+		this.closed = false
+		loader.playBgm("bgm_songsel.mp3", [0.1, false, 0, 1.442, 3.506], () => !this.closed)
 
 		if (!assets.customSongs && !fromTutorial && !("selectedSong" in localStorage) && !songId) {
 			fromTutorial = touchEnabled ? "about" : "tutorial"
@@ -3230,6 +3231,7 @@ class SongSelect {
 	}
 
 	clean() {
+		this.closed = true
 		this.keyboard.clean()
 		this.gamepad.clean()
 		this.clearHash()
@@ -3242,7 +3244,9 @@ class SongSelect {
 		this.currentSongCache.clean()
 		this.nameplateCache.clean()
 		this.search.clean()
-		assets.sounds["bgm_songsel"].stop()
+		if(assets.sounds["bgm_songsel"]){
+			assets.sounds["bgm_songsel"].stop()
+		}
 		if (!this.bgmEnabled) {
 			snd.musicGain.fadeIn()
 			setTimeout(() => {

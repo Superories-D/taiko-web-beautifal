@@ -27,8 +27,13 @@ class DailyChallenge {
 		}
 		songSelect.setSelectedSong(index)
 		var diffIndex = songSelect.difficultyId.indexOf(challenge.difficulty)
-		if(diffIndex !== -1) {
-			songSelect.selectedDiff = diffIndex + songSelect.diffOptions.length
+		if(diffIndex === -1 || challenge.difficulty !== "oni") {
+			return false
+		}
+		songSelect.songs[index].dailyChallenge = {
+			date: challenge.date,
+			song_hash: challenge.song.hash || challenge.song.title,
+			difficulty: challenge.difficulty
 		}
 		try {
 			localStorage.setItem("dailyChallengeActive", JSON.stringify({
@@ -37,7 +42,10 @@ class DailyChallenge {
 				difficulty: challenge.difficulty
 			}))
 		} catch(e) {}
-		songSelect.toSelectDifficulty(false)
+		songSelect.selectedDiff = diffIndex + songSelect.diffOptions.length
+		songSelect.state.options = 0
+		songSelect.playBgm(false)
+		songSelect.toLoadSong(diffIndex, false, false)
 		return true
 	}
 

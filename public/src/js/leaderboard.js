@@ -20,6 +20,7 @@ class Leaderboard {
 		this.songHash = songHash
 		this.songTitle = songTitle
 		this.difficulty = difficulty || ""
+		this.mode = "normal"
 		this.visible = true
 
 		this.overlay = document.createElement("div")
@@ -28,6 +29,19 @@ class Leaderboard {
 		document.body.appendChild(this.overlay)
 		this.bind()
 		await this.fetchData()
+	}
+
+	async showDaily(date) {
+		this.mode = "daily"
+		this.dailyDate = date || ""
+		this.visible = true
+
+		this.overlay = document.createElement("div")
+		this.overlay.id = "leaderboard-overlay"
+		this.overlay.innerHTML = this.dailyShell()
+		document.body.appendChild(this.overlay)
+		this.bindDaily()
+		await this.fetchDailyData()
 	}
 
 	shell() {
@@ -52,6 +66,23 @@ class Leaderboard {
 		`
 	}
 
+	dailyShell() {
+		return `
+			<div class="leaderboard-container leaderboard-daily" role="dialog" aria-modal="true">
+				<div class="leaderboard-header">
+					<button class="leaderboard-back" type="button">${strings.back}</button>
+					<h2 class="leaderboard-title">${strings.dailyChallengeHistory}</h2>
+				</div>
+				<div class="leaderboard-date-tabs"></div>
+				<div class="leaderboard-content"><div class="leaderboard-loading">${strings.loading}</div></div>
+				<div class="leaderboard-footer">
+					<span class="leaderboard-total"></span>
+					<span class="leaderboard-user-rank"></span>
+				</div>
+			</div>
+		`
+	}
+
 	bind() {
 		this.overlay.querySelector(".leaderboard-back").addEventListener("click", () => this.hide())
 		this.overlay.addEventListener("click", event => {
@@ -67,6 +98,26 @@ class Leaderboard {
 				this.difficulty = event.target.dataset.difficulty
 				this.refreshControls()
 				this.fetchData()
+			}
+		})
+		this.keyHandler = event => {
+			if(event.key === "Escape") {
+				this.hide()
+			}
+		}
+		document.addEventListener("keydown", this.keyHandler)
+	}
+
+	bindDaily() {
+		this.overlay.querySelector(".leaderboard-back").addEventListener("click", () => this.hide())
+		this.overlay.addEventListener("click", event => {
+			if(event.target === this.overlay) {
+				this.hide()
+			}
+			var tab = event.target.closest(".leaderboard-date-tab")
+			if(tab) {
+				this.dailyDate = tab.dataset.date
+				this.fetchDailyData()
 			}
 		})
 		this.keyHandler = event => {
@@ -102,6 +153,22 @@ class Leaderboard {
 		}
 	}
 
+	async fetchDailyData() {
+		var content = this.overlay.querySelector(".leaderboard-content")
+		content.innerHTML = `<div class="leaderboard-loading">${strings.loading}</div>`
+		try {
+			var suffix = this.dailyDate ? `?date=${encodeURIComponent(this.dailyDate)}` : ""
+			var response = await fetch(`api/daily-challenge/leaderboard${suffix}`)
+			var data = await response.json()
+			if(data.status !== "ok") {
+				throw new Error("bad_status")
+			}
+			this.renderDaily(data)
+		} catch(e) {
+			this.renderError()
+		}
+	}
+
 	render(data) {
 		var content = this.overlay.querySelector(".leaderboard-content")
 		this.overlay.querySelector(".leaderboard-total").textContent = (data.total_scores || 0) + " scores"
@@ -124,10 +191,54 @@ class Leaderboard {
 		`
 	}
 
+	renderDaily(data) {
+		var tabs = this.overlay.querySelector(".leaderboard-date-tabs")
+		var content = this.overlay.querySelector(".leaderboard-content")
+		this.dailyDate = data.date
+		tabs.innerHTML = (data.dates || []).map(day => `
+			<button class="leaderboard-date-tab ${day.date === data.date ? "active" : ""}" data-date="${day.date}" type="button">${day.date}</button>
+		`).join("")
+		this.overlay.querySelector(".leaderboard-total").textContent = (data.leaderboard || []).length + " scores"
+		this.overlay.querySelector(".leaderboard-user-rank").textContent = data.date || ""
+
+		var title = data.challenge && data.challenge.song ? data.challenge.song.title : strings.dailyChallenge
+		var html = `
+			<div class="daily-challenge-song">
+				<div class="daily-challenge-label">${strings.dailyChallenge}</div>
+				<div class="daily-challenge-title">${this.escapeHtml(title || "")}</div>
+				<div class="daily-challenge-meta">${this.escapeHtml(data.date || "")} · ${strings.oni}</div>
+			</div>
+		`
+		if(!data.leaderboard || data.leaderboard.length === 0) {
+			content.innerHTML = html + `<div class="leaderboard-empty"><div class="leaderboard-empty-art"></div><div>${strings.noScores}</div></div>`
+			return
+		}
+		html += `<ul class="leaderboard-list">${data.leaderboard.map(entry => this.dailyItem(entry)).join("")}</ul>`
+		content.innerHTML = html
+	}
+
+	dailyItem(entry) {
+		var rankClass = entry.rank <= 3 ? `rank-${entry.rank}` : (entry.rank <= 10 ? "rank-top-10" : "")
+		var badge = entry.rank <= 3 ? "&#9819; " : (entry.rank <= 10 ? "&#9733; " : "")
+		return `
+			<li class="leaderboard-item ${rankClass}">
+				<span class="leaderboard-rank">${badge}#${entry.rank}</span>
+				<span class="leaderboard-name">${this.escapeHtml(entry.display_name)}</span>
+				<span class="leaderboard-score">${Number(entry.score_value || 0).toLocaleString()} ${strings.points}</span>
+			</li>
+		`
+	}
+
 	renderError() {
 		var content = this.overlay.querySelector(".leaderboard-content")
 		content.innerHTML = `<div class="leaderboard-error"><div>${strings.errorOccured}</div><button class="leaderboard-retry" type="button">Retry</button></div>`
-		content.querySelector(".leaderboard-retry").addEventListener("click", () => this.fetchData())
+		content.querySelector(".leaderboard-retry").addEventListener("click", () => {
+			if(this.mode === "daily") {
+				this.fetchDailyData()
+			} else {
+				this.fetchData()
+			}
+		})
 	}
 
 	async submitWithName(hash, difficulty, score, defaultName) {

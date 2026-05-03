@@ -480,6 +480,55 @@ var translations = {
 		tw: "得分排名",
 		ko: "점수 순위"
 	},
+	dailyChallenge: {
+		ja: "毎日チャレンジ",
+		en: "Daily Challenge",
+		cn: "每日挑战",
+		tw: "每日挑戰",
+		ko: "일일 도전"
+	},
+	dailyChallengeHistory: {
+		ja: "過去7日間の毎日チャレンジ",
+		en: "Daily Challenge: Last 7 Days",
+		cn: "每日挑战：近7天记录",
+		tw: "每日挑戰：近7天記錄",
+		ko: "일일 도전: 최근 7일"
+	},
+	dailyChallengeLeaderboard: {
+		ja: "チャレンジ順位",
+		en: "Challenge Ranking",
+		cn: "挑战排行",
+		tw: "挑戰排行",
+		ko: "도전 순위"
+	},
+	dailyChallengeUnavailable: {
+		ja: "今日のチャレンジ曲を取得できませんでした",
+		en: "Could not load today's challenge song.",
+		cn: "无法获取今日挑战曲。",
+		tw: "無法取得今日挑戰曲。",
+		ko: "오늘의 도전곡을 불러올 수 없습니다."
+	},
+	enterDailyChallengeName: {
+		ja: "毎日チャレンジに登録する名前を入力してください",
+		en: "Enter your name for the daily challenge:",
+		cn: "请输入每日挑战排行榜显示的名字：",
+		tw: "請輸入每日挑戰排行榜顯示的名字：",
+		ko: "일일 도전 순위표에 표시될 이름을 입력하세요:"
+	},
+	dailyChallengeRank: {
+		ja: "毎日チャレンジ順位",
+		en: "Daily Challenge Rank",
+		cn: "每日挑战排名",
+		tw: "每日挑戰排名",
+		ko: "일일 도전 순위"
+	},
+	dailyChallengeSubmitFailed: {
+		ja: "毎日チャレンジの記録を送信できませんでした",
+		en: "Could not submit daily challenge score.",
+		cn: "每日挑战成绩提交失败。",
+		tw: "每日挑戰成績提交失敗。",
+		ko: "일일 도전 점수를 제출할 수 없습니다."
+	},
 	leaderboardTitle: {
 		ja: "「%s」最高得点の持ち主",
 		en: "Top scores for「%s」",
@@ -528,13 +577,6 @@ var translations = {
 		cn: "个人最佳",
 		tw: "個人最佳",
 		ko: "개인 최고 기록"
-	},
-	dailyChallenge: {
-		ja: "今日の挑戦",
-		en: "Daily Challenge",
-		cn: "每日挑战",
-		tw: "每日挑戰",
-		ko: "일일 도전"
 	},
 	favoriteSongs: {
 		ja: "お気に入り",

@@ -68,7 +68,8 @@
 }
 
 .leaderboard-tabs,
-.leaderboard-diffs {
+.leaderboard-diffs,
+.leaderboard-date-tabs {
 	display: flex;
 	gap: 8px;
 	padding: 10px 14px 0;
@@ -76,15 +77,22 @@
 }
 
 .leaderboard-tab,
-.leaderboard-diff {
+.leaderboard-diff,
+.leaderboard-date-tab {
 	padding: 8px 12px;
+	border: 0;
+	border-radius: 8px;
 	background: #ffe3a8;
 	color: #6c2d00;
+	font: inherit;
+	font-weight: 800;
 	white-space: nowrap;
+	cursor: pointer;
 }
 
 .leaderboard-tab.active,
-.leaderboard-diff.active {
+.leaderboard-diff.active,
+.leaderboard-date-tab.active {
 	background: #1fb4c2;
 	color: #fff;
 }
@@ -119,6 +127,34 @@
 .leaderboard-item.rank-1 { background: linear-gradient(90deg, #ffe16a, #fff 58%); }
 .leaderboard-item.rank-2 { background: linear-gradient(90deg, #dce7ef, #fff 58%); }
 .leaderboard-item.rank-3 { background: linear-gradient(90deg, #ffc08a, #fff 58%); }
+.leaderboard-item.rank-top-10 { background: linear-gradient(90deg, #fff3a8, #fff 58%); }
+
+.daily-challenge-song {
+	margin-bottom: 12px;
+	padding: 12px;
+	border: 2px solid rgba(230, 109, 33, 0.25);
+	border-radius: 8px;
+	background: #fff1be;
+}
+
+.daily-challenge-label {
+	color: #aa281e;
+	font-size: 0.85rem;
+	font-weight: 900;
+}
+
+.daily-challenge-title {
+	margin-top: 4px;
+	color: #251711;
+	font-size: 1.12rem;
+	font-weight: 900;
+}
+
+.daily-challenge-meta {
+	margin-top: 4px;
+	color: #6c2d00;
+	font-weight: 800;
+}
 
 .leaderboard-rank {
 	font-size: 1.2rem;

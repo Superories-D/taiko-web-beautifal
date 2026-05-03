@@ -70,10 +70,7 @@ SONG_TYPES = [
     "10 Taiko Towers",
     "11 Dan Dojo",
 ]
-DAILY_CHALLENGE_SONG_TYPES = {"03 Vocaloid", "07 Game Music", "09 Namco Original"}
-DAILY_CHALLENGE_DIFFICULTIES = ("oni", "ura")
-DAILY_CHALLENGE_MIN_STARS = 6
-DAILY_CHALLENGE_MAX_STARS = 10
+DAILY_CHALLENGE_DIFFICULTY = "oni"
 
 redis_config = dict(take_config('REDIS', required=True))
 redis_config['CACHE_REDIS_HOST'] = os.environ.get("TAIKO_WEB_REDIS_HOST") or redis_config['CACHE_REDIS_HOST']
@@ -147,6 +144,12 @@ db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('score_value'
 db.leaderboard.create_index('username')
 db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('period', 1), ('period_key', 1), ('identity_key', 1)])
 db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('period', 1), ('period_key', 1), ('score_value', -1)])
+db.daily_challenges.create_index('date', unique=True)
+db.daily_challenge_scores.create_index([('date', 1), ('score_value', -1), ('played_at', 1)])
+db.daily_challenge_scores.create_index('created_at')
+
+DAILY_CHALLENGE_TZ = ZoneInfo(os.environ.get('TAIKO_WEB_DAILY_CHALLENGE_TZ', 'Asia/Shanghai')) if ZoneInfo else None
+DAILY_CHALLENGE_KEEP_DAYS = 7
 
 
 class HashException(Exception):
@@ -211,22 +214,86 @@ def song_public_payload(song):
 def daily_challenge_candidates():
     songs = db.songs.find({
         'enabled': True,
-        'song_type': {'$in': list(DAILY_CHALLENGE_SONG_TYPES)}
+        'courses.%s' % DAILY_CHALLENGE_DIFFICULTY: {'$exists': True, '$ne': None}
     })
     candidates = []
     for song in songs:
         courses = song.get('courses') or {}
-        for difficulty in DAILY_CHALLENGE_DIFFICULTIES:
-            course = courses.get(difficulty)
-            if not course:
-                continue
-            stars = course.get('stars')
-            if (
-                isinstance(stars, int)
-                and DAILY_CHALLENGE_MIN_STARS <= stars <= DAILY_CHALLENGE_MAX_STARS
-            ):
-                candidates.append((song, difficulty))
+        if courses.get(DAILY_CHALLENGE_DIFFICULTY):
+            candidates.append((song, DAILY_CHALLENGE_DIFFICULTY))
     return sorted(candidates, key=lambda item: (item[0].get('id', 0), item[1]))
+
+
+def daily_challenge_now():
+    return datetime.now(DAILY_CHALLENGE_TZ) if DAILY_CHALLENGE_TZ else datetime.utcnow()
+
+
+def daily_challenge_date(now=None):
+    return (now or daily_challenge_now()).strftime('%Y-%m-%d')
+
+
+def daily_challenge_cutoff(now=None):
+    current = now or daily_challenge_now()
+    return (current.date() - timedelta(days=DAILY_CHALLENGE_KEEP_DAYS - 1)).strftime('%Y-%m-%d')
+
+
+def cleanup_daily_challenge_data():
+    cutoff = daily_challenge_cutoff()
+    db.daily_challenges.delete_many({'date': {'$lt': cutoff}})
+    db.daily_challenge_scores.delete_many({'date': {'$lt': cutoff}})
+
+
+def get_or_create_daily_challenge(date_key=None):
+    cleanup_daily_challenge_data()
+    date_key = date_key or daily_challenge_date()
+    challenge = db.daily_challenges.find_one({'date': date_key}, {'_id': False})
+    if challenge:
+        return challenge
+
+    candidates = daily_challenge_candidates()
+    if not candidates:
+        return None
+    seed = int(hashlib.md5(date_key.encode('utf-8')).hexdigest(), 16)
+    song, difficulty = candidates[seed % len(candidates)]
+    doc = {
+        'date': date_key,
+        'song_id': song.get('id'),
+        'song_hash': song.get('hash') or song.get('title'),
+        'difficulty': difficulty,
+        'song': song_public_payload(song),
+        'created_at': datetime.utcnow()
+    }
+    try:
+        db.daily_challenges.insert_one(doc)
+        doc.pop('_id', None)
+        return doc
+    except DuplicateKeyError:
+        return db.daily_challenges.find_one({'date': date_key}, {'_id': False})
+
+
+def daily_challenge_rank(date_key, score_value, played_at, score_id):
+    return db.daily_challenge_scores.count_documents({
+        'date': date_key,
+        '$or': [
+            {'score_value': {'$gt': score_value}},
+            {'score_value': score_value, 'played_at': {'$lt': played_at}},
+            {'score_value': score_value, 'played_at': played_at, '_id': {'$lte': score_id}}
+        ]
+    })
+
+
+def daily_challenge_scores_for_date(date_key, limit=100):
+    scores = list(db.daily_challenge_scores.find({'date': date_key}).sort([
+        ('score_value', -1),
+        ('played_at', 1),
+        ('_id', 1)
+    ]).limit(limit))
+    return [{
+        'rank': i + 1,
+        'display_name': score.get('display_name', 'Anonymous'),
+        'score_value': score.get('score_value', 0),
+        'played_at': score.get('played_at').isoformat() + 'Z' if score.get('played_at') else None
+    } for i, score in enumerate(scores)]
 
 
 def generate_hash(id, form):
@@ -1029,20 +1096,106 @@ def route_api_leaderboard_get():
 
 
 @app.route(basedir + 'api/daily_challenge')
-@app.cache.cached(timeout=300)
 def route_api_daily_challenge():
-    today = datetime.utcnow().strftime('%Y-%m-%d')
-    candidates = daily_challenge_candidates()
-    if not candidates:
-        return jsonify({'status': 'ok', 'date': today, 'song': None})
-
-    seed = int(hashlib.md5(today.encode('utf-8')).hexdigest(), 16)
-    song, difficulty = candidates[seed % len(candidates)]
+    challenge = get_or_create_daily_challenge()
+    if not challenge:
+        return jsonify({'status': 'ok', 'date': daily_challenge_date(), 'song': None})
     return jsonify({
         'status': 'ok',
-        'date': today,
-        'difficulty': difficulty,
-        'song': song_public_payload(song)
+        'date': challenge['date'],
+        'difficulty': challenge.get('difficulty', DAILY_CHALLENGE_DIFFICULTY),
+        'song': challenge.get('song')
+    })
+
+
+@app.route(basedir + 'api/daily-challenge/current')
+def route_api_daily_challenge_current():
+    challenge = get_or_create_daily_challenge()
+    if not challenge:
+        return api_error('no_oni_songs')
+    return jsonify({
+        'status': 'ok',
+        'challenge': challenge
+    })
+
+
+@app.route(basedir + 'api/daily-challenge/submit', methods=['POST'])
+@limiter.limit("30 per minute")
+def route_api_daily_challenge_submit():
+    data = request.get_json()
+    if not data:
+        return abort(400)
+
+    date_key = data.get('date') or daily_challenge_date()
+    if not isinstance(date_key, str) or not re.match(r'^\d{4}-\d{2}-\d{2}$', date_key):
+        return abort(400)
+    cutoff = daily_challenge_cutoff()
+    if date_key < cutoff or date_key > daily_challenge_date():
+        return abort(400)
+
+    challenge = get_or_create_daily_challenge(date_key) if date_key == daily_challenge_date() else db.daily_challenges.find_one({'date': date_key}, {'_id': False})
+    if not challenge:
+        return api_error('daily_challenge_not_found')
+
+    song_hash = data.get('hash')
+    difficulty = data.get('difficulty')
+    try:
+        score_value = int(data.get('score', 0))
+    except (TypeError, ValueError):
+        return abort(400)
+    if score_value < 0:
+        score_value = 0
+
+    if song_hash != challenge.get('song_hash') or difficulty != DAILY_CHALLENGE_DIFFICULTY:
+        return api_error('daily_challenge_mismatch')
+
+    display_name = (data.get('display_name') or 'Anonymous').strip()[:20] or 'Anonymous'
+    played_at = datetime.utcnow()
+    result = db.daily_challenge_scores.insert_one({
+        'date': challenge['date'],
+        'song_hash': challenge['song_hash'],
+        'song_id': challenge.get('song_id'),
+        'difficulty': DAILY_CHALLENGE_DIFFICULTY,
+        'display_name': display_name,
+        'score_value': score_value,
+        'played_at': played_at,
+        'created_at': played_at
+    })
+    rank = daily_challenge_rank(challenge['date'], score_value, played_at, result.inserted_id)
+    return jsonify({
+        'status': 'ok',
+        'rank': rank,
+        'in_top_100': rank <= 100,
+        'date': challenge['date'],
+        'leaderboard': daily_challenge_scores_for_date(challenge['date'])
+    })
+
+
+@app.route(basedir + 'api/daily-challenge/leaderboard')
+def route_api_daily_challenge_leaderboard():
+    cleanup_daily_challenge_data()
+    date_key = request.args.get('date') or daily_challenge_date()
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_key):
+        return abort(400)
+    cutoff = daily_challenge_cutoff()
+    if date_key < cutoff or date_key > daily_challenge_date():
+        return abort(400)
+
+    challenge = get_or_create_daily_challenge(date_key) if date_key == daily_challenge_date() else db.daily_challenges.find_one({'date': date_key}, {'_id': False})
+    dates = []
+    for challenge_doc in db.daily_challenges.find({'date': {'$gte': cutoff}}, {'_id': False}).sort('date', -1).limit(DAILY_CHALLENGE_KEEP_DAYS):
+        dates.append({
+            'date': challenge_doc.get('date'),
+            'song': challenge_doc.get('song'),
+            'difficulty': challenge_doc.get('difficulty', DAILY_CHALLENGE_DIFFICULTY)
+        })
+
+    return jsonify({
+        'status': 'ok',
+        'date': date_key,
+        'challenge': challenge,
+        'dates': dates,
+        'leaderboard': daily_challenge_scores_for_date(date_key)
     })
 
 

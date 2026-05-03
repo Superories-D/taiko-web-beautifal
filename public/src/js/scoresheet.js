@@ -960,10 +960,49 @@ class Scoresheet {
 			)
 			// Submit to leaderboard (only if not auto-play)
 			if (!this.controller.autoPlayEnabled) {
-				this.submitToLeaderboard(hash, difficulty, this.resultsObj.points, title, isPersonalBest)
+				if (this.controller.selectedSong.dailyChallenge || dailyChallenge.isActive(hash, difficulty)) {
+					this.submitDailyChallenge(hash, difficulty, this.resultsObj.points)
+				} else {
+					this.submitToLeaderboard(hash, difficulty, this.resultsObj.points, title, isPersonalBest)
+				}
 			}
 		}
 		this.scoreSaved = true
+	}
+
+	submitDailyChallenge(hash, difficulty, score) {
+		var defaultName = account.loggedIn ? account.displayName : strings.defaultName
+		leaderboard.askName(defaultName).then(displayName => {
+			if(displayName === null) return
+			localStorage.setItem("leaderboardName", displayName)
+			var challenge = this.controller.selectedSong.dailyChallenge || {}
+			return fetch("api/daily-challenge/submit", {
+				method: "POST",
+				headers: {"Content-Type": "application/json"},
+				body: JSON.stringify({
+					hash: hash,
+					difficulty: difficulty,
+					score: score,
+					display_name: displayName,
+					date: challenge.date
+				})
+			})
+		}).then(response => {
+			if(!response) return null
+			return response.json()
+		}).then(data => {
+			if(!data) return
+			if(data.status !== "ok") {
+				throw new Error("daily_challenge_submit_failed")
+			}
+			var rankText = data.in_top_100 ? strings.dailyChallengeRank + ": #" + data.rank : strings.notInTop100
+			leaderboard.resultCard(rankText, () => {
+				leaderboard.showDaily(data.date)
+			})
+		}).catch(e => {
+			console.error("Daily challenge submit failed:", e)
+			leaderboard.resultCard(strings.dailyChallengeSubmitFailed || strings.errorOccured)
+		})
 	}
 
 	submitToLeaderboard(hash, difficulty, score, title, isPersonalBest) {

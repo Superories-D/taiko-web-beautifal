@@ -244,6 +244,13 @@ class SongSelect {
 			p2Enabled: false
 		})
 		this.songs.push({
+			title: strings.dailyChallengeLeaderboard,
+			skin: this.songSkin.dailyChallenge,
+			action: "dailyChallengeLeaderboard",
+			category: strings.random,
+			p2Enabled: false
+		})
+		this.songs.push({
 			title: strings.favoriteSongs,
 			skin: this.songSkin.favorites,
 			action: "favorites",
@@ -1014,6 +1021,11 @@ class SongSelect {
 				dailyChallenge.start(this).catch(() => {
 					this.search.display(true)
 				})
+			} else if (currentSong.action === "dailyChallengeLeaderboard") {
+				if (typeof leaderboard !== "undefined") {
+					leaderboard.showDaily()
+					this.playSound("se_don", 0)
+				}
 			} else if (currentSong.action === "favorites") {
 				var favoriteIndex = favorites.firstAvailable(this.songs, "favorites")
 				if (favoriteIndex !== -1) {
@@ -1166,8 +1178,10 @@ class SongSelect {
 			"hash": selectedSong.hash,
 			"lyrics": selectedSong.lyrics,
 			"video": selectedSong.video,
+			"dailyChallenge": selectedSong.dailyChallenge || null,
 		}, autoplay, multiplayer, touch)
 	}
+
 	toOptions(moveBy) {
 		if (!p2.session) {
 			this.playSound("se_ka", 0, p2.session ? p2.player : false)
@@ -3288,7 +3302,23 @@ class SongSelect {
 
 	toLeaderboard() {
 		var song = this.songs[this.selectedSong]
-		if (!song || song.action) return
+		if (!song) return
+
+		if (song.action === "dailyChallenge") {
+			if (typeof leaderboard !== "undefined") {
+				leaderboard.showDaily()
+				this.playSound("se_don", 0)
+			}
+			return
+		}
+		if (song.action === "dailyChallengeLeaderboard") {
+			if (typeof leaderboard !== "undefined") {
+				leaderboard.showDaily()
+				this.playSound("se_don", 0)
+			}
+			return
+		}
+		if (song.action) return
 
 		var songHash = song.hash || song.id
 		var songTitle = song.title || ""

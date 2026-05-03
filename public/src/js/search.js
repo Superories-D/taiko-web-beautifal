@@ -354,6 +354,7 @@ class Search{
 		resultInfoDiv.classList.add("song-search-result-info")
 		var resultInfoTitle = document.createElement("span")
 		resultInfoTitle.classList.add("song-search-result-title")
+		resultInfoTitle.style.fontFamily = strings.songFont || songTitleFont
 		
 		resultInfoTitle.appendChild(this.highlightResult(title, result[0]))
 		resultInfoTitle.setAttribute("alt", title)
@@ -364,6 +365,7 @@ class Search{
 			resultInfoDiv.appendChild(document.createElement("br"))
 			var resultInfoSubtitle = document.createElement("span")
 			resultInfoSubtitle.classList.add("song-search-result-subtitle")
+			resultInfoSubtitle.style.fontFamily = strings.font
 			
 			resultInfoSubtitle.appendChild(this.highlightResult(subtitle, result[1]))
 			resultInfoSubtitle.setAttribute("alt", subtitle)
@@ -399,7 +401,7 @@ class Search{
 			resultDiv.appendChild(courseDiv)
 		})
 		
-		this.songSelect.ctx.font = (1.2 * fontSize) + "px " + strings.font
+		this.songSelect.ctx.font = (1.2 * fontSize) + "px " + (strings.songFont || songTitleFont)
 		var titleWidth = this.songSelect.ctx.measureText(title).width
 		var titleRatio = resultWidth / titleWidth
 		if(titleRatio < 1){

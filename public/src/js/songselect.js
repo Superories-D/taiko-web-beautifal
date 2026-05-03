@@ -117,6 +117,7 @@ class SongSelect {
 		this.songSkin["default"].sort = songSkinLength + 1
 
 		this.font = strings.font
+		this.songFont = strings.songFont || songTitleFont
 
 		this.search = new Search(this)
 
@@ -2395,7 +2396,7 @@ class SongSelect {
 						outline: selectedSkin.outline,
 						outlineSize: this.songAsset.letterBorder,
 						fontSize: 40,
-						fontFamily: this.font
+						fontFamily: this.songFont
 					})
 				}
 				if (selectedSkin.outline === "#000") {
@@ -2426,7 +2427,7 @@ class SongSelect {
 						width: textW,
 						height: textH - 35,
 						fontSize: 40,
-						fontFamily: this.font,
+						fontFamily: this.songFont,
 						selectable: this.selectable,
 						selectableScale: this.ratio / this.pixelRatio,
 						selectableX: Math.max(0, innerWidth / 2 - lastHeight * 16 / 9)
@@ -2842,7 +2843,7 @@ class SongSelect {
 					outline: config.outline,
 					outlineSize: this.songAsset.letterBorder,
 					fontSize: 40,
-					fontFamily: this.font
+					fontFamily: this.songFont
 				})
 			})
 		}

@@ -152,8 +152,11 @@ class Settings{
 		if(!lang.font){
 			lang.font = defaultUiFont
 		}
+		if(!lang.songFont){
+			lang.songFont = songTitleFont
+		}
 		strings = lang
-		var boldFonts = strings.font === "Microsoft YaHei, sans-serif"
+		var boldFonts = false
 		loader.screen.style.fontFamily = strings.font
 		loader.screen.style.fontWeight = boldFonts ? "bold" : ""
 		loader.screen.classList[boldFonts ? "add" : "remove"]("bold-fonts")
@@ -165,6 +168,9 @@ class Settings{
 	addLang(lang, forceSet){
 		if(!lang.font){
 			lang.font = defaultUiFont
+		}
+		if(!lang.songFont){
+			lang.songFont = songTitleFont
 		}
 		allStrings[lang.id] = lang
 		if(lang.categories){

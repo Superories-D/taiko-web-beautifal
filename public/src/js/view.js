@@ -88,6 +88,7 @@
 			this.beatInterval = this.controller.parsedSongData.beatInfo.beatInterval
 		}
 		this.font = strings.font
+		this.songFont = strings.songFont || songTitleFont
 		
 		this.draw = new CanvasDraw(noSmoothing)
 		this.assets = new ViewAssets(this)
@@ -279,7 +280,7 @@
 					ctx: ctx,
 					text: selectedSong.title,
 					fontSize: 40,
-					fontFamily: this.font,
+					fontFamily: this.songFont,
 					x: 620,
 					y: 20,
 					width: 600,

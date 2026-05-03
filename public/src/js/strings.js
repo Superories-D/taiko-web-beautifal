@@ -1,5 +1,9 @@
 ﻿var languageList = ["ja", "en", "cn", "tw", "ko"]
-var defaultUiFont = "TnT, Meiryo, sans-serif"
+var taikoUiFont = "TnT, Meiryo, sans-serif"
+var defaultUiFont = "\"Segoe UI\", \"Noto Sans\", Arial, sans-serif"
+var cjkUiFont = "\"Microsoft YaHei\", \"Noto Sans CJK SC\", \"Source Han Sans SC\", \"PingFang SC\", \"Microsoft JhengHei\", Meiryo, sans-serif"
+var koreanUiFont = "\"Malgun Gothic\", \"Noto Sans CJK KR\", \"Apple SD Gothic Neo\", \"Microsoft YaHei\", sans-serif"
+var songTitleFont = taikoUiFont
 var translations = {
 	name: {
 		ja: "日本語",
@@ -16,11 +20,18 @@ var translations = {
 		ko: /^ko$|^ko-/
 	},
 	font: {
-		ja: "TnT, Meiryo, sans-serif",
-		en: "TnT, Meiryo, sans-serif",
-		cn: defaultUiFont,
-		tw: defaultUiFont,
-		ko: defaultUiFont
+		ja: taikoUiFont,
+		en: taikoUiFont,
+		cn: cjkUiFont,
+		tw: cjkUiFont,
+		ko: koreanUiFont
+	},
+	songFont: {
+		ja: songTitleFont,
+		en: songTitleFont,
+		cn: songTitleFont,
+		tw: songTitleFont,
+		ko: songTitleFont
 	},
 	intl: {
 		ja: "ja",
@@ -1699,6 +1710,9 @@ function separateStrings() {
 		}
 		if (!str.font) {
 			str.font = defaultUiFont
+		}
+		if (!str.songFont) {
+			str.songFont = songTitleFont
 		}
 	}
 }

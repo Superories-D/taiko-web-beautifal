@@ -36,6 +36,16 @@ compose() {
   fi
 }
 
+compose_flavor() {
+  if docker compose version >/dev/null 2>&1; then
+    echo "v2"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    echo "v1"
+  else
+    echo "missing"
+  fi
+}
+
 apt_install() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
@@ -116,11 +126,58 @@ remove_direct_service() {
 
 ensure_docker() {
   apt_install docker.io
-  if ! apt-get install -y docker-compose-plugin; then
+  if ! docker compose version >/dev/null 2>&1; then
+    if ! apt-get install -y docker-compose-plugin; then
+      install_docker_apt_repo || true
+      apt-get update -y || true
+      apt-get install -y docker-compose-plugin || install_compose_plugin_manual || true
+    fi
+  fi
+  if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then
     apt-get install -y docker-compose || true
   fi
   systemctl enable --now docker
   require_cmd docker
+  if [ "$(compose_flavor)" = "missing" ]; then
+    echo "docker compose is not available."
+    exit 1
+  fi
+  log "Using Docker Compose $(compose_flavor)."
+  if [ "$(compose_flavor)" = "v1" ]; then
+    log "Compose v2 could not be installed; falling back to docker-compose v1."
+  fi
+}
+
+install_docker_apt_repo() {
+  . /etc/os-release || true
+  local codename="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
+  [ -n "$codename" ] || return 1
+
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+  cat >/etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $codename
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+}
+
+install_compose_plugin_manual() {
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64) arch="x86_64" ;;
+    aarch64|arm64) arch="aarch64" ;;
+    armv7l|armv7*) arch="armv7" ;;
+    *) return 1 ;;
+  esac
+  install -m 0755 -d /usr/local/lib/docker/cli-plugins
+  curl -fL "https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-${arch}" \
+    -o /usr/local/lib/docker/cli-plugins/docker-compose
+  chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 }
 
 install_mongodb_direct() {
@@ -156,6 +213,34 @@ remove_container_stack() {
   fi
 
   docker rm -f taiko-web-app taiko-web-mongo taiko-web-redis >/dev/null 2>&1 || true
+}
+
+remove_named_stack_containers() {
+  if ! command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+  docker rm -f taiko-web-app taiko-web-mongo taiko-web-redis >/dev/null 2>&1 || true
+}
+
+compose_up_or_recreate_named() {
+  local log_file
+  log_file=$(mktemp)
+  if compose "$@" 2>"$log_file"; then
+    rm -f "$log_file"
+    return 0
+  fi
+
+  cat "$log_file" >&2
+  if grep -q "container name .* is already in use\\|Conflict. The container name" "$log_file"; then
+    log "Detected stale named containers from an older Compose run; removing containers only, preserving volumes."
+    remove_named_stack_containers
+    rm -f "$log_file"
+    compose "$@"
+    return $?
+  fi
+
+  rm -f "$log_file"
+  return 1
 }
 
 ensure_direct_datastores() {
@@ -215,7 +300,7 @@ deploy_container() {
   write_compose_env
   (
     cd "$INSTALL_DIR"
-    compose up -d --build
+    compose_up_or_recreate_named up -d --build --force-recreate --remove-orphans
   )
   log "Container deployment completed."
   log "Persistent data directory: $DATA_DIR"
@@ -231,8 +316,7 @@ upgrade_container() {
   write_compose_env
   (
     cd "$INSTALL_DIR"
-    compose up -d mongo redis
-    compose up -d --build app
+    compose_up_or_recreate_named up -d --build --force-recreate --remove-orphans
   )
   log "Container upgrade completed."
   log "Persistent data directory kept intact: $DATA_DIR"

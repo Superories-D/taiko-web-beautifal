@@ -34,6 +34,8 @@ var assets = {
 		"settings.js",
 		"scorestorage.js",
 		"playstats.js",
+		"favorites.js",
+		"dailychallenge.js",
 		"leaderboard.js",
 		"account.js",
 		"lyrics.js",
@@ -51,7 +53,9 @@ var assets = {
 		"debug.css",
 		"songbg.css",
 		"view.css",
-		"search.css"
+		"search.css",
+		"leaderboard.css",
+		"dailychallenge.css"
 	],
 	"img": [
 		"notes.png",
@@ -87,7 +91,6 @@ var assets = {
 		"#title-screen": "title-screen.png",
 		"#loading-don": "dancing-don.gif",
 		".song-search-result-course::before": "difficulty.png",
-		"#song-select": "bg_genre_def.png",
 		".settings-outer": "bg_settings.png",
 		"#touch-pause-btn": "touch_pause.png",
 		"#touch-full-btn": "touch_fullscreen.png",

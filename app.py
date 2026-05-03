@@ -141,6 +141,8 @@ db.play_records.create_index('song_hash')
 db.play_records.create_index('played_at')
 db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('score_value', -1)])
 db.leaderboard.create_index('username')
+db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('period', 1), ('period_key', 1), ('identity_key', 1)])
+db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('period', 1), ('period_key', 1), ('score_value', -1)])
 
 
 class HashException(Exception):
@@ -149,6 +151,57 @@ class HashException(Exception):
 
 def api_error(message):
     return jsonify({'status': 'error', 'message': message})
+
+
+def leaderboard_period_filter(period, now=None):
+    now = now or datetime.utcnow()
+    if period == 'all':
+        return {'period': 'all', 'period_key': 'all'}
+    if period == 'weekly':
+        year, week, _ = now.isocalendar()
+        return {'period': 'weekly', 'period_key': '%04d-W%02d' % (year, week)}
+    return {'period': 'monthly', 'period_key': now.strftime('%Y-%m')}
+
+
+def legacy_leaderboard_month_filter(now=None):
+    now = now or datetime.utcnow()
+    return {'month': now.strftime('%Y-%m'), 'period': {'$exists': False}}
+
+
+def leaderboard_identity(data):
+    if session.get('username'):
+        user = db.users.find_one({'username': session.get('username')})
+        display_name = user.get('display_name') if user else session.get('username')
+        return 'user:%s' % session.get('username'), session.get('username'), display_name
+    anonymous_id = (data.get('anonymous_id') or '').strip()
+    if not re.match(r'^[A-Za-z0-9_-]{8,80}$', anonymous_id):
+        anonymous_id = 'guest'
+    display_name = (data.get('display_name') or 'Anonymous').strip()[:20] or 'Anonymous'
+    return 'anon:%s' % anonymous_id, None, display_name
+
+
+def song_public_payload(song):
+    output = dict(song)
+    output.pop('_id', None)
+    output.pop('enabled', None)
+    if output.get('maker_id') == 0:
+        output['maker'] = 0
+    elif output.get('maker_id'):
+        output['maker'] = db.makers.find_one({'id': output['maker_id']}, {'_id': False})
+    else:
+        output['maker'] = None
+    output.pop('maker_id', None)
+    if output.get('category_id'):
+        category = db.categories.find_one({'id': output['category_id']})
+        output['category'] = category['title'] if category else None
+    else:
+        output['category'] = None
+    if output.get('skin_id'):
+        output['song_skin'] = db.song_skins.find_one({'id': output['skin_id']}, {'_id': False, 'id': False})
+    else:
+        output['song_skin'] = None
+    output.pop('skin_id', None)
+    return output
 
 
 def generate_hash(id, form):
@@ -528,7 +581,7 @@ def route_api_preview():
 
 
 @app.route(basedir + 'api/songs')
-@app.cache.cached(timeout=15)
+@app.cache.cached(timeout=15, query_string=True)
 def route_api_songs():
     type_q = flask.request.args.get('type')
     query = {'enabled': True}
@@ -536,28 +589,7 @@ def route_api_songs():
         if type_q not in SONG_TYPES:
             return abort(400)
         query['song_type'] = type_q
-    songs = list(db.songs.find(query, {'_id': False, 'enabled': False}))
-    for song in songs:
-        if song['maker_id']:
-            if song['maker_id'] == 0:
-                song['maker'] = 0
-            else:
-                song['maker'] = db.makers.find_one({'id': song['maker_id']}, {'_id': False})
-        else:
-            song['maker'] = None
-        del song['maker_id']
-
-        if song['category_id']:
-            song['category'] = db.categories.find_one({'id': song['category_id']})['title']
-        else:
-            song['category'] = None
-        #del song['category_id']
-
-        if song['skin_id']:
-            song['song_skin'] = db.song_skins.find_one({'id': song['skin_id']}, {'_id': False, 'id': False})
-        else:
-            song['song_skin'] = None
-        del song['skin_id']
+    songs = [song_public_payload(song) for song in db.songs.find(query)]
 
     return cache_wrap(flask.jsonify(songs), 60)
 
@@ -840,51 +872,72 @@ def route_api_leaderboard_submit():
     song_hash = data.get('hash')
     difficulty = data.get('difficulty')
     score_value = data.get('score', 0)
+    try:
+        score_value = int(score_value)
+    except (TypeError, ValueError):
+        return abort(400)
     display_name = data.get('display_name', 'Anonymous')
     
-    if not song_hash or not difficulty:
+    if not song_hash or difficulty not in ['easy', 'normal', 'hard', 'oni', 'ura']:
         return abort(400)
     
-    if not display_name or not display_name.strip():
-        display_name = 'Anonymous'
-    
-    # Get current month for monthly reset
-    current_month = datetime.utcnow().strftime('%Y-%m')
-    
-    # Insert new score (allow duplicate names)
-    result = db.leaderboard.insert_one({
+    now = datetime.utcnow()
+    identity_key, username, display_name = leaderboard_identity(data)
+
+    saved = False
+    rank = None
+    for period in ['monthly', 'weekly', 'all']:
+        period_query = leaderboard_period_filter(period, now)
+        query = {
+            'song_hash': song_hash,
+            'difficulty': difficulty,
+            'identity_key': identity_key,
+            **period_query
+        }
+        existing = db.leaderboard.find_one(query)
+        if not existing or score_value > existing.get('score_value', 0):
+            db.leaderboard.update_one(query, {'$set': {
+                'song_hash': song_hash,
+                'difficulty': difficulty,
+                'display_name': display_name,
+                'username': username,
+                'identity_key': identity_key,
+                'score_value': score_value,
+                'period': period_query['period'],
+                'period_key': period_query['period_key'],
+                'updated_at': now
+            }, '$setOnInsert': {
+                'created_at': now
+            }}, upsert=True)
+            saved = True
+
+    monthly_query = {
         'song_hash': song_hash,
         'difficulty': difficulty,
-        'display_name': display_name.strip()[:20],  # Limit name length
-        'score_value': score_value,
-        'month': current_month,
-        'created_at': datetime.utcnow()
-    })
-    
-    # Calculate rank
+        **leaderboard_period_filter('monthly', now)
+    }
     higher_count = db.leaderboard.count_documents({
-        'song_hash': song_hash,
-        'difficulty': difficulty,
-        'month': current_month,
+        **monthly_query,
         'score_value': {'$gt': score_value}
     })
     rank = higher_count + 1
     
-    # Keep only top 100 per song/difficulty/month
-    all_scores = list(db.leaderboard.find({
-        'song_hash': song_hash,
-        'difficulty': difficulty,
-        'month': current_month
-    }).sort('score_value', -1).skip(100))
-    
-    if all_scores:
-        ids_to_delete = [s['_id'] for s in all_scores]
-        db.leaderboard.delete_many({'_id': {'$in': ids_to_delete}})
+    for period in ['monthly', 'weekly']:
+        cleanup_query = {
+            'song_hash': song_hash,
+            'difficulty': difficulty,
+            **leaderboard_period_filter(period, now)
+        }
+        extra_scores = list(db.leaderboard.find(cleanup_query).sort('score_value', -1).skip(100))
+        if extra_scores:
+            db.leaderboard.delete_many({'_id': {'$in': [s['_id'] for s in extra_scores]}})
     
     return jsonify({
         'status': 'ok',
         'rank': rank,
-        'in_top_100': rank <= 100
+        'in_top_100': rank <= 100,
+        'saved': saved,
+        'period': 'monthly'
     })
 
 
@@ -892,22 +945,34 @@ def route_api_leaderboard_submit():
 def route_api_leaderboard_get():
     song_hash = request.args.get('hash')
     difficulty = request.args.get('difficulty')
+    period = request.args.get('period') or 'monthly'
     
     if not song_hash:
         return abort(400)
+    if period not in ['monthly', 'weekly', 'all']:
+        return abort(400)
     
-    # Get current month for monthly leaderboard
-    current_month = datetime.utcnow().strftime('%Y-%m')
-    
+    now = datetime.utcnow()
     query = {
         'song_hash': song_hash,
-        'month': current_month
+        **leaderboard_period_filter(period, now)
     }
     if difficulty:
+        if difficulty not in ['easy', 'normal', 'hard', 'oni', 'ura']:
+            return abort(400)
         query['difficulty'] = difficulty
     
-    # Get top 100 scores
+    legacy_scores = False
     scores = list(db.leaderboard.find(query).sort('score_value', -1).limit(100))
+    if not scores and period == 'monthly':
+        legacy_query = {
+            'song_hash': song_hash,
+            **legacy_leaderboard_month_filter(now)
+        }
+        if difficulty:
+            legacy_query['difficulty'] = difficulty
+        scores = list(db.leaderboard.find(legacy_query).sort('score_value', -1).limit(100))
+        legacy_scores = bool(scores)
     
     result = []
     for i, score in enumerate(scores):
@@ -917,11 +982,45 @@ def route_api_leaderboard_get():
             'score_value': score.get('score_value', 0),
             'difficulty': score.get('difficulty')
         })
+
+    total_scores = len(scores) if legacy_scores else db.leaderboard.count_documents(query)
+    my_rank = None
+    identity_key = None
+    if session.get('username') or request.args.get('anonymous_id'):
+        identity_key, _, _ = leaderboard_identity({'anonymous_id': request.args.get('anonymous_id') or ''})
+    if identity_key:
+        my_score = db.leaderboard.find_one({**query, 'identity_key': identity_key})
+        if my_score:
+            my_rank = db.leaderboard.count_documents({**query, 'score_value': {'$gt': my_score.get('score_value', 0)}}) + 1
     
     return jsonify({
         'status': 'ok',
         'leaderboard': result,
-        'month': current_month
+        'period': period,
+        'period_key': leaderboard_period_filter(period, now)['period_key'],
+        'total_scores': total_scores,
+        'my_rank': my_rank
+    })
+
+
+@app.route(basedir + 'api/daily_challenge')
+@app.cache.cached(timeout=300)
+def route_api_daily_challenge():
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+    songs = list(db.songs.find({'enabled': True}))
+    songs = [song for song in songs if song.get('courses') and any(song['courses'].values())]
+    if not songs:
+        return jsonify({'status': 'ok', 'date': today, 'song': None})
+
+    seed = int(hashlib.md5(today.encode('utf-8')).hexdigest(), 16)
+    song = sorted(songs, key=lambda item: item.get('id', 0))[seed % len(songs)]
+    available = [diff for diff in ['oni', 'hard', 'normal', 'easy', 'ura'] if song.get('courses', {}).get(diff)]
+    difficulty = available[seed % len(available)]
+    return jsonify({
+        'status': 'ok',
+        'date': today,
+        'difficulty': difficulty,
+        'song': song_public_payload(song)
     })
 
 
@@ -975,13 +1074,18 @@ def cache_wrap(res_from, secs):
     res.headers["CDN-Cache-Control"] = f"max-age={secs}"
     return res
 
+def asset_cache_wrap(res_from, secs):
+    res = cache_wrap(res_from, secs)
+    res.headers["Cache-Control"] = f"public, max-age={secs}, s-maxage={secs}, immutable"
+    return res
+
 @app.route(basedir + "src/<path:ref>")
 def send_src(ref):
     return cache_wrap(flask.send_from_directory("public/src", ref), 3600)
 
 @app.route(basedir + "assets/<path:ref>")
 def send_assets(ref):
-    return cache_wrap(flask.send_from_directory("public/assets", ref), 3600)
+    return asset_cache_wrap(flask.send_from_directory("public/assets", ref), 604800)
 
 @app.route(basedir + "songs/<path:ref>")
 def send_songs(ref):

@@ -69,6 +69,24 @@ class SongSelect {
 				border: ["#ffe7ef", "#d36aa2"],
 				outline: "#d36aa2"
 			},
+			"dailyChallenge": {
+				sort: 0,
+				background: "#ffcf4d",
+				border: ["#fff2ad", "#e26d21"],
+				outline: "#9f3a10"
+			},
+			"favorites": {
+				sort: 0,
+				background: "#ff8fb3",
+				border: ["#ffe1ec", "#d74477"],
+				outline: "#ad2558"
+			},
+			"recent": {
+				sort: 0,
+				background: "#6fd6cf",
+				border: ["#d4fffb", "#168d98"],
+				outline: "#0d6b78"
+			},
 			"plugins": {
 				sort: 0,
 				background: "#f6bba1",
@@ -218,61 +236,80 @@ class SongSelect {
 			category: strings.random
 		})
 
-		// カスタムメニュー
-		// this.songs.push({
-		//     title: "ソースコード",
-		//     skin: this.songSkin.sourceCode,
-		//     action: "sourceCode",
-		// });
-		// for (let i = 0; i < 10; i++) {
 		this.songs.push({
-			title: "曲を投稿！",
+			title: strings.dailyChallenge,
+			skin: this.songSkin.dailyChallenge,
+			action: "dailyChallenge",
+			category: strings.random,
+			p2Enabled: false
+		})
+		this.songs.push({
+			title: strings.favoriteSongs,
+			skin: this.songSkin.favorites,
+			action: "favorites",
+			category: strings.random,
+			p2Enabled: true
+		})
+		this.songs.push({
+			title: strings.recentSongs,
+			skin: this.songSkin.recent,
+			action: "recent",
+			category: strings.random,
+			p2Enabled: true
+		})
+		this.songs.push({
+			title: strings.toggleFavorite,
+			skin: this.songSkin.favorites,
+			action: "toggleFavorite",
+			category: strings.random,
+			p2Enabled: true
+		})
+		this.songs.push({
+			title: strings.uploadSong,
 			skin: this.songSkin.upload,
 			action: "upload",
-		});
-		// }
+		})
 		this.songs.push({
-			title: "掲示板",
+			title: strings.messageBoard,
 			skin: this.songSkin.keijiban,
 			action: "keijiban",
-		});
+		})
 
 		this.songs.push({
-			title: "曲選択速度",
+			title: strings.songSelectingSpeed,
 			skin: this.songSkin.customSettings,
 			action: "songSelectingSpeed",
-		});
+		})
 
 		this.songs.push({
-			title: "ばいそく",
+			title: strings.baisoku,
 			skin: this.songSkin.customSettings,
 			action: "baisoku",
-		});
+		})
 
 		this.songs.push({
-			title: "ドロン",
+			title: strings.doron,
 			skin: this.songSkin.customSettings,
 			action: "doron",
-		});
+		})
 
 		this.songs.push({
-			title: "あべこべ",
+			title: strings.abekobe,
 			skin: this.songSkin.customSettings,
 			action: "abekobe",
-		});
+		})
 
 		this.songs.push({
-			title: "でたらめ",
+			title: strings.detarame,
 			skin: this.songSkin.customSettings,
 			action: "detarame",
-		});
-
+		})
 
 		this.songs.push({
-			title: "タイトル順で並べ替え",
+			title: strings.titleSort,
 			skin: this.songSkin.customSettings,
 			action: "titlesort",
-		});
+		})
 
 		this.songs.push({
 			title: strings.back,
@@ -530,6 +567,9 @@ class SongSelect {
 		}
 
 		this.selectedSong = songIdx
+		if(this.songs[songIdx] && this.songs[songIdx].courses) {
+			this.lastPlayableSong = songIdx
+		}
 	}
 
 	keyPress(pressed, name, event, repeat) {
@@ -967,122 +1007,88 @@ class SongSelect {
 				this.toAbout()
 			} else if (currentSong.action === "settings") {
 				this.toSettings()
-			} else if (currentSong.action === "customSongs") {
-				this.toCustomSongs()
 			} else if (currentSong.action === "plugins") {
 				this.toPlugins()
-			}
-			// カスタムメニューの実行処理
-			else if (currentSong.action === "sourceCode") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					open("https://github.com/yuukialpha/taiko-web", "_blank");
-				}, 500);
+			} else if (currentSong.action === "dailyChallenge") {
+				this.playSound("se_don")
+				dailyChallenge.start(this).catch(() => {
+					this.search.display(true)
+				})
+			} else if (currentSong.action === "favorites") {
+				var favoriteIndex = favorites.firstAvailable(this.songs, "favorites")
+				if (favoriteIndex !== -1) {
+					this.setSelectedSong(favoriteIndex)
+					this.playSound("se_don")
+				} else {
+					this.search.display(true)
+				}
+			} else if (currentSong.action === "recent") {
+				var recentIndex = favorites.firstAvailable(this.songs, "recent")
+				if (recentIndex !== -1) {
+					this.setSelectedSong(recentIndex)
+					this.playSound("se_don")
+				} else {
+					this.search.display(true)
+				}
+			} else if (currentSong.action === "toggleFavorite") {
+				var target = this.songs[this.lastPlayableSong] || this.songs.find(song => song.courses && song.hash)
+				if (target) {
+					favorites.toggle(target.hash)
+					this.playSound("se_don")
+				}
 			} else if (currentSong.action === "upload") {
-				this.playSound("se_don");
+				this.playSound("se_don")
 				setTimeout(() => {
-					window.location.href = "/upload/";
-				}, 100);
+					window.location.href = "/upload/"
+				}, 100)
 			} else if (currentSong.action === "keijiban") {
-				this.playSound("se_don");
+				this.playSound("se_don")
 				setTimeout(() => {
-					window.location.href = "https://litey.trade/";
-				}, 100);
+					window.location.href = "https://litey.trade/"
+				}, 100)
 			} else if (currentSong.action === "songSelectingSpeed") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let songSelectingSpeed = localStorage.getItem("sss") ?? "400";
-					const pro = prompt("曲選択速度を入力してね！", songSelectingSpeed);
-					if (pro === null) {
-						// キャンセル
-					} else if (pro === "") {
-						songSelectingSpeed = "400";
-					} else {
-						songSelectingSpeed = pro;
-					}
-					const preValue = localStorage.getItem("sss") ?? "400";
-					localStorage.setItem("sss", songSelectingSpeed.toString());
-					if (preValue !== songSelectingSpeed) {
-						location.reload();
-					}
-				}, 100);
+				this.updateNumberSetting("sss", "400", strings.speedPrompt, true)
 			} else if (currentSong.action === "baisoku") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let baisoku = localStorage.getItem("baisoku") ?? "1";
-					const input = prompt("ばいそくの倍率を入力してね！", baisoku);
-					if (input === null) {
-						// キャンセル
-					} else if (input === "") {
-						baisoku = "1";
-					} else {
-						baisoku = input;
-					}
-					localStorage.setItem("baisoku", baisoku.toString());
-				}, 100);
+				this.updateNumberSetting("baisoku", "1", strings.baisokuPrompt, false)
 			} else if (currentSong.action === "doron") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let doron = localStorage.getItem("doron") ?? "false";
-					const input = prompt("ドロンを有効にするには\"true\"を入力してね！", doron);
-					if (input === null) {
-						// キャンセル
-					} else if (input === "") {
-						doron = "false";
-					} else {
-						doron = input;
-					}
-					localStorage.setItem("doron", doron);
-				}, 100);
+				this.updateBooleanSetting("doron", false)
 			} else if (currentSong.action === "abekobe") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let abekobe = localStorage.getItem("abekobe") ?? "false";
-					const input = prompt("あべこべを有効にするには\"true\"を入力してね！", abekobe);
-					if (input === null) {
-						// キャンセル
-					} else if (input === "") {
-						abekobe = "false";
-					} else {
-						abekobe = input;
-					}
-					localStorage.setItem("abekobe", abekobe);
-				}, 100);
+				this.updateBooleanSetting("abekobe", false)
 			} else if (currentSong.action === "detarame") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let detarame = localStorage.getItem("detarame") ?? "0";
-					const input = prompt("でたらめになる確率をパーセントで入力してね！", detarame);
-					if (input === null) {
-						// キャンセル
-					} else if (input === "") {
-						detarame = "0";
-					} else {
-						detarame = input;
-					}
-					localStorage.setItem("detarame", detarame);
-				}, 100);
+				this.updateNumberSetting("detarame", "0", strings.detaramePrompt, false)
 			} else if (currentSong.action === "titlesort") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let titlesort = localStorage.getItem("titlesort") ?? "false";
-					const input = prompt("タイトル順で並べ替えするには\"true\"を入力してね！", titlesort);
-					if (input === null) {
-						// キャンセル
-					} else if (input === "") {
-						titlesort = "false";
-					} else {
-						titlesort = input;
-					}
-					const preValue = localStorage.getItem("titlesort") ?? "false";
-					localStorage.setItem("titlesort", titlesort);
-					if (preValue !== titlesort) {
-						location.reload();
-					}
-				}, 100);
+				this.updateBooleanSetting("titlesort", false, true)
 			}
 		}
 		this.pointer(false)
+	}
+	updateNumberSetting(key, defaultValue, message, reload) {
+		this.playSound("se_don")
+		setTimeout(() => {
+			var currentValue = localStorage.getItem(key) || defaultValue
+			var input = prompt(message, currentValue)
+			if(input === null) return
+			var value = input.trim() || defaultValue
+			var previous = localStorage.getItem(key) || defaultValue
+			localStorage.setItem(key, value)
+			if(reload && previous !== value) {
+				location.reload()
+			}
+		}, 100)
+	}
+	updateBooleanSetting(key, defaultValue, reload) {
+		this.playSound("se_don")
+		setTimeout(() => {
+			var currentValue = localStorage.getItem(key) || String(defaultValue)
+			var input = prompt(strings.booleanPrompt, currentValue)
+			if(input === null) return
+			var value = input.trim().toLowerCase() === "true" ? "true" : "false"
+			var previous = localStorage.getItem(key) || String(defaultValue)
+			localStorage.setItem(key, value)
+			if(reload && previous !== value) {
+				location.reload()
+			}
+		}, 100)
 	}
 	toSongSelect(fromP2) {
 		if (p2.session && !fromP2) {
@@ -1114,6 +1120,9 @@ class SongSelect {
 	toLoadSong(difficulty, shift, ctrl, touch) {
 		this.clean()
 		var selectedSong = this.songs[this.selectedSong]
+		if(typeof favorites !== "undefined" && selectedSong.hash) {
+			favorites.addRecent(selectedSong.hash)
+		}
 		assets.sounds["v_diffsel"].stop()
 		this.playSound("se_don", 0, p2.session ? p2.player : false)
 

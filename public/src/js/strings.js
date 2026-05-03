@@ -522,6 +522,125 @@ var translations = {
 		tw: "未進入前100名",
 		ko: "상위 100위에 진입하지 못했습니다"
 	},
+	personalBest: {
+		ja: "自己ベスト",
+		en: "Personal best",
+		cn: "个人最佳",
+		tw: "個人最佳",
+		ko: "개인 최고 기록"
+	},
+	dailyChallenge: {
+		ja: "今日の挑戦",
+		en: "Daily Challenge",
+		cn: "每日挑战",
+		tw: "每日挑戰",
+		ko: "일일 도전"
+	},
+	favoriteSongs: {
+		ja: "お気に入り",
+		en: "Favorites",
+		cn: "收藏歌曲",
+		tw: "收藏歌曲",
+		ko: "즐겨찾기"
+	},
+	recentSongs: {
+		ja: "最近遊んだ曲",
+		en: "Recent Plays",
+		cn: "最近游玩",
+		tw: "最近遊玩",
+		ko: "최근 플레이"
+	},
+	toggleFavorite: {
+		ja: "お気に入り切替",
+		en: "Toggle Favorite",
+		cn: "切换收藏",
+		tw: "切換收藏",
+		ko: "즐겨찾기 전환"
+	},
+	uploadSong: {
+		ja: "曲を投稿",
+		en: "Upload Song",
+		cn: "投稿歌曲",
+		tw: "投稿歌曲",
+		ko: "곡 업로드"
+	},
+	messageBoard: {
+		ja: "掲示板",
+		en: "Message Board",
+		cn: "留言板",
+		tw: "留言板",
+		ko: "게시판"
+	},
+	songSelectingSpeed: {
+		ja: "曲選択速度",
+		en: "Song Select Speed",
+		cn: "选歌速度",
+		tw: "選歌速度",
+		ko: "곡 선택 속도"
+	},
+	speedPrompt: {
+		ja: "曲選択速度を入力してください",
+		en: "Enter song select speed",
+		cn: "请输入选歌速度",
+		tw: "請輸入選歌速度",
+		ko: "곡 선택 속도를 입력하세요"
+	},
+	baisoku: {
+		ja: "ばいそく",
+		en: "Scroll Speed",
+		cn: "谱面倍速",
+		tw: "譜面倍速",
+		ko: "스크롤 속도"
+	},
+	baisokuPrompt: {
+		ja: "ばいそくの倍率を入力してください",
+		en: "Enter scroll speed multiplier",
+		cn: "请输入谱面倍速倍率",
+		tw: "請輸入譜面倍速倍率",
+		ko: "스크롤 속도 배율을 입력하세요"
+	},
+	doron: {
+		ja: "ドロン",
+		en: "Hidden Notes",
+		cn: "隐音符",
+		tw: "隱音符",
+		ko: "숨김 노트"
+	},
+	booleanPrompt: {
+		ja: "有効にするには true、無効にするには false を入力してください",
+		en: "Enter true to enable or false to disable",
+		cn: "输入 true 启用，输入 false 关闭",
+		tw: "輸入 true 啟用，輸入 false 關閉",
+		ko: "켜려면 true, 끄려면 false를 입력하세요"
+	},
+	abekobe: {
+		ja: "あべこべ",
+		en: "Swap Don/Ka",
+		cn: "咚咔反转",
+		tw: "咚咔反轉",
+		ko: "동/딱 반전"
+	},
+	detarame: {
+		ja: "でたらめ",
+		en: "Random Notes",
+		cn: "随机音符",
+		tw: "隨機音符",
+		ko: "랜덤 노트"
+	},
+	detaramePrompt: {
+		ja: "でたらめになる確率をパーセントで入力してください",
+		en: "Enter random note chance as a percent",
+		cn: "请输入随机音符概率百分比",
+		tw: "請輸入隨機音符機率百分比",
+		ko: "랜덤 노트 확률을 퍼센트로 입력하세요"
+	},
+	titleSort: {
+		ja: "タイトル順",
+		en: "Title Sort",
+		cn: "按标题排序",
+		tw: "按標題排序",
+		ko: "제목순 정렬"
+	},
 
 	errorOccured: {
 		ja: "エラーが発生しました。再読み込みしてください。",

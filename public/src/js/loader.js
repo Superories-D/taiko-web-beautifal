@@ -200,6 +200,9 @@ class Loader{
 				this.assetsDiv.appendChild(image)
 				assets.image[id] = image
 				return promise
+			}).catch(response => {
+				console.warn("Optional background failed", selector, response)
+				pageEvents.send("background-load-error", url)
 			}), url)
 		}
 		
@@ -479,10 +482,31 @@ class Loader{
 		})
 	}
 	addPromise(promise, url){
+		this.setStatus(url)
 		this.promises.push(promise)
 		promise.then(this.assetLoaded.bind(this), response => {
 			return this.errorMsg(response, url)
 		})
+	}
+	setStatus(url){
+		if(!this.loaderStatusText || !url) return
+		var text = "Loading"
+		if(url.indexOf("api/config") !== -1){
+			text = "Loading config"
+		}else if(url.indexOf("src/js/") !== -1){
+			text = "Loading scripts"
+		}else if(url.indexOf("src/css/") !== -1){
+			text = "Loading styles"
+		}else if(url.indexOf("img/") !== -1){
+			text = "Loading images"
+		}else if(url.indexOf("audio/") !== -1){
+			text = "Loading audio"
+		}else if(url.indexOf("api/songs") !== -1){
+			text = "Loading songs"
+		}else if(url.indexOf("views/") !== -1){
+			text = "Loading views"
+		}
+		this.loaderStatusText.firstChild.data = text
 	}
 	addBackgroundPromise(promise, url){
 		this.backgroundPromises.push(promise)
@@ -795,6 +819,9 @@ class Loader{
 			var percentage = Math.floor(this.loadedAssets * 100 / (this.promises.length + this.afterJSCount))
 			this.loaderProgress.style.width = percentage + "%"
 			this.loaderPercentage.firstChild.data = percentage + "%"
+			if(percentage >= 100 && this.loaderStatusText){
+				this.loaderStatusText.firstChild.data = "Ready"
+			}
 		}
 	}
 	changePage(name, patternBg){

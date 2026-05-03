@@ -75,6 +75,49 @@ ensure_config() {
   fi
 }
 
+wait_for_tcp() {
+  local host="$1"
+  local port="$2"
+  local label="$3"
+  local attempts="${4:-60}"
+  local py="${5:-python3}"
+
+  log "Waiting for ${label} at ${host}:${port}."
+  "$py" - "$host" "$port" "$attempts" <<'PY'
+import socket
+import sys
+import time
+
+host, port, attempts = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+for _ in range(attempts):
+    try:
+        with socket.create_connection((host, port), timeout=2):
+            raise SystemExit(0)
+    except OSError:
+        time.sleep(1)
+raise SystemExit(1)
+PY
+}
+
+run_direct_migrations() {
+  log "Running database compatibility migrations."
+  wait_for_tcp 127.0.0.1 27017 MongoDB 60 "$INSTALL_DIR/.venv/bin/python"
+  (
+    cd "$INSTALL_DIR"
+    TAIKO_WEB_MONGO_HOST=127.0.0.1:27017 \
+    TAIKO_WEB_REDIS_HOST=127.0.0.1 \
+    "$INSTALL_DIR/.venv/bin/python" tools/upgrade_v2.py
+  )
+}
+
+run_container_migrations() {
+  log "Running database compatibility migrations in the app container."
+  (
+    cd "$INSTALL_DIR"
+    compose exec -T app python tools/upgrade_v2.py
+  )
+}
+
 ensure_data_dirs() {
   mkdir -p "$DATA_DIR/songs" "$DATA_DIR/mongo" "$DATA_DIR/redis"
 }
@@ -280,6 +323,7 @@ deploy_direct() {
   python3 -m venv "$INSTALL_DIR/.venv"
   "$INSTALL_DIR/.venv/bin/pip" install -U pip
   "$INSTALL_DIR/.venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+  run_direct_migrations
   chown -R "$APP_USER:$APP_GROUP" "$INSTALL_DIR" "$DATA_DIR"
   write_systemd_service
   systemctl daemon-reload
@@ -302,6 +346,7 @@ deploy_container() {
     cd "$INSTALL_DIR"
     compose_up_or_recreate_named up -d --build --force-recreate --remove-orphans
   )
+  run_container_migrations
   log "Container deployment completed."
   log "Persistent data directory: $DATA_DIR"
 }
@@ -318,6 +363,7 @@ upgrade_container() {
     cd "$INSTALL_DIR"
     compose_up_or_recreate_named up -d --build --force-recreate --remove-orphans
   )
+  run_container_migrations
   log "Container upgrade completed."
   log "Persistent data directory kept intact: $DATA_DIR"
 }
@@ -338,6 +384,7 @@ upgrade_direct() {
   fi
   "$INSTALL_DIR/.venv/bin/pip" install -U pip
   "$INSTALL_DIR/.venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+  run_direct_migrations
 
   chown -R "$APP_USER:$APP_GROUP" "$INSTALL_DIR" "$DATA_DIR"
   write_systemd_service

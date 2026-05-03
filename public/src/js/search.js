@@ -19,6 +19,8 @@ class Search{
 			lyrics: "lyrics", lyric: "lyrics", "\u6b4c\u8bcd": "lyrics", "\u6b4c\u8a5e": "lyrics",
 			creative: "creative", "\u521b\u4f5c": "creative", "\u5275\u4f5c": "creative",
 			played: "played", "\u5df2\u73a9": "played", "\u5df2\u904a\u73a9": "played",
+			favorite: "favorite", favourite: "favorite", fav: "favorite", "\u6536\u85cf": "favorite",
+			recent: "recent", "\u6700\u8fd1": "recent",
 			maker: "maker", creator: "maker", author: "maker", "\u5236\u4f5c\u8005": "maker", "\u88fd\u4f5c\u8005": "maker",
 			diverge: "diverge", branch: "diverge", "\u5206\u6b67": "diverge",
 			random: "random", "\u968f\u673a": "random", "\u96a8\u6a5f": "random",
@@ -136,6 +138,8 @@ class Search{
 						case "lyrics":
 						case "creative":
 						case "played":
+						case "favorite":
+						case "recent":
 						case "maker":
 						case "diverge":
 						case "random":
@@ -192,6 +196,18 @@ class Search{
 					case "played":
 						var score = scoreStorage.scores[song.hash]
 						if((value === "yes" && score) || (value === "no" && !score)){
+							passedFilters++
+						}
+						break
+					case "favorite":
+						var isFavorite = typeof favorites !== "undefined" && favorites.isFavorite(song.hash)
+						if((value === "yes" && isFavorite) || (value === "no" && !isFavorite)){
+							passedFilters++
+						}
+						break
+					case "recent":
+						var isRecent = typeof favorites !== "undefined" && favorites.getRecent().indexOf(song.hash) !== -1
+						if((value === "yes" && isRecent) || (value === "no" && !isRecent)){
 							passedFilters++
 						}
 						break

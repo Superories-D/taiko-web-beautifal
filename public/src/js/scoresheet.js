@@ -928,12 +928,13 @@ class Scoresheet {
 			var hash = this.controller.selectedSong.hash
 			var difficulty = this.resultsObj.difficulty
 			var oldScore = scoreStorage.get(hash, difficulty, true)
+			var isPersonalBest = !oldScore || oldScore.points <= this.resultsObj.points
 			var clearReached = this.controller.game.rules.clearReached(this.resultsObj.gauge)
 			var crown = ""
 			if (clearReached) {
 				crown = this.resultsObj.bad === 0 ? "gold" : "silver"
 			}
-			if (!oldScore || oldScore.points <= this.resultsObj.points) {
+			if (isPersonalBest) {
 				if (oldScore && (oldScore.crown === "gold" || oldScore.crown === "silver" && !crown)) {
 					crown = oldScore.crown
 				}
@@ -959,44 +960,25 @@ class Scoresheet {
 			)
 			// Submit to leaderboard (only if not auto-play)
 			if (!this.controller.autoPlayEnabled) {
-				this.submitToLeaderboard(hash, difficulty, this.resultsObj.points)
+				this.submitToLeaderboard(hash, difficulty, this.resultsObj.points, title, isPersonalBest)
 			}
 		}
 		this.scoreSaved = true
 	}
 
-	submitToLeaderboard(hash, difficulty, score) {
-		// Prompt user for name
-		var savedName = localStorage.getItem("leaderboardName") || ""
-		var displayName = prompt(strings.enterName || "Enter your name for leaderboard:", savedName)
-
-		if (displayName === null) {
-			displayName = "Anonymous"
-		}
-		displayName = displayName.trim().slice(0, 20) || "Anonymous"
-		localStorage.setItem("leaderboardName", displayName)
-
-		fetch("api/leaderboard/submit", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				hash: hash,
-				difficulty: difficulty,
-				score: score,
-				display_name: displayName
+	submitToLeaderboard(hash, difficulty, score, title, isPersonalBest) {
+		var defaultName = account.loggedIn ? account.displayName : strings.defaultName
+		leaderboard.submitWithName(hash, difficulty, score, defaultName).then(data => {
+			if(!data) return
+			var rankText = data.in_top_100 ? strings.yourRank + ": #" + data.rank : strings.notInTop100
+			var bestText = isPersonalBest ? strings.personalBest + ". " : ""
+			leaderboard.resultCard(bestText + rankText, () => {
+				leaderboard.show(hash, title, difficulty)
 			})
-		}).then(response => response.json())
-			.then(data => {
-				if (data.status === "ok") {
-					var rankMsg = ""
-					if (data.in_top_100) {
-						rankMsg = (strings.yourRank || "Your Rank") + ": #" + data.rank + " 🎉"
-					} else {
-						rankMsg = (strings.notInTop100 || "Not in top 100")
-					}
-					alert(rankMsg)
-				}
-			}).catch(e => console.error("Leaderboard submit failed:", e))
+		}).catch(e => {
+			console.error("Leaderboard submit failed:", e)
+			leaderboard.resultCard(strings.errorOccured)
+		})
 	}
 
 	clean() {

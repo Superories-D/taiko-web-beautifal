@@ -1,0 +1,247 @@
+#leaderboard-overlay,
+#leaderboard-submit-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 1000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: clamp(12px, 3vmin, 28px);
+	background: rgba(12, 9, 25, 0.72);
+	box-sizing: border-box;
+	font-family: "Outfit", "Segoe UI", Meiryo, sans-serif;
+}
+
+.leaderboard-container,
+.leaderboard-submit {
+	width: min(880px, 100%);
+	max-height: min(86vh, 720px);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border: 3px solid rgba(255, 255, 255, 0.72);
+	border-radius: 8px;
+	background: #fff8e8;
+	box-shadow: 0 18px 60px rgba(0, 0, 0, 0.36);
+}
+
+.leaderboard-header {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	gap: 12px;
+	align-items: center;
+	padding: 14px 16px;
+	background: linear-gradient(90deg, #f64f48, #ffb33d);
+	color: #fff;
+}
+
+.leaderboard-title {
+	min-width: 0;
+	margin: 0;
+	font-size: clamp(1.05rem, 3vmin, 1.55rem);
+	line-height: 1.2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	text-shadow: 0 2px 5px rgba(0, 0, 0, 0.28);
+}
+
+.leaderboard-back,
+.leaderboard-retry,
+.leaderboard-submit button,
+.leaderboard-tab,
+.leaderboard-diff {
+	border: 0;
+	border-radius: 8px;
+	background: #fff;
+	color: #aa281e;
+	font: inherit;
+	font-weight: 800;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+
+.leaderboard-back {
+	min-width: 44px;
+	min-height: 40px;
+	padding: 7px 12px;
+}
+
+.leaderboard-tabs,
+.leaderboard-diffs {
+	display: flex;
+	gap: 8px;
+	padding: 10px 14px 0;
+	overflow-x: auto;
+}
+
+.leaderboard-tab,
+.leaderboard-diff {
+	padding: 8px 12px;
+	background: #ffe3a8;
+	color: #6c2d00;
+	white-space: nowrap;
+}
+
+.leaderboard-tab.active,
+.leaderboard-diff.active {
+	background: #1fb4c2;
+	color: #fff;
+}
+
+.leaderboard-content {
+	min-height: 220px;
+	padding: 14px;
+	overflow: auto;
+}
+
+.leaderboard-list {
+	display: grid;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.leaderboard-item {
+	display: grid;
+	grid-template-columns: 56px 1fr auto;
+	gap: 10px;
+	align-items: center;
+	min-height: 52px;
+	padding: 8px 12px;
+	border: 2px solid rgba(110, 59, 0, 0.12);
+	border-radius: 8px;
+	background: #fff;
+	color: #251711;
+}
+
+.leaderboard-item.rank-1 { background: linear-gradient(90deg, #ffe16a, #fff 58%); }
+.leaderboard-item.rank-2 { background: linear-gradient(90deg, #dce7ef, #fff 58%); }
+.leaderboard-item.rank-3 { background: linear-gradient(90deg, #ffc08a, #fff 58%); }
+
+.leaderboard-rank {
+	font-size: 1.2rem;
+	font-weight: 900;
+}
+
+.leaderboard-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-weight: 800;
+}
+
+.leaderboard-score {
+	font-weight: 900;
+	color: #e33c34;
+	white-space: nowrap;
+}
+
+.leaderboard-empty,
+.leaderboard-loading,
+.leaderboard-error {
+	display: flex;
+	min-height: 260px;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 14px;
+	text-align: center;
+	color: #3b2716;
+	font-size: 1.1rem;
+	font-weight: 800;
+}
+
+.leaderboard-empty-art {
+	width: min(210px, 54vw);
+	aspect-ratio: 1;
+	background-image: url("../../assets/img/ai_leaderboard_empty_v2.png");
+	background-position: center;
+	background-size: contain;
+	background-repeat: no-repeat;
+}
+
+.leaderboard-footer {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	justify-content: space-between;
+	padding: 12px 16px;
+	background: #f5e3c7;
+	color: #5e3517;
+	font-weight: 800;
+}
+
+.leaderboard-submit {
+	max-width: 520px;
+	padding: 20px;
+	gap: 14px;
+}
+
+.leaderboard-submit h3,
+.leaderboard-submit p {
+	margin: 0;
+}
+
+.leaderboard-submit input {
+	width: 100%;
+	height: 44px;
+	padding: 0 12px;
+	border: 2px solid #e78d30;
+	border-radius: 8px;
+	box-sizing: border-box;
+	font: inherit;
+}
+
+.leaderboard-submit-actions,
+.leaderboard-result-actions {
+	display: flex;
+	gap: 10px;
+	justify-content: flex-end;
+}
+
+.leaderboard-submit button {
+	min-height: 42px;
+	padding: 8px 14px;
+	background: #f64f48;
+	color: #fff;
+}
+
+.leaderboard-result-card {
+	position: fixed;
+	right: clamp(10px, 3vmin, 24px);
+	bottom: clamp(10px, 3vmin, 24px);
+	z-index: 700;
+	max-width: min(360px, calc(100vw - 20px));
+	padding: 14px;
+	border: 3px solid rgba(255, 255, 255, 0.78);
+	border-radius: 8px;
+	background: rgba(255, 248, 232, 0.96);
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+	font-family: "Outfit", "Segoe UI", Meiryo, sans-serif;
+	color: #2b1c12;
+}
+
+.leaderboard-result-card strong {
+	display: block;
+	margin-bottom: 4px;
+	color: #e33c34;
+}
+
+@media (max-width: 640px) {
+	.leaderboard-header {
+		grid-template-columns: 1fr auto;
+	}
+	.leaderboard-title {
+		grid-column: 1 / -1;
+		grid-row: 2;
+	}
+	.leaderboard-item {
+		grid-template-columns: 44px 1fr;
+	}
+	.leaderboard-score {
+		grid-column: 2;
+	}
+}

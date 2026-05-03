@@ -71,6 +71,28 @@ SONG_TYPES = [
     "11 Dan Dojo",
 ]
 
+redis_config = dict(take_config('REDIS', required=True))
+redis_config['CACHE_REDIS_HOST'] = os.environ.get("TAIKO_WEB_REDIS_HOST") or redis_config['CACHE_REDIS_HOST']
+redis_client = Redis(
+    host=redis_config['CACHE_REDIS_HOST'],
+    port=redis_config['CACHE_REDIS_PORT'],
+    password=redis_config['CACHE_REDIS_PASSWORD'],
+    db=redis_config['CACHE_REDIS_DB'],
+    socket_connect_timeout=1,
+    socket_timeout=1
+)
+try:
+    redis_client.ping()
+    redis_available = True
+except Exception:
+    redis_available = False
+redis_db = redis_config['CACHE_REDIS_DB'] if redis_config['CACHE_REDIS_DB'] is not None else 0
+limiter_storage_uri = os.environ.get("REDIS_URI") or (
+    "redis://{}:{}/{}".format(redis_config['CACHE_REDIS_HOST'], redis_config['CACHE_REDIS_PORT'], redis_db)
+    if redis_available else
+    "memory://"
+)
+
 def get_remote_address() -> str:
     return flask.request.headers.get("CF-Connecting-IP") or flask.request.headers.get("X-Forwarded-For") or flask.request.remote_addr or "127.0.0.1"
 
@@ -80,7 +102,7 @@ limiter = Limiter(
     # default_limits=[],
     # storage_uri="memory://",
     # Redis
-    storage_uri=os.environ.get("REDIS_URI", "redis://127.0.0.1:6379/"),
+    storage_uri=limiter_storage_uri,
     # Redis cluster
     # storage_uri="redis+cluster://localhost:7000,localhost:7001,localhost:70002",
     # Memcached
@@ -98,16 +120,14 @@ client = MongoClient(host=os.environ.get("TAIKO_WEB_MONGO_HOST") or take_config(
 basedir = take_config('BASEDIR') or '/'
 
 app.secret_key = take_config('SECRET_KEY') or 'change-me'
-app.config['SESSION_TYPE'] = 'redis'
-redis_config = take_config('REDIS', required=True)
-redis_config['CACHE_REDIS_HOST'] = os.environ.get("TAIKO_WEB_REDIS_HOST") or redis_config['CACHE_REDIS_HOST']
-app.config['SESSION_REDIS'] = Redis(
-    host=redis_config['CACHE_REDIS_HOST'],
-    port=redis_config['CACHE_REDIS_PORT'],
-    password=redis_config['CACHE_REDIS_PASSWORD'],
-    db=redis_config['CACHE_REDIS_DB']
-)
-app.cache = Cache(app, config=redis_config)
+if redis_available:
+    app.config['SESSION_TYPE'] = 'redis'
+    app.config['SESSION_REDIS'] = redis_client
+    app.cache = Cache(app, config=redis_config)
+else:
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_FILE_DIR'] = str(APP_ROOT / 'flask_session')
+    app.cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache'})
 sess = Session()
 sess.init_app(app)
 #csrf = CSRFProtect(app)

@@ -415,6 +415,7 @@ class SongSelect {
 		this.songSelect.appendChild(this.typeLabel)
 		this.updateTypeLabel()
 		this.searchButton = document.getElementById("song-search-btn")
+		this.searchButton.hidden = true
 		pageEvents.add(this.searchButton, ["click", "touchend"], this.openSearchFromButton.bind(this))
 		var cat = this.songs[this.selectedSong].originalCategory
 		this.drawBackground(cat)
@@ -641,7 +642,9 @@ class SongSelect {
 		if (!this.songSelect || !this.searchButton) {
 			return
 		}
-		this.songSelect.classList.toggle("search-button-visible", this.state.screen === "song" && !this.search.opened)
+		var visible = this.state.screen === "song" && !this.search.opened
+		this.searchButton.hidden = !visible
+		this.songSelect.classList.toggle("search-button-visible", visible)
 	}
 
 	changeType(delta) {

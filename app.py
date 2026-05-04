@@ -14,6 +14,10 @@ import schema
 import os
 import time
 from datetime import datetime, timedelta
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 
 # -- カスタム --
 import traceback

@@ -139,6 +139,55 @@ h1 .song-id {
     background: #b92222;
 }
 
+.stat-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0 18px;
+}
+
+.stat-row span,
+.badge {
+    background: #fff3dd;
+    color: #6b2500;
+    border: 1px solid #c75f00;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 10pt;
+}
+
+.song-badges {
+    float: right;
+}
+
+.badge-pending {
+    background: #fff7bf;
+    color: #5f4a00;
+}
+
+.badge-approved {
+    background: #dff5dd;
+    color: #145b19;
+}
+
+.field-note {
+    font-size: 10pt !important;
+    margin-top: 10px !important;
+}
+
+.inline-action {
+    margin-bottom: 14px;
+}
+
+.inline-action button {
+    background: #146c2e;
+    color: #fff;
+    border: 0;
+    padding: 10px 16px;
+    font-size: 12pt;
+    cursor: pointer;
+}
+
 .save-song {
     font-size: 22pt;
     width: 120px;

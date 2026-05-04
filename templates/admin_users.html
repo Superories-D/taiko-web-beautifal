@@ -4,6 +4,11 @@
 {% for message in get_flashed_messages() %}
 <div class="message">{{ message }}</div>
 {% endfor %}
+<div class="stat-row">
+    {% for user in admins %}
+        <span>{{ user.username }}: {{ user.user_level }}</span>
+    {% endfor %}
+</div>
 <div class="song-form">
     <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -11,8 +16,11 @@
         <div class="form-field">
             <label for="username">Username</label>
             <input type="text" id="username" name="username" value="{{username}}" required>
+            <label for="password">Password</label>
+            <input type="text" id="password" name="password" value="" autocomplete="new-password">
             <label for="level">Level</label>
             <input type="number" id="level" name="level" min="0" max="{{max_level}}" value="{{level}}" required>
+            <p class="field-note">A password is required for new users. Use level 50+ for admins; the maximum you can grant is {{ max_level }}.</p>
         </div>
         
         <button type="submit" class="save-song">Save</button>

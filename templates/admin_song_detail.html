@@ -8,7 +8,19 @@
 {% for cat, message in get_flashed_messages(with_categories=true) %}
 <div class="message{% if cat %} message-{{cat}}{% endif %}">{{ message }}</div>
 {% endfor %}
+<div class="stat-row">
+    <span>Status: {{ song.review_status or ('approved' if song.enabled else 'hidden') }}</span>
+    <span>Plays: {{ song_stats.play_count }}</span>
+    <span>Leaderboard rows: {{ song_stats.leaderboard_count }}</span>
+    <span>Daily challenge rows: {{ song_stats.daily_challenge_count }}</span>
+</div>
 <div class="song-form">
+    {% if admin.user_level >= 100 and song.review_status == 'pending' %}
+    <form class="inline-action" method="post" action="{{admin_base}}songs/{{song.id}}/approve">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Approve upload</button>
+    </form>
+    {% endif %}
     <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -141,7 +153,7 @@
         <button type="submit" class="save-song">Save</button>
     </form>
     {% if admin.user_level >= 100 %}
-    <form class="delete-song" method="post" action="/admin/songs/{{song.id}}/delete" onsubmit="return confirm('Are you sure you wish to delete this song?');">
+    <form class="delete-song" method="post" action="{{admin_base}}songs/{{song.id}}/delete" onsubmit="return confirm('Are you sure you wish to delete this song?');">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit">Delete song</button>
     </form>

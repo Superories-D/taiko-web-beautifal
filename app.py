@@ -12,6 +12,7 @@ import re
 import requests
 import schema
 import os
+import secrets
 import time
 from datetime import datetime, timedelta
 try:
@@ -154,6 +155,90 @@ db.daily_challenge_scores.create_index('created_at')
 
 DAILY_CHALLENGE_TZ = ZoneInfo(os.environ.get('TAIKO_WEB_DAILY_CHALLENGE_TZ', 'Asia/Shanghai')) if ZoneInfo else None
 DAILY_CHALLENGE_KEEP_DAYS = 7
+ADMIN_BOOTSTRAP_FILE = APP_ROOT / '.admin_bootstrap.json'
+
+
+def normalize_admin_path(path):
+    path = (path or '').strip()
+    if not path:
+        path = 'admin-' + secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:18]
+    path = '/' + path.strip('/')
+    if basedir != '/':
+        path = basedir.rstrip('/') + path
+    return path
+
+
+def load_admin_bootstrap():
+    data = {}
+    created_bootstrap_admin = False
+    if ADMIN_BOOTSTRAP_FILE.exists():
+        try:
+            data = json.loads(ADMIN_BOOTSTRAP_FILE.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            data = {}
+    if not data.get('admin_path'):
+        data['admin_path'] = normalize_admin_path(os.environ.get('TAIKO_WEB_ADMIN_PATH'))
+    else:
+        data['admin_path'] = normalize_admin_path(data['admin_path'])
+
+    if not db.users.find_one({'user_level': {'$gte': 100}}):
+        username = data.get('username') or ('admin_' + secrets.token_hex(4))
+        password_plain = data.get('password') or secrets.token_urlsafe(18)
+        session_id = os.urandom(24).hex()
+        don = {'body_fill': '#5fb7c1', 'face_fill': '#ff5724'}
+        db.users.update_one({'username_lower': username.lower()}, {'$set': {
+            'username': username,
+            'username_lower': username.lower(),
+            'password': bcrypt.hashpw(password_plain.encode('utf-8'), bcrypt.gensalt()),
+            'display_name': username,
+            'don': don,
+            'user_level': 100,
+            'session_id': session_id,
+            'created_by_bootstrap': True
+        }}, upsert=True)
+        data['username'] = username
+        data['password'] = password_plain
+        created_bootstrap_admin = True
+    try:
+        ADMIN_BOOTSTRAP_FILE.write_text(json.dumps(data, indent=2), encoding='utf-8')
+    except OSError:
+        print('WARNING: Could not write admin bootstrap file: %s' % ADMIN_BOOTSTRAP_FILE)
+    print('Admin path: %s' % data['admin_path'])
+    if created_bootstrap_admin and data.get('username') and data.get('password'):
+        print('Bootstrap admin username: %s' % data['username'])
+        print('Bootstrap admin password: %s' % data['password'])
+    return data
+
+
+ADMIN_BOOTSTRAP = load_admin_bootstrap()
+ADMIN_BASE_PATH = ADMIN_BOOTSTRAP['admin_path']
+
+
+def admin_url(path=''):
+    return ADMIN_BASE_PATH.rstrip('/') + ('/' + path.strip('/') if path else '')
+
+
+def admin_template_context():
+    return {
+        'config': get_config(),
+        'admin_base': ADMIN_BASE_PATH.rstrip('/') + '/'
+    }
+
+
+def clear_song_cache():
+    try:
+        app.cache.delete_memoized(route_api_songs)
+    except Exception:
+        pass
+
+
+def route_song_id(song_id):
+    song_id = str(song_id)
+    return int(song_id) if re.match(r'^\d+$', song_id) else song_id
+
+
+def find_song_by_route_id(song_id):
+    return db.songs.find_one({'id': route_song_id(song_id)})
 
 
 class HashException(Exception):
@@ -195,6 +280,11 @@ def song_public_payload(song):
     output = dict(song)
     output.pop('_id', None)
     output.pop('enabled', None)
+    output.pop('review_status', None)
+    output.pop('uploaded_at', None)
+    output.pop('upload_source', None)
+    output.pop('reviewed_at', None)
+    output.pop('reviewed_by', None)
     if output.get('maker_id') == 0:
         output['maker'] = 0
     elif output.get('maker_id'):
@@ -374,6 +464,11 @@ def handle_csrf_error(e):
     return api_error('invalid_csrf')
 
 
+@app.context_processor
+def inject_csrf_token():
+    return {'csrf_token': generate_csrf}
+
+
 @app.before_request
 def before_request_func():
     if session.get('session_id'):
@@ -470,25 +565,35 @@ def route_csrftoken():
     return jsonify({'status': 'ok', 'token': generate_csrf()})
 
 
-@app.route(basedir + 'admin')
+@app.route(admin_url())
 @admin_required(level=50)
 def route_admin():
-    return redirect(basedir + 'admin/songs')
+    return redirect(admin_url('songs'))
 
 
-@app.route(basedir + 'admin/songs')
+@app.route(admin_url('songs'))
 @admin_required(level=50)
 def route_admin_songs():
     songs = sorted(list(db.songs.find({})), key=lambda x: x['id'])
     categories = db.categories.find({})
     user = db.users.find_one({'username': session['username']})
-    return render_template('admin_songs.html', songs=songs, admin=user, categories=list(categories), config=get_config())
+    pending_count = db.songs.count_documents({'review_status': 'pending'})
+    enabled_count = db.songs.count_documents({'enabled': True})
+    return render_template(
+        'admin_songs.html',
+        songs=songs,
+        admin=user,
+        categories=list(categories),
+        pending_count=pending_count,
+        enabled_count=enabled_count,
+        **admin_template_context()
+    )
 
 
-@app.route(basedir + 'admin/songs/<int:id>')
+@app.route(admin_url('songs/<song_id>'))
 @admin_required(level=50)
-def route_admin_songs_id(id):
-    song = db.songs.find_one({'id': id})
+def route_admin_songs_id(song_id):
+    song = find_song_by_route_id(song_id)
     if not song:
         return abort(404)
 
@@ -496,12 +601,18 @@ def route_admin_songs_id(id):
     song_skins = list(db.song_skins.find({}))
     makers = list(db.makers.find({}))
     user = db.users.find_one({'username': session['username']})
+    song_hash = song.get('hash') or str(song.get('id'))
+    song_stats = {
+        'play_count': db.play_records.count_documents({'song_hash': song_hash}),
+        'leaderboard_count': db.leaderboard.count_documents({'song_hash': song_hash}),
+        'daily_challenge_count': db.daily_challenge_scores.count_documents({'song_hash': song_hash})
+    }
 
     return render_template('admin_song_detail.html',
-        song=song, categories=categories, song_skins=song_skins, makers=makers, admin=user, config=get_config())
+        song=song, categories=categories, song_skins=song_skins, makers=makers, admin=user, song_stats=song_stats, **admin_template_context())
 
 
-@app.route(basedir + 'admin/songs/new')
+@app.route(admin_url('songs/new'))
 @admin_required(level=100)
 def route_admin_songs_new():
     categories = list(db.categories.find({}))
@@ -510,14 +621,15 @@ def route_admin_songs_new():
     seq = db.seq.find_one({'name': 'songs'})
     seq_new = seq['value'] + 1 if seq else 1
 
-    return render_template('admin_song_new.html', categories=categories, song_skins=song_skins, makers=makers, config=get_config(), id=seq_new)
+    return render_template('admin_song_new.html', categories=categories, song_skins=song_skins, makers=makers, id=seq_new, **admin_template_context())
 
 
-@app.route(basedir + 'admin/songs/new', methods=['POST'])
+@app.route(admin_url('songs/new'), methods=['POST'])
 @admin_required(level=100)
 def route_admin_songs_new_post():
     output = {'title_lang': {}, 'subtitle_lang': {}, 'courses': {}}
     output['enabled'] = True if request.form.get('enabled') else False
+    output['review_status'] = 'approved' if output['enabled'] else 'pending'
     output['title'] = request.form.get('title') or None
     output['subtitle'] = request.form.get('subtitle') or None
     for lang in ['ja', 'en', 'cn', 'tw', 'ko']:
@@ -557,17 +669,19 @@ def route_admin_songs_new_post():
     output['order'] = seq_new
     
     db.songs.insert_one(output)
+    clear_song_cache()
     if not hash_error:
         flash('Song created.')
     
     db.seq.update_one({'name': 'songs'}, {'$set': {'value': seq_new}}, upsert=True)
     
-    return redirect(basedir + 'admin/songs/%s' % str(seq_new))
+    return redirect(admin_url('songs/%s' % str(seq_new)))
 
 
-@app.route(basedir + 'admin/songs/<int:id>', methods=['POST'])
+@app.route(admin_url('songs/<song_id>'), methods=['POST'])
 @admin_required(level=50)
-def route_admin_songs_id_post(id):
+def route_admin_songs_id_post(song_id):
+    id = route_song_id(song_id)
     song = db.songs.find_one({'id': id})
     if not song:
         return abort(404)
@@ -578,6 +692,7 @@ def route_admin_songs_id_post(id):
     output = {'title_lang': {}, 'subtitle_lang': {}, 'courses': {}}
     if user_level >= 100:
         output['enabled'] = True if request.form.get('enabled') else False
+        output['review_status'] = 'approved' if output['enabled'] else 'pending'
 
     output['title'] = request.form.get('title') or None
     output['subtitle'] = request.form.get('subtitle') or None
@@ -612,63 +727,108 @@ def route_admin_songs_id_post(id):
             flash('An error occurred: %s' % str(e), 'error')
     
     db.songs.update_one({'id': id}, {'$set': output})
+    clear_song_cache()
     if not hash_error:
         flash('Changes saved.')
     
-    return redirect(basedir + 'admin/songs/%s' % id)
+    return redirect(admin_url('songs/%s' % id))
 
 
-@app.route(basedir + 'admin/songs/<int:id>/delete', methods=['POST'])
-@limiter.limit("1 per day")
+@app.route(admin_url('songs/<song_id>/approve'), methods=['POST'])
 @admin_required(level=100)
-def route_admin_songs_id_delete(id):
+def route_admin_songs_id_approve(song_id):
+    id = route_song_id(song_id)
+    song = db.songs.find_one({'id': id})
+    if not song:
+        return abort(404)
+
+    db.songs.update_one({'id': id}, {'$set': {
+        'enabled': True,
+        'review_status': 'approved',
+        'reviewed_at': datetime.utcnow(),
+        'reviewed_by': session.get('username')
+    }})
+    clear_song_cache()
+    flash('Song approved.')
+    return redirect(admin_url('songs/%s' % id))
+
+
+@app.route(admin_url('songs/<song_id>/delete'), methods=['POST'])
+@admin_required(level=100)
+def route_admin_songs_id_delete(song_id):
+    id = route_song_id(song_id)
     song = db.songs.find_one({'id': id})
     if not song:
         return abort(404)
 
     db.songs.delete_one({'id': id})
+    clear_song_cache()
     flash('Song deleted.')
-    return redirect(basedir + 'admin/songs')
+    return redirect(admin_url('songs'))
 
 
-@app.route(basedir + 'admin/users')
+@app.route(admin_url('users'))
 @admin_required(level=50)
 def route_admin_users():
     user = db.users.find_one({'username': session.get('username')})
     max_level = user['user_level'] - 1
-    return render_template('admin_users.html', config=get_config(), max_level=max_level, username='', level='')
+    admins = list(db.users.find({'user_level': {'$gte': 50}}, {'_id': 0, 'username': 1, 'display_name': 1, 'user_level': 1}).sort('user_level', -1))
+    return render_template('admin_users.html', max_level=max_level, username='', level='', admins=admins, **admin_template_context())
 
 
-@app.route(basedir + 'admin/users', methods=['POST'])
+@app.route(admin_url('users'), methods=['POST'])
 @admin_required(level=50)
 def route_admin_users_post():
     admin_name = session.get('username')
     admin = db.users.find_one({'username': admin_name})
     max_level = admin['user_level'] - 1
     
-    username = request.form.get('username')
+    username = (request.form.get('username') or '').strip()
+    password = request.form.get('password') or ''
     try:
         level = int(request.form.get('level')) or 0
     except ValueError:
         level = 0
     
-    user = db.users.find_one({'username_lower': username.lower()})
-    if not user:
-        flash('Error: User was not found.')
-    elif admin['username'] == user['username']:
-        flash('Error: You cannot modify your own level.')
+    if not username:
+        flash('Error: Username is required.')
+    elif level < 0 or level > max_level:
+        flash('Error: Invalid level.')
+    elif not re.match(r'^[A-Za-z0-9_-]{3,32}$', username):
+        flash('Error: Username must be 3-32 letters, numbers, underscores, or hyphens.')
     else:
-        user_level = user['user_level']
-        if level < 0 or level > max_level:
-            flash('Error: Invalid level.')
-        elif user_level > max_level:
+        user = db.users.find_one({'username_lower': username.lower()})
+        if not user:
+            if not password:
+                flash('Error: Password is required when creating a user.')
+            else:
+                session_id = os.urandom(24).hex()
+                db.users.insert_one({
+                    'username': username,
+                    'username_lower': username.lower(),
+                    'password': bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()),
+                    'display_name': username,
+                    'don': get_default_don(),
+                    'user_level': level,
+                    'session_id': session_id,
+                    'created_by': admin_name,
+                    'created_at': datetime.utcnow()
+                })
+                flash('User created.')
+        elif admin['username'] == user['username']:
+            flash('Error: You cannot modify your own level.')
+        elif user['user_level'] > max_level:
             flash('Error: This user has higher level than you.')
         else:
             output = {'user_level': level}
+            if password:
+                output['password'] = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+                output['session_id'] = os.urandom(24).hex()
             db.users.update_one({'username': user['username']}, {'$set': output})
             flash('User updated.')
     
-    return render_template('admin_users.html', config=get_config(), max_level=max_level, username=username, level=level)
+    admins = list(db.users.find({'user_level': {'$gte': 50}}, {'_id': 0, 'username': 1, 'display_name': 1, 'user_level': 1}).sort('user_level', -1))
+    return render_template('admin_users.html', max_level=max_level, username=username, level=level, admins=admins, **admin_template_context())
 
 
 @app.route(basedir + 'api/preview')
@@ -1296,19 +1456,24 @@ def send_manifest():
 def send_upload(ref):
     return cache_wrap(flask.send_from_directory("public/upload", ref), 3600)
 
+
+if basedir != '/':
+    app.add_url_rule(basedir + "upload/", defaults={"ref": "index.html"}, view_func=send_upload)
+    app.add_url_rule(basedir + "upload/<path:ref>", view_func=send_upload)
+
 @app.route("/api/upload", methods=["POST"])
 def upload_file():
     try:
         # POSTリクエストにファイルの部分がない場合
         if 'file_tja' not in flask.request.files or 'file_music' not in flask.request.files:
-            return flask.jsonify({'error': 'リクエストにファイルの部分がありません'})
+            return flask.jsonify({'error': 'missing_files'}), 400
 
         file_tja = flask.request.files['file_tja']
         file_music = flask.request.files['file_music']
 
         # ファイルが選択されておらず空のファイルを受け取った場合
         if file_tja.filename == '' or file_music.filename == '':
-            return flask.jsonify({'error': 'ファイルが選択されていません'})
+            return flask.jsonify({'error': 'empty_filename'}), 400
 
         # TJAファイルをテキストUTF-8/LFに変換
         tja_data = file_tja.read()
@@ -1349,26 +1514,25 @@ def upload_file():
         # MongoDBのデータも作成
         db_entry = tja.to_mongo(generated_id, time.time_ns())
         # アップロード直後に有効化
-        db_entry['enabled'] = True
+        db_entry['enabled'] = False
+        db_entry['review_status'] = 'pending'
+        db_entry['uploaded_at'] = datetime.utcnow()
+        db_entry['upload_source'] = 'web_upload'
         pprint.pprint(db_entry)
 
         # 必要な歌曲类型
         song_type = flask.request.form.get('song_type')
         if not song_type or song_type not in SONG_TYPES:
-            return flask.jsonify({'error': 'invalid_song_type'})
+            return flask.jsonify({'error': 'invalid_song_type'}), 400
         db_entry['song_type'] = song_type
 
         # mongoDBにデータをぶち込む（重複IDは部分更新で上書きし、_id を不変に保つ）
-        coll = client['taiko']["songs"]
         try:
-            coll.insert_one(db_entry)
+            db.songs.insert_one(db_entry)
         except DuplicateKeyError:
-            coll.update_one({"id": db_entry["id"]}, {"$set": db_entry}, upsert=True)
+            db.songs.update_one({"id": db_entry["id"]}, {"$set": db_entry}, upsert=True)
         # キャッシュ削除（/api/songs）
-        try:
-            app.cache.delete_memoized(route_api_songs)
-        except Exception:
-            pass
+        clear_song_cache()
 
         SONGS_DIR.mkdir(parents=True, exist_ok=True)
         target_dir = SONGS_DIR / generated_id
@@ -1380,9 +1544,13 @@ def upload_file():
         (target_dir / f"main.{db_entry['music_type']}").write_bytes(music_data)
     except Exception as e:
         error_str = ''.join(traceback.TracebackException.from_exception(e).format())
-        return flask.jsonify({'error': error_str})
+        return flask.jsonify({'error': error_str}), 500
 
-    return flask.jsonify({'success': True})
+    return flask.jsonify({'success': True, 'review_status': 'pending'})
+
+
+if basedir != '/':
+    app.add_url_rule(basedir + "api/upload", endpoint="upload_file_basedir", view_func=upload_file, methods=["POST"])
 
 @app.route("/api/delete", methods=["POST"])
 def delete():

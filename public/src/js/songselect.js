@@ -1051,7 +1051,7 @@ class SongSelect {
 			} else if (currentSong.action === "upload") {
 				this.playSound("se_don")
 				setTimeout(() => {
-					window.location.href = "/upload/"
+					window.location.href = (gameConfig && gameConfig.basedir ? gameConfig.basedir : "/") + "upload/"
 				}, 100)
 			} else if (currentSong.action === "keijiban") {
 				this.playSound("se_don")

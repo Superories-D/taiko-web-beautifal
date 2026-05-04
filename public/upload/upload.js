@@ -30,12 +30,12 @@ async function uploadFiles(event) {
       throw new Error((data && (data.error || data.message)) || `HTTP ${res.status}`);
     }
 
-    const success = !data || data.success !== false;
+    const success = data && data.success === true;
     if (!success) {
       throw new Error(data.error || "Upload failed.");
     }
 
-    statusView.textContent = "Upload complete. It may take a moment before the song appears in the list.";
+    statusView.textContent = "Upload complete. The song is waiting for admin review before it appears in the list.";
     form.reset();
   } catch (error) {
     statusView.textContent = "Upload failed.";

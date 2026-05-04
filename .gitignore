@@ -13,6 +13,7 @@ public/songs/
 public/songs/**
 public/preview/
 *.log
+.admin_bootstrap.json
 
 # local editor project artifacts
 taiko-editor/.venv/

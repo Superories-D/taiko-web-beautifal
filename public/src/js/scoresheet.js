@@ -960,7 +960,7 @@ class Scoresheet {
 			)
 			// Submit to leaderboard (only if not auto-play)
 			if (!this.controller.autoPlayEnabled) {
-				if (this.controller.selectedSong.dailyChallenge || dailyChallenge.isActive(hash, difficulty)) {
+				if (this.controller.selectedSong.dailyChallenge) {
 					this.submitDailyChallenge(hash, difficulty, this.resultsObj.points)
 				} else {
 					this.submitToLeaderboard(hash, difficulty, this.resultsObj.points, title, isPersonalBest)

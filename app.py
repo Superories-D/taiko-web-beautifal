@@ -247,12 +247,28 @@ def cleanup_daily_challenge_data():
     db.daily_challenge_scores.delete_many({'date': {'$lt': cutoff}})
 
 
+def daily_challenge_song_hash(song):
+    if not song:
+        return None
+    return song.get('hash') or song.get('title')
+
+
+def normalize_daily_challenge_doc(challenge):
+    if not challenge:
+        return challenge
+    expected_hash = challenge.get('song_hash') or daily_challenge_song_hash(challenge.get('song') or {})
+    if expected_hash and challenge.get('song_hash') != expected_hash:
+        db.daily_challenges.update_one({'date': challenge['date']}, {'$set': {'song_hash': expected_hash}})
+        challenge['song_hash'] = expected_hash
+    return challenge
+
+
 def get_or_create_daily_challenge(date_key=None):
     cleanup_daily_challenge_data()
     date_key = date_key or daily_challenge_date()
     challenge = db.daily_challenges.find_one({'date': date_key}, {'_id': False})
     if challenge:
-        return challenge
+        return normalize_daily_challenge_doc(challenge)
 
     candidates = daily_challenge_candidates()
     if not candidates:
@@ -262,7 +278,7 @@ def get_or_create_daily_challenge(date_key=None):
     doc = {
         'date': date_key,
         'song_id': song.get('id'),
-        'song_hash': song.get('hash') or song.get('title'),
+        'song_hash': daily_challenge_song_hash(song),
         'difficulty': difficulty,
         'song': song_public_payload(song),
         'created_at': datetime.utcnow()
@@ -272,7 +288,7 @@ def get_or_create_daily_challenge(date_key=None):
         doc.pop('_id', None)
         return doc
     except DuplicateKeyError:
-        return db.daily_challenges.find_one({'date': date_key}, {'_id': False})
+        return normalize_daily_challenge_doc(db.daily_challenges.find_one({'date': date_key}, {'_id': False}))
 
 
 def daily_challenge_rank(date_key, score_value, played_at, score_id):
@@ -1150,14 +1166,15 @@ def route_api_daily_challenge_submit():
     if score_value < 0:
         score_value = 0
 
-    if song_hash != challenge.get('song_hash') or difficulty != DAILY_CHALLENGE_DIFFICULTY:
+    expected_hash = challenge.get('song_hash') or daily_challenge_song_hash(challenge.get('song') or {})
+    if song_hash != expected_hash or difficulty != DAILY_CHALLENGE_DIFFICULTY:
         return api_error('daily_challenge_mismatch')
 
     display_name = (data.get('display_name') or 'Anonymous').strip()[:20] or 'Anonymous'
     played_at = datetime.utcnow()
     result = db.daily_challenge_scores.insert_one({
         'date': challenge['date'],
-        'song_hash': challenge['song_hash'],
+        'song_hash': expected_hash,
         'song_id': challenge.get('song_id'),
         'difficulty': DAILY_CHALLENGE_DIFFICULTY,
         'display_name': display_name,

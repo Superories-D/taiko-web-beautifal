@@ -163,7 +163,7 @@ def normalize_admin_path(path):
     if not path:
         path = 'admin-' + secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:18]
     path = '/' + path.strip('/')
-    if basedir != '/':
+    if basedir != '/' and not path.startswith(basedir.rstrip('/') + '/'):
         path = basedir.rstrip('/') + path
     return path
 
@@ -241,6 +241,15 @@ def find_song_by_route_id(song_id):
     return db.songs.find_one({'id': route_song_id(song_id)})
 
 
+def song_sort_key(song):
+    song_id = song.get('id', 0)
+    if isinstance(song_id, int):
+        return (0, song_id)
+    if isinstance(song_id, str) and re.match(r'^\d+$', song_id):
+        return (0, int(song_id))
+    return (1, str(song_id))
+
+
 class HashException(Exception):
     pass
 
@@ -315,7 +324,7 @@ def daily_challenge_candidates():
         courses = song.get('courses') or {}
         if courses.get(DAILY_CHALLENGE_DIFFICULTY):
             candidates.append((song, DAILY_CHALLENGE_DIFFICULTY))
-    return sorted(candidates, key=lambda item: (item[0].get('id', 0), item[1]))
+    return sorted(candidates, key=lambda item: (song_sort_key(item[0]), item[1]))
 
 
 def daily_challenge_now():
@@ -451,6 +460,8 @@ def admin_required(level):
                 return abort(403)
             
             user = db.users.find_one({'username': session.get('username')})
+            if not user:
+                return abort(403)
             if user['user_level'] < level:
                 return abort(403)
 
@@ -574,7 +585,7 @@ def route_admin():
 @app.route(admin_url('songs'))
 @admin_required(level=50)
 def route_admin_songs():
-    songs = sorted(list(db.songs.find({})), key=lambda x: x['id'])
+    songs = sorted(list(db.songs.find({})), key=song_sort_key)
     categories = db.categories.find({})
     user = db.users.find_one({'username': session['username']})
     pending_count = db.songs.count_documents({'review_status': 'pending'})
@@ -762,6 +773,12 @@ def route_admin_songs_id_delete(song_id):
         return abort(404)
 
     db.songs.delete_one({'id': id})
+    target_dir = (SONGS_DIR / str(id)).resolve()
+    try:
+        if target_dir.is_dir() and SONGS_DIR.resolve() in target_dir.parents:
+            shutil.rmtree(target_dir)
+    except OSError:
+        flash('Song deleted, but its files could not be removed.', 'error')
     clear_song_cache()
     flash('Song deleted.')
     return redirect(admin_url('songs'))

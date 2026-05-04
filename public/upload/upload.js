@@ -6,7 +6,9 @@ async function uploadFiles(event) {
   const errorView = document.querySelector("#error-view");
 
   const formData = new FormData(form);
-  const endpoint = "/api/upload";
+  const uploadIndex = window.location.pathname.indexOf("/upload/");
+  const basePath = uploadIndex >= 0 ? window.location.pathname.slice(0, uploadIndex + 1) : "/";
+  const endpoint = `${basePath}api/upload`;
 
   errorView.textContent = "";
   statusView.textContent = "Uploading...";

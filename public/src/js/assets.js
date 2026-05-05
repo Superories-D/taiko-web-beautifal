@@ -41,7 +41,8 @@ var assets = {
 		"abstractfile.js",
 		"idb.js",
 		"plugins.js",
-		"search.js"
+		"search.js",
+		"uploadmodal.js"
 	],
 	"css": [
 		"main.css",
@@ -152,7 +153,8 @@ var assets = {
 		"account.html",
 		"login.html",
 		"customsongs.html",
-		"search.html"
+		"search.html",
+		"upload.html"
 	],
 
 	"songs": [],

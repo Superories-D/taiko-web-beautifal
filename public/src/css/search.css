@@ -18,6 +18,156 @@
 	font-size: 21px;
 }
 
+#song-upload-container {
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background:
+		radial-gradient(circle at 50% 18%, rgba(255, 245, 127, 0.22), transparent 32%),
+		rgba(16, 7, 22, 0.64);
+	backdrop-filter: blur(0.35em) saturate(1.1);
+	-webkit-backdrop-filter: blur(0.35em) saturate(1.1);
+	z-index: 2;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	font-size: 21px;
+}
+
+#song-upload {
+	position: relative;
+	width: min(calc(100% - 2em), 30em);
+	border-radius: 0.8em;
+	border: 0.28em solid rgba(255, 249, 35, 0.96);
+	color: #fff;
+	padding: 1.2em;
+	z-index: 1;
+	box-sizing: border-box;
+	background-image:
+		linear-gradient(180deg, rgba(73, 10, 31, 0.14), rgba(16, 7, 22, 0.34)),
+		url("../../assets/img/ai_search_panel.png");
+	background-size: cover, cover;
+	background-position: center, center;
+	box-shadow:
+		0 1em 3em rgba(0, 0, 0, 0.42),
+		0 0 0 0.16em rgba(0, 0, 0, 0.72),
+		inset 0 0.18em 0 rgba(255, 255, 255, 0.24);
+}
+
+#song-upload-container.touch-enabled {
+	font-size: calc(3 * var(--vmin, 1vmin));
+}
+
+@media (max-width: 950px) {
+	#song-upload-container:not(.touch-enabled) {
+		font-size: calc(3 * var(--vmin, 1vmin));
+	}
+}
+
+@media (max-height: 650px) {
+	#song-upload-container:not(.touch-enabled) {
+		font-size: calc(2 * var(--vmin, 1vmin));
+	}
+}
+
+#song-upload h2 {
+	font-size: 1.8em;
+	line-height: 1;
+	margin: 0 1.2em 0.8em 0;
+}
+
+.song-upload-field {
+	margin-top: 0.75em;
+}
+
+.song-upload-field label {
+	display: block;
+	margin-bottom: 0.28em;
+	font-size: 0.95em;
+}
+
+.song-upload-field input,
+.song-upload-field select {
+	width: 100%;
+	font-size: 1em;
+	padding: 0.58em 0.7em;
+	border-radius: 0.42em;
+	border: 0.12em rgba(0, 0, 0, 0.82) solid;
+	font-family: inherit;
+	box-sizing: border-box;
+	outline: none;
+	color: #23120d;
+	background: rgba(255, 255, 255, 0.96);
+	box-shadow: inset 0 -0.12em 0 rgba(255, 143, 43, 0.35);
+}
+
+#song-upload-submit {
+	width: 100%;
+	margin-top: 1em;
+	font-size: 1.08em;
+	font-family: inherit;
+	font-weight: bold;
+	color: #23120d;
+	background: #fff923;
+	border: 0.14em solid rgba(0, 0, 0, 0.82);
+	border-radius: 0.42em;
+	padding: 0.7em;
+	cursor: pointer;
+	box-shadow: 0 0.18em 0 rgba(0, 0, 0, 0.32);
+}
+
+#song-upload-submit:disabled {
+	cursor: wait;
+	filter: grayscale(0.4);
+	opacity: 0.72;
+}
+
+#song-upload-status {
+	margin: 0.85em 0 0;
+	padding: 0.8em;
+	line-height: 1.35;
+	background: rgba(0, 0, 0, 0.58);
+	border-radius: 0.55em;
+	border: 0.12em solid rgba(255, 249, 35, 0.44);
+}
+
+#song-upload-error {
+	max-height: 7em;
+	margin: 0.55em 0 0;
+	white-space: pre-wrap;
+	overflow: auto;
+	color: #ffe8e8;
+	font-family: monospace;
+	font-size: 0.72em;
+}
+
+#song-upload-close {
+	position: absolute;
+	right: -0.35em;
+	top: -0.72em;
+	font-size: 2.1em;
+	font-family: Arial, sans-serif;
+	cursor: pointer;
+	width: 1.2em;
+	height: 1.2em;
+	line-height: 1.05em;
+	text-align: center;
+	border-radius: 50%;
+	border: 0;
+	color: #fff;
+	background: #ff443d;
+	box-shadow: 0 0.08em 0 #861418, 0 0.16em 0.5em rgba(0, 0, 0, 0.32);
+	padding: 0;
+}
+
+#song-upload-close:hover::before {
+	-webkit-text-stroke: 0.25em #fff923;
+}
+
 #song-search {
     position: relative;
     display: flex;

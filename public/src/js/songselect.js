@@ -120,6 +120,7 @@ class SongSelect {
 		this.songFont = strings.songFont || songTitleFont
 
 		this.search = new Search(this)
+		this.uploadModal = new UploadModal(this)
 
 		this.songs = []
 		for (let song of assets.songs) {
@@ -552,6 +553,8 @@ class SongSelect {
 				this.state.showWarning = false
 				this.showWarning = false
 			}
+		} else if (this.uploadModal.opened) {
+			this.uploadModal.keyPress(pressed, name, event, repeat, ctrl)
 		} else if (this.search.opened) {
 			this.search.keyPress(pressed, name, event, repeat, ctrl)
 		} else if (this.state.screen === "song") {
@@ -642,7 +645,7 @@ class SongSelect {
 		if (!this.songSelect || !this.searchButton) {
 			return
 		}
-		var visible = this.state.screen === "song" && !this.search.opened
+		var visible = this.state.screen === "song" && !this.search.opened && !this.uploadModal.opened
 		this.searchButton.hidden = !visible
 		this.songSelect.classList.toggle("search-button-visible", visible)
 	}
@@ -979,10 +982,7 @@ class SongSelect {
 					open("https://github.com/yuukialpha/taiko-web", "_blank");
 				}, 500);
 			} else if (currentSong.action === "upload") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					window.location.href = "/upload/";
-				}, 100);
+				this.uploadModal.display()
 			} else if (currentSong.action === "keijiban") {
 				this.playSound("se_don");
 				setTimeout(() => {
@@ -1391,6 +1391,7 @@ class SongSelect {
 		var selectedWidth = this.songAsset.width
 
 		this.search.redraw()
+		this.uploadModal.redraw()
 		this.updateSearchButtonVisibility()
 
 		if (this.wheelScrolls !== 0 && !this.state.locked && ms >= this.wheelTimer + 20) {
@@ -3247,6 +3248,7 @@ class SongSelect {
 		this.currentSongCache.clean()
 		this.nameplateCache.clean()
 		this.search.clean()
+		this.uploadModal.clean()
 		if(assets.sounds["bgm_songsel"]){
 			assets.sounds["bgm_songsel"].stop()
 		}
@@ -3272,6 +3274,7 @@ class SongSelect {
 			delete this.touchFullBtn
 		}
 		delete this.searchButton
+		delete this.uploadModal
 		delete this.selectable
 		delete this.ctx
 		delete this.canvas

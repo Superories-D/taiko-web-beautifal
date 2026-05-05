@@ -1,0 +1,23 @@
+<div id="song-upload-container">
+	<div id="song-upload">
+		<button id="song-upload-close" class="stroke-sub" type="button" alt="x" aria-label="Close">x</button>
+		<form id="song-upload-form" enctype="multipart/form-data">
+			<h2 class="stroke-sub" alt="Upload Song">Upload Song</h2>
+			<div class="song-upload-field">
+				<label for="song-upload-tja">TJA file</label>
+				<input id="song-upload-tja" type="file" name="file_tja" accept=".tja" required>
+			</div>
+			<div class="song-upload-field">
+				<label for="song-upload-music">OGG file</label>
+				<input id="song-upload-music" type="file" name="file_music" accept=".ogg" required>
+			</div>
+			<div class="song-upload-field">
+				<label for="song-upload-type">Song type</label>
+				<select id="song-upload-type" name="song_type" required></select>
+			</div>
+			<button id="song-upload-submit" type="submit">Upload</button>
+			<p id="song-upload-status" aria-live="polite">Select files and confirm the type.</p>
+			<pre id="song-upload-error"></pre>
+		</form>
+	</div>
+</div>

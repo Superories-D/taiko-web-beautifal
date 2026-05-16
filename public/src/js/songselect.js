@@ -986,7 +986,7 @@ class SongSelect {
 			} else if (currentSong.action === "keijiban") {
 				this.playSound("se_don");
 				setTimeout(() => {
-					window.location.href = "https://litey.trade/";
+					window.location.href = gameConfig.basedir + "board";
 				}, 100);
 			} else if (currentSong.action === "songSelectingSpeed") {
 				this.playSound("se_don");

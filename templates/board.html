@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<title>掲示板 | Taiko Web</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="robots" content="noindex,nofollow">
+	<link rel="icon" href="{{config.assets_baseurl}}img/favicon.ico" sizes="any">
+	<style>
+		:root {
+			color-scheme: light;
+			font-family: "Outfit", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+			background: #fff4d8;
+			color: #332018;
+		}
+
+		body {
+			margin: 0;
+			min-height: 100vh;
+			background:
+				radial-gradient(circle at top left, rgba(255, 127, 80, 0.35), transparent 28rem),
+				linear-gradient(135deg, #fff8dc 0%, #ffe5b4 48%, #ffbea3 100%);
+		}
+
+		main {
+			box-sizing: border-box;
+			width: min(940px, calc(100% - 32px));
+			margin: 0 auto;
+			padding: 32px 0 48px;
+		}
+
+		.back-button {
+			margin-bottom: 18px;
+			background: #ffffff;
+			color: #b23a1f;
+			box-shadow: 0 4px 0 #f3a261;
+		}
+
+		.board-hero,
+		.board-card,
+		.post {
+			background: rgba(255, 255, 255, 0.88);
+			border: 3px solid #ff8a50;
+			border-radius: 24px;
+			box-shadow: 0 12px 30px rgba(116, 45, 20, 0.18);
+		}
+
+		.board-hero {
+			padding: 28px;
+			margin-bottom: 24px;
+		}
+
+		.board-hero h1 {
+			margin: 0 0 10px;
+			font-size: clamp(2rem, 5vw, 3.5rem);
+			line-height: 1;
+		}
+
+		.board-hero p {
+			margin: 8px 0 0;
+			font-size: 1.05rem;
+		}
+
+		.board-card {
+			padding: 24px;
+			margin-bottom: 24px;
+		}
+
+		label {
+			display: block;
+			margin: 0 0 8px;
+			font-weight: 800;
+		}
+
+		input,
+		textarea {
+			box-sizing: border-box;
+			width: 100%;
+			border: 2px solid #f07b3f;
+			border-radius: 14px;
+			padding: 12px 14px;
+			font: inherit;
+			background: #fffdf6;
+			color: #332018;
+		}
+
+		textarea {
+			min-height: 140px;
+			resize: vertical;
+		}
+
+		.field {
+			margin-bottom: 18px;
+		}
+
+		button {
+			border: 0;
+			border-radius: 999px;
+			padding: 13px 24px;
+			font: inherit;
+			font-weight: 900;
+			background: linear-gradient(180deg, #ff7043, #dd3d1f);
+			color: white;
+			cursor: pointer;
+			box-shadow: 0 6px 0 #a72d18;
+		}
+
+		button:disabled {
+			opacity: 0.62;
+			cursor: wait;
+		}
+
+		.notice {
+			margin-top: 14px;
+			font-weight: 700;
+			min-height: 1.5em;
+		}
+
+		.notice.error {
+			color: #b00020;
+		}
+
+		.notice.ok {
+			color: #1b7f38;
+		}
+
+		.posts-header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 16px;
+			margin: 26px 4px 14px;
+		}
+
+		.posts-header h2 {
+			margin: 0;
+		}
+
+		.post {
+			padding: 20px;
+			margin-bottom: 16px;
+			border-color: #ffc04d;
+		}
+
+		.post-meta {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px 14px;
+			margin-bottom: 10px;
+			color: #7f4a23;
+			font-weight: 800;
+		}
+
+		.post-message {
+			white-space: pre-wrap;
+			word-break: break-word;
+			line-height: 1.58;
+		}
+
+		.empty {
+			padding: 28px;
+			text-align: center;
+			font-weight: 800;
+			color: #7f4a23;
+		}
+	</style>
+</head>
+
+<body>
+	<main>
+		<section class="board-hero">
+			<button type="button" class="back-button" id="back-button" data-i18n="back">← Back to game</button>
+			<h1 data-i18n="title">Board</h1>
+			<p data-i18n="intro">Share freely and kindly. Sensitive words, advertisements, and links are not allowed.</p>
+		</section>
+
+		<section class="board-card" aria-labelledby="post-title">
+			<h2 id="post-title" data-i18n="postTitle">Post a message</h2>
+			<form id="board-form">
+				<div class="field">
+					<label for="name" data-i18n="nameLabel">Name</label>
+					<input id="name" name="name" maxlength="40" placeholder="Anonymous" data-i18n-placeholder="namePlaceholder">
+				</div>
+				<div class="field">
+					<label for="message" data-i18n="messageLabel">Message</label>
+					<textarea id="message" name="message" maxlength="1000" required placeholder="Write something friendly..." data-i18n-placeholder="messagePlaceholder"></textarea>
+				</div>
+				<button type="submit" data-i18n="submit">Send</button>
+				<div id="notice" class="notice" role="status" aria-live="polite"></div>
+			</form>
+		</section>
+
+		<section aria-labelledby="posts-title">
+			<div class="posts-header">
+				<h2 id="posts-title" data-i18n="latest">Latest messages</h2>
+				<button type="button" id="refresh" data-i18n="refresh">Refresh</button>
+			</div>
+			<div id="posts"></div>
+		</section>
+	</main>
+
+	<script>
+		const initialPosts = {{ posts|tojson }}
+		const apiUrl = "{{config.basedir}}api/board/posts"
+		const homeUrl = "{{config.basedir}}"
+		const postsEl = document.getElementById("posts")
+		const form = document.getElementById("board-form")
+		const nameInput = document.getElementById("name")
+		const messageInput = document.getElementById("message")
+		const notice = document.getElementById("notice")
+		const refresh = document.getElementById("refresh")
+		const backButton = document.getElementById("back-button")
+
+		const translations = {
+			en: {
+				lang: "en",
+				title: "Board",
+				back: "← Back to game",
+				intro: "Share freely and kindly. Sensitive words, advertisements, and links are not allowed.",
+				postTitle: "Post a message",
+				nameLabel: "Name",
+				namePlaceholder: "Anonymous",
+				messageLabel: "Message",
+				messagePlaceholder: "Write something friendly...",
+				submit: "Send",
+				latest: "Latest messages",
+				refresh: "Refresh",
+				empty: "No messages yet. Be the first to post.",
+				loadError: "Could not refresh messages. Please try again later.",
+				success: "Posted successfully.",
+				submitError: "Could not post. Please try again later.",
+				errors: {
+					message_required: "Please enter a message.",
+					name_too_long: "The name is too long.",
+					message_too_long: "The message is too long.",
+					link_not_allowed: "Links are not allowed. Please remove the link and try again.",
+					blocked_word: "This contains blocked words. Please edit it and try again."
+				}
+			},
+			ja: {
+				lang: "ja",
+				title: "掲示板",
+				back: "← ゲームに戻る",
+				intro: "自由に、思いやりを持って交流してください。敏感な言葉、広告、リンクは投稿できません。",
+				postTitle: "メッセージを投稿",
+				nameLabel: "名前",
+				namePlaceholder: "匿名",
+				messageLabel: "内容",
+				messagePlaceholder: "やさしい言葉を書いてください…",
+				submit: "送信",
+				latest: "最新の投稿",
+				refresh: "更新",
+				empty: "まだ投稿はありません。最初の投稿をどうぞ。",
+				loadError: "更新できませんでした。あとでもう一度お試しください。",
+				success: "投稿しました。",
+				submitError: "投稿できませんでした。あとでもう一度お試しください。",
+				errors: {
+					message_required: "内容を入力してください。",
+					name_too_long: "名前が長すぎます。",
+					message_too_long: "内容が長すぎます。",
+					link_not_allowed: "リンクは投稿できません。削除してから送信してください。",
+					blocked_word: "投稿できない言葉が含まれています。修正してください。"
+				}
+			},
+			cn: {
+				lang: "zh-Hans",
+				title: "揭示板",
+				back: "← 回到游戏",
+				intro: "欢迎自由、友善地交流。请勿发布敏感词、广告或链接。",
+				postTitle: "发布留言",
+				nameLabel: "昵称",
+				namePlaceholder: "匿名",
+				messageLabel: "内容",
+				messagePlaceholder: "写下友善的话……",
+				submit: "发送",
+				latest: "最新留言",
+				refresh: "刷新",
+				empty: "还没有留言，来发第一条吧。",
+				loadError: "刷新失败，请稍后再试。",
+				success: "发布成功。",
+				submitError: "发布失败，请稍后再试。",
+				errors: {
+					message_required: "请输入留言内容。",
+					name_too_long: "昵称太长了。",
+					message_too_long: "留言内容太长了。",
+					link_not_allowed: "不允许发布链接，请删除链接后再发送。",
+					blocked_word: "内容包含不允许发布的词语，请修改后再发送。"
+				}
+			},
+			tw: {
+				lang: "zh-Hant",
+				title: "揭示板",
+				back: "← 回到遊戲",
+				intro: "歡迎自由、友善地交流。請勿發布敏感詞、廣告或連結。",
+				postTitle: "發布留言",
+				nameLabel: "暱稱",
+				namePlaceholder: "匿名",
+				messageLabel: "內容",
+				messagePlaceholder: "寫下友善的話……",
+				submit: "送出",
+				latest: "最新留言",
+				refresh: "重新整理",
+				empty: "還沒有留言，來發第一則吧。",
+				loadError: "重新整理失敗，請稍後再試。",
+				success: "發布成功。",
+				submitError: "發布失敗，請稍後再試。",
+				errors: {
+					message_required: "請輸入留言內容。",
+					name_too_long: "暱稱太長了。",
+					message_too_long: "留言內容太長了。",
+					link_not_allowed: "不允許發布連結，請刪除連結後再送出。",
+					blocked_word: "內容包含不允許發布的詞語，請修改後再送出。"
+				}
+			},
+			ko: {
+				lang: "ko",
+				title: "게시판",
+				back: "← 게임으로 돌아가기",
+				intro: "자유롭고 친절하게 대화해 주세요. 민감한 단어, 광고, 링크는 올릴 수 없습니다.",
+				postTitle: "메시지 올리기",
+				nameLabel: "이름",
+				namePlaceholder: "익명",
+				messageLabel: "내용",
+				messagePlaceholder: "친절한 말을 남겨 주세요...",
+				submit: "보내기",
+				latest: "최신 메시지",
+				refresh: "새로고침",
+				empty: "아직 메시지가 없습니다. 첫 메시지를 남겨 보세요.",
+				loadError: "새로고침에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+				success: "게시되었습니다.",
+				submitError: "게시하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+				errors: {
+					message_required: "내용을 입력해 주세요.",
+					name_too_long: "이름이 너무 깁니다.",
+					message_too_long: "내용이 너무 깁니다.",
+					link_not_allowed: "링크는 올릴 수 없습니다. 링크를 삭제한 뒤 다시 보내 주세요.",
+					blocked_word: "게시할 수 없는 단어가 포함되어 있습니다. 수정해 주세요."
+				}
+			}
+		}
+
+		function getLanguage() {
+			const saved = localStorage.getItem("lang")
+			const candidates = [saved, navigator.language, ...(navigator.languages || [])].filter(Boolean)
+			for (const lang of candidates) {
+				const value = lang.toLowerCase()
+				if (value === "cn" || value.startsWith("zh-cn") || value.startsWith("zh-hans")) return translations.cn
+				if (value === "tw" || value.startsWith("zh-tw") || value.startsWith("zh-hk") || value.startsWith("zh-hant")) return translations.tw
+				if (value.startsWith("ja")) return translations.ja
+				if (value.startsWith("ko")) return translations.ko
+				if (value.startsWith("en")) return translations.en
+			}
+			return translations.en
+		}
+
+		const t = getLanguage()
+		document.documentElement.lang = t.lang
+		document.querySelectorAll("[data-i18n]").forEach(el => {
+			el.textContent = t[el.dataset.i18n]
+		})
+		document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+			el.placeholder = t[el.dataset.i18nPlaceholder]
+		})
+
+		function formatTime(value) {
+			if (!value) return ""
+			const date = new Date(value)
+			if (Number.isNaN(date.getTime())) return value
+			return date.toLocaleString(t.lang)
+		}
+
+		function setNotice(message, type) {
+			notice.textContent = message || ""
+			notice.className = "notice" + (type ? " " + type : "")
+		}
+
+		function renderPosts(posts) {
+			if (!posts.length) {
+				postsEl.innerHTML = '<div class="board-card empty"></div>'
+				postsEl.firstElementChild.textContent = t.empty
+				return
+			}
+
+			postsEl.replaceChildren(...posts.map(post => {
+				const article = document.createElement("article")
+				article.className = "post"
+
+				const meta = document.createElement("div")
+				meta.className = "post-meta"
+
+				const name = document.createElement("span")
+				name.textContent = post.name || t.namePlaceholder
+				const time = document.createElement("time")
+				time.dateTime = post.created_at || ""
+				time.textContent = formatTime(post.created_at)
+				meta.append(name, time)
+
+				const message = document.createElement("div")
+				message.className = "post-message"
+				message.textContent = post.message || ""
+
+				article.append(meta, message)
+				return article
+			}))
+		}
+
+		async function loadPosts() {
+			refresh.disabled = true
+			try {
+				const response = await fetch(apiUrl)
+				const data = await response.json()
+				if (data.status !== "ok") throw new Error(data.message || "load_failed")
+				renderPosts(data.posts)
+			} catch (error) {
+				setNotice(t.loadError, "error")
+			} finally {
+				refresh.disabled = false
+			}
+		}
+
+		form.addEventListener("submit", async event => {
+			event.preventDefault()
+			setNotice("", "")
+			const submit = form.querySelector('button[type="submit"]')
+			submit.disabled = true
+			try {
+				const response = await fetch(apiUrl, {
+					method: "POST",
+					headers: {"Content-Type": "application/json"},
+					body: JSON.stringify({
+						name: nameInput.value,
+						message: messageInput.value
+					})
+				})
+				const data = await response.json()
+				if (data.status !== "ok") {
+					throw new Error(data.message || "submit_failed")
+				}
+				messageInput.value = ""
+				setNotice(t.success, "ok")
+				await loadPosts()
+			} catch (error) {
+				setNotice(t.errors[error.message] || t.submitError, "error")
+			} finally {
+				submit.disabled = false
+			}
+		})
+
+		refresh.addEventListener("click", loadPosts)
+		backButton.addEventListener("click", () => {
+			window.location.href = homeUrl
+		})
+		renderPosts(initialPosts)
+	</script>
+</body>
+
+</html>

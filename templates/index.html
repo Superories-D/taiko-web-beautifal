@@ -21,13 +21,13 @@
 	<meta property="og:description"
 		content="A playful browser-based taiko rhythm game simulator with song search, custom songs, touch controls, and global language support.">
 	<meta property="og:image" content="{{config.assets_baseurl}}img/favicon-512.png">
-	<meta property="og:url" content="https://taikoapp.uk/">
+	<meta property="og:url" content="{{request.url_root}}">
 	<meta name="twitter:card" content="summary">
 	<meta name="twitter:title" content="Taiko Web">
 	<meta name="twitter:description" content="Play taiko rhythm charts in your browser.">
 	<meta name="twitter:image" content="{{config.assets_baseurl}}img/favicon-512.png">
 
-	<link rel="canonical" href="https://taikoapp.uk/">
+	<link rel="canonical" href="{{request.url_root}}">
 	<link rel="icon" href="{{config.assets_baseurl}}img/favicon.ico" sizes="any">
 	<link rel="icon" href="{{config.assets_baseurl}}img/favicon-32.png" type="image/png" sizes="32x32">
 	<link rel="icon" href="{{config.assets_baseurl}}img/favicon-16.png" type="image/png" sizes="16x16">
@@ -50,7 +50,7 @@
 		"genre": ["Rhythm", "Music"],
 		"inLanguage": ["en", "ja", "zh-Hans", "zh-Hant", "ko"],
 		"description": "A browser-based taiko rhythm game simulator with song search and custom chart support.",
-		"url": "https://taikoapp.uk/"
+		"url": "{{request.url_root}}"
 	}
 	</script>
 

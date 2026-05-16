@@ -142,6 +142,100 @@ db.play_records.create_index('played_at')
 db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('score_value', -1)])
 db.leaderboard.create_index('username')
 
+BOARD_RETENTION_DAYS = 30
+BOARD_RETENTION_SECONDS = BOARD_RETENTION_DAYS * 24 * 60 * 60
+BOARD_CREATED_AT_INDEX = 'created_at_1'
+
+BOARD_BLOCKED_WORDS = [
+    "taiko" + "app" + "." + "uk",
+    "cj" + "dg",
+]
+BOARD_MAX_NAME_LENGTH = 40
+BOARD_MAX_MESSAGE_LENGTH = 1000
+BOARD_LINK_PATTERN = re.compile(
+    r'(?:https?://|www\.|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z]{2,24})'
+    r'(?:[\s/:?#.,!?)\]]|$)',
+    re.IGNORECASE
+)
+
+
+def ensure_board_posts_indexes():
+    try:
+        for index in db.board_posts.list_indexes():
+            if (
+                index.get('name') == BOARD_CREATED_AT_INDEX and
+                index.get('expireAfterSeconds') != BOARD_RETENTION_SECONDS
+            ):
+                db.board_posts.drop_index(BOARD_CREATED_AT_INDEX)
+                break
+        db.board_posts.create_index(
+            [('created_at', 1)],
+            name=BOARD_CREATED_AT_INDEX,
+            expireAfterSeconds=BOARD_RETENTION_SECONDS
+        )
+    except Exception as e:
+        print('Warning: failed to ensure board post TTL index: {}'.format(e))
+
+
+ensure_board_posts_indexes()
+
+
+def board_text(*values):
+    return " ".join(value or "" for value in values)
+
+
+def board_contains_blocked_word(*values):
+    text = board_text(*values).casefold()
+    return any(word.casefold() in text for word in BOARD_BLOCKED_WORDS)
+
+
+def board_contains_link(*values):
+    return bool(BOARD_LINK_PATTERN.search(board_text(*values)))
+
+
+def board_post_is_allowed(post):
+    return not board_contains_link(
+        post.get('name'), post.get('message')
+    ) and not board_contains_blocked_word(
+        post.get('name'), post.get('message')
+    )
+
+
+def board_cutoff():
+    return datetime.utcnow() - timedelta(days=BOARD_RETENTION_DAYS)
+
+
+def delete_old_board_posts():
+    try:
+        db.board_posts.delete_many({'created_at': {'$lt': board_cutoff()}})
+    except Exception as e:
+        print('Warning: failed to delete old board posts: {}'.format(e))
+
+
+def get_board_posts(limit=100):
+    delete_old_board_posts()
+    posts = []
+    query = {'created_at': {'$gte': board_cutoff()}}
+    for post in db.board_posts.find(query).sort('created_at', -1).limit(limit * 3):
+        if board_post_is_allowed(post):
+            posts.append(serialize_board_post(post))
+        if len(posts) >= limit:
+            break
+    return posts
+
+
+def serialize_board_post(post):
+    created_at = post.get('created_at')
+    if isinstance(created_at, datetime):
+        created_at = created_at.isoformat() + 'Z'
+
+    return {
+        'id': str(post.get('_id')),
+        'name': post.get('name', ''),
+        'message': post.get('message', ''),
+        'created_at': created_at
+    }
+
 
 class HashException(Exception):
     pass
@@ -298,6 +392,57 @@ def is_hex(input):
 def route_index():
     version = get_version()
     return render_template('index.html', version=version, config=get_config())
+
+
+@app.route(basedir + 'board')
+def route_board():
+    posts = get_board_posts()
+    version = get_version()
+    return render_template('board.html', posts=posts, version=version, config=get_config())
+
+
+@app.route(basedir + 'api/board/posts')
+def route_api_board_posts():
+    posts = get_board_posts()
+    return jsonify({'status': 'ok', 'posts': posts})
+
+
+@app.route(basedir + 'api/board/posts', methods=['POST'])
+@limiter.limit("10 per minute")
+def route_api_board_posts_create():
+    data = request.get_json(silent=True) or request.form
+    name = (data.get('name') or '').strip()
+    message = (data.get('message') or '').strip()
+
+    if not name:
+        name = 'Anonymous'
+    if not message:
+        return api_error('message_required')
+    if len(name) > BOARD_MAX_NAME_LENGTH:
+        return api_error('name_too_long')
+    if len(message) > BOARD_MAX_MESSAGE_LENGTH:
+        return api_error('message_too_long')
+    if board_contains_blocked_word(name, message):
+        return api_error('blocked_word')
+    if board_contains_link(name, message):
+        return api_error('link_not_allowed')
+
+    user = None
+    if session.get('username'):
+        user = db.users.find_one({'username': session.get('username')})
+
+    post = {
+        'name': name,
+        'message': message,
+        'created_at': datetime.utcnow(),
+        'username': session.get('username'),
+        'user_display_name': user.get('display_name') if user else None,
+        'ip_hash': hashlib.sha256(get_remote_address().encode('utf-8')).hexdigest()
+    }
+    result = db.board_posts.insert_one(post)
+    post['_id'] = result.inserted_id
+
+    return jsonify({'status': 'ok', 'post': serialize_board_post(post)})
 
 
 @app.route(basedir + 'api/csrftoken')

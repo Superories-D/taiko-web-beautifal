@@ -349,6 +349,12 @@ def get_config(credentials=False):
     config_out['_version'] = get_version()
     return config_out
 
+
+def get_latest_update_date():
+    now = datetime.now()
+    return f'{now.year}年{now.month}月{now.day}日'
+
+
 def get_version():
     version = {'commit': None, 'commit_short': '', 'version': None, 'url': take_config('URL')}
     if os.path.isfile('version.json'):
@@ -391,7 +397,7 @@ def is_hex(input):
 @app.route(basedir)
 def route_index():
     version = get_version()
-    return render_template('index.html', version=version, config=get_config())
+    return render_template('index.html', version=version, config=get_config(), latest_update_date=get_latest_update_date())
 
 
 @app.route(basedir + 'board')

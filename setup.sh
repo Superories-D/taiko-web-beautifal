@@ -17,6 +17,9 @@ BACKUP_ROOT=${BACKUP_ROOT:-$INSTALL_DIR/backups/mongodb}
 DESTRUCTIVE_CONFIRMATION=I_UNDERSTAND_THIS_WILL_DELETE_MONGODB_DATA
 LAST_BACKUP_DIR=
 UPDATE_BEFORE_SONGS_COUNT=unknown
+APP_WRITES_QUIESCED=false
+APP_DIRECT_WAS_ACTIVE=false
+APP_CONTAINER_WAS_RUNNING=false
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] [taiko-web] $*"
@@ -217,6 +220,67 @@ mongodb_collection_count() {
   mongodb_eval "const dbname = db.getSiblingDB('taiko'); const names = dbname.getCollectionNames(); print(names.includes('${collection}') ? dbname.getCollection('${collection}').countDocuments({}) : 0)" 2>/dev/null | tail -n 1
 }
 
+quiesce_app_writes() {
+  if [ "$APP_WRITES_QUIESCED" = "true" ]; then
+    return 0
+  fi
+
+  log "Quiescing application writes before MongoDB backup/update."
+
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    APP_DIRECT_WAS_ACTIVE=true
+    systemctl stop "$SERVICE_NAME"
+    log "Stopped systemd service $SERVICE_NAME."
+  fi
+
+  if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -q '^taiko-web-app$'; then
+    APP_CONTAINER_WAS_RUNNING=true
+    docker stop taiko-web-app >/dev/null
+    log "Stopped container taiko-web-app."
+  fi
+
+  APP_WRITES_QUIESCED=true
+  log "Application writes are paused; MongoDB remains online for backup."
+}
+
+resume_app_writes() {
+  local failed=0
+
+  if [ "$APP_CONTAINER_WAS_RUNNING" = "true" ] && command -v docker >/dev/null 2>&1; then
+    docker start taiko-web-app >/dev/null 2>&1 || failed=1
+  fi
+
+  if [ "$APP_DIRECT_WAS_ACTIVE" = "true" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl start "$SERVICE_NAME" >/dev/null 2>&1 || failed=1
+  fi
+
+  APP_WRITES_QUIESCED=false
+  APP_DIRECT_WAS_ACTIVE=false
+  APP_CONTAINER_WAS_RUNNING=false
+  return "$failed"
+}
+
+abort_update_after_quiesce() {
+  local status=$?
+  trap - ERR
+  if [ "$APP_WRITES_QUIESCED" = "true" ]; then
+    log "Update failed while application writes were paused; attempting to restart the previous app service."
+    resume_app_writes || log "Could not restart one or more previously running app services. Please inspect manually."
+  fi
+  exit "$status"
+}
+
+begin_update_guard() {
+  trap abort_update_after_quiesce ERR
+}
+
+finish_update_guard() {
+  trap - ERR
+  APP_WRITES_QUIESCED=false
+  APP_DIRECT_WAS_ACTIVE=false
+  APP_CONTAINER_WAS_RUNNING=false
+}
+
 backup_mongodb() {
   load_existing_env
   if ! mongo_data_exists; then
@@ -227,7 +291,7 @@ backup_mongodb() {
 
   ensure_mongodb_running || {
     echo "MongoDB data exists, but MongoDB could not be started for backup. Update aborted."
-    exit 1
+    return 1
   }
 
   local backup_dir="$BACKUP_ROOT/$(date +%Y%m%d-%H%M%S)"
@@ -319,6 +383,8 @@ prepare_mongodb_update() {
     return 0
   fi
 
+  quiesce_app_writes
+
   ensure_mongodb_running || {
     echo "MongoDB data exists, but MongoDB could not be started for pre-update checks."
     exit 1
@@ -332,6 +398,24 @@ prepare_mongodb_update() {
   fi
 
   backup_mongodb
+}
+
+backup_db_command() {
+  begin_update_guard
+  load_existing_env
+  ensure_data_dirs
+  if mongo_data_exists; then
+    quiesce_app_writes
+  fi
+  backup_mongodb
+  if [ "$APP_WRITES_QUIESCED" = "true" ]; then
+    resume_app_writes || {
+      log "MongoDB backup completed, but one or more app services could not be restarted."
+      exit 1
+    }
+    log "Application writes resumed after MongoDB backup."
+  fi
+  finish_update_guard
 }
 
 apt_install() {
@@ -565,6 +649,7 @@ ensure_direct_datastores() {
 }
 
 deploy_direct() {
+  begin_update_guard
   log "Starting direct deployment."
   ensure_base_sync_tools
   apt_install python3 python3-venv python3-pip git ffmpeg libcap2-bin
@@ -590,9 +675,11 @@ deploy_direct() {
   log "Direct deployment completed."
   log "Persistent data directory: $DATA_DIR"
   [ -n "$LAST_BACKUP_DIR" ] && log "MongoDB backup: $LAST_BACKUP_DIR"
+  finish_update_guard
 }
 
 deploy_container() {
+  begin_update_guard
   log "Starting container deployment."
   ensure_base_sync_tools
   ensure_docker
@@ -614,10 +701,12 @@ deploy_container() {
   log "Container deployment completed."
   log "Persistent data directory: $DATA_DIR"
   [ -n "$LAST_BACKUP_DIR" ] && log "MongoDB backup: $LAST_BACKUP_DIR"
+  finish_update_guard
 }
 
 upgrade_container() {
   local skip_backup="${1:-false}"
+  begin_update_guard
   log "Starting container-only upgrade."
   ensure_base_sync_tools
   ensure_docker
@@ -633,11 +722,13 @@ upgrade_container() {
   log "Container upgrade completed."
   log "Persistent data directory kept intact: $DATA_DIR"
   [ -n "$LAST_BACKUP_DIR" ] && log "MongoDB backup: $LAST_BACKUP_DIR"
+  finish_update_guard
 }
 
 
 upgrade_direct() {
   local skip_backup="${1:-false}"
+  begin_update_guard
   log "Starting direct upgrade."
   ensure_base_sync_tools
   apt_install python3 python3-venv python3-pip git ffmpeg libcap2-bin
@@ -662,6 +753,7 @@ upgrade_direct() {
   log "Direct upgrade completed."
   log "Persistent data directory kept intact: $DATA_DIR"
   [ -n "$LAST_BACKUP_DIR" ] && log "MongoDB backup: $LAST_BACKUP_DIR"
+  finish_update_guard
 }
 
 repair_installation() {
@@ -686,6 +778,10 @@ repair_installation() {
 reset_db() {
   load_existing_env
   confirm_destructive_action
+  begin_update_guard
+  if mongo_data_exists; then
+    quiesce_app_writes
+  fi
   if mongo_data_exists; then
     backup_mongodb
   fi
@@ -708,6 +804,7 @@ reset_db() {
   mkdir -p "$mongo_dir"
   log "MongoDB data reset completed."
   [ -n "$LAST_BACKUP_DIR" ] && log "Pre-reset backup: $LAST_BACKUP_DIR"
+  finish_update_guard
 }
 
 uninstall_all() {
@@ -727,8 +824,8 @@ print_menu() {
     "Available actions:" \
     "  install              First install with persistent MongoDB data directory" \
     "  update [--skip-backup]" \
-    "                       Safe update; backs up MongoDB before changing services" \
-    "  backup-db           Create a MongoDB backup only" \
+    "                       Safe update; pauses app writes and backs up MongoDB" \
+    "  backup-db           Pause app writes, create a MongoDB backup, then resume" \
     "  restore-db PATH     Restore MongoDB from a backup; requires full confirmation" \
     "  repair              Repair containers/env/permissions without deleting data" \
     "  reset-db            Delete MongoDB data; requires full confirmation" \
@@ -789,7 +886,7 @@ main() {
   case "$action" in
     install) deploy_container ;;
     update) upgrade_container "$skip_backup" ;;
-    backup-db) backup_mongodb ;;
+    backup-db) backup_db_command ;;
     restore-db) restore_mongodb "${positional[0]:-}" ;;
     repair) repair_installation ;;
     reset-db) reset_db ;;

@@ -9,6 +9,13 @@ class Loader{
 		this.screen = document.getElementById("screen")
 		this.startTime = Date.now()
 		this.errorMessages = []
+		this.failedResources = []
+		this.warmupFailedResources = []
+		this.clientErrors = []
+		this.totalAssets = 0
+		this.currentStage = "boot-minimal"
+		this.currentStageLabel = "Boot Minimal"
+		this.retryingResource = null
 		this.songSearchGradient = "linear-gradient(to top, rgba(245, 246, 252, 0.08), #ff5963), "
 		this.backgroundPromises = []
 		this.backgroundRetryBaseDelay = 3000
@@ -17,19 +24,52 @@ class Loader{
 		this.imageLoadPromises = {}
 		this.soundLoadPromises = {}
 		
+		this.installClientErrorHandlers()
 		this.initWorkers()
+
+		if(this.isRepairRoute()){
+			this.showRepairPage()
+			return
+		}
 		
-		var promises = []
+		var bootResources = []
 		
-		promises.push(this.ajax("src/views/loader.html").then(page => {
-			this.screen.innerHTML = page
-		}))
+		bootResources.push({
+			url: "src/views/loader.html",
+			resourceType: "view",
+			promise: this.ajax("src/views/loader.html").then(page => {
+				this.screen.innerHTML = page
+			})
+		})
 		
-		promises.push(this.ajax("api/config").then(conf => {
-			gameConfig = JSON.parse(conf)
-		}))
+		bootResources.push({
+			url: "api/config",
+			resourceType: "config",
+			promise: this.ajax("api/config").then(conf => {
+				gameConfig = JSON.parse(conf)
+			})
+		})
 		
-		Promise.all(promises).then(this.run.bind(this))
+		Promise.allSettled(bootResources.map(resource => resource.promise)).then(results => {
+			var failed = results
+				.map((result, index) => {
+					return {
+						result: result,
+						resource: bootResources[index]
+					}
+				})
+				.filter(item => item.result.status === "rejected")
+			if(failed.length){
+				this.showBootError(failed.map(item => this.normalizeResourceError(item.result.reason, {
+					url: item.resource.url,
+					stage: "boot-minimal",
+					resourceType: item.resource.resourceType,
+					critical: true
+				})))
+				return
+			}
+			this.run()
+		})
 	}
 	initWorkers(){
 		this.workers = []
@@ -59,13 +99,14 @@ class Loader{
 			this.workerFree(callback.workerIndex)
 		}
 	}
-	workerFetch(url, type){
+	workerFetch(url, type, options){
 		return new Promise((resolve, reject) => {
 			var id = ++this.workerId
 			this.workerQueue.push({
 				id: id,
 				url: new URL(url, location.href).href,
 				type: type,
+				options: options || {},
 				resolve: resolve,
 				reject: reject
 			})
@@ -93,7 +134,8 @@ class Loader{
 			workerObj.worker.postMessage({
 				id: task.id,
 				url: task.url,
-				type: task.type
+				type: task.type,
+				options: task.options
 			})
 		}
 	}
@@ -103,12 +145,475 @@ class Loader{
 			this.workerRun()
 		}
 	}
+	installClientErrorHandlers(){
+		if(window.taikoClientErrorHandlersInstalled){
+			return
+		}
+		window.taikoClientErrorHandlersInstalled = true
+		window.taikoClientErrors = window.taikoClientErrors || []
+		window.addEventListener("error", event => {
+			this.reportClientError({
+				code: "WINDOW_ERROR",
+				message: event.message,
+				filename: event.filename,
+				lineno: event.lineno,
+				colno: event.colno,
+				stack: event.error && event.error.stack
+			})
+		})
+		window.addEventListener("unhandledrejection", event => {
+			this.reportClientError({
+				code: "UNHANDLED_REJECTION",
+				reason: String(event.reason),
+				stack: event.reason && event.reason.stack
+			})
+		})
+	}
+	reportClientError(error){
+		var detail = Object.assign({
+			version: this.getVersion(),
+			buildId: this.getBuildId(),
+			stage: this.currentStage,
+			browser: this.getBrowserName(),
+			os: this.getOsName(),
+			at: new Date().toISOString()
+		}, error)
+		window.taikoClientErrors.push(detail)
+		this.clientErrors.push(detail)
+		return detail
+	}
+	isRepairRoute(){
+		return location.pathname.replace(/\/+$/, "").endsWith("/repair") || location.search.indexOf("repair=1") !== -1 || location.hash === "#repair"
+	}
+	inferResourceType(url){
+		if(!url){
+			return "unknown"
+		}
+		if(url.indexOf("api/songs") !== -1){
+			return "song-list"
+		}
+		if(url.indexOf("api/config") !== -1){
+			return "config"
+		}
+		if(url.indexOf("api/categories") !== -1){
+			return "categories"
+		}
+		if(url.indexOf("audio/") !== -1 || /\.(ogg|mp3|wav)(\?|$)/.test(url)){
+			return "audio"
+		}
+		if(url.indexOf("img/") !== -1 || /\.(png|jpg|jpeg|webp|gif|svg)(\?|$)/.test(url)){
+			return "image"
+		}
+		if(url.indexOf("fonts/") !== -1 || /\.(ttf|otf|woff|woff2)(\?|$)/.test(url)){
+			return "font"
+		}
+		if(/\.css(\?|$)/.test(url)){
+			return "css"
+		}
+		if(/\.js(\?|$)/.test(url)){
+			return "javascript"
+		}
+		if(/\.html(\?|$)/.test(url)){
+			return "view"
+		}
+		return "unknown"
+	}
+	normalizeResourceError(error, resource){
+		resource = resource || {}
+		var detail = error && error.detail || error
+		var message
+		if(typeof error === "string"){
+			message = error
+		}else if(Array.isArray(error)){
+			message = error[0]
+		}else if(error && error.message){
+			message = error.message
+		}else{
+			message = String(error || "Unknown error")
+		}
+		return {
+			code: error && error.code || "BOOT_RESOURCE_FAILED",
+			message: message,
+			name: error && error.name || detail && detail.name || "Error",
+			status: error && error.status || detail && detail.status || null,
+			url: resource.url || detail && detail.url || "unknown",
+			resourceType: resource.resourceType || detail && detail.resourceType || this.inferResourceType(resource.url),
+			stage: resource.stage || this.currentStage || "boot-minimal",
+			critical: resource.critical !== false,
+			attempts: detail && detail.retries != null ? detail.retries + 1 : resource.attempts || null,
+			duration: detail && detail.duration || null
+		}
+	}
+	recordResourceFailure(error){
+		this.failedResources.push(error)
+		this.errorMessages.push(this.formatResourceError(error))
+		pageEvents.send("loader-error", error)
+		this.reportClientError(Object.assign({
+			code: error.critical ? "BOOT_RESOURCE_FAILED" : "WARMUP_RESOURCE_FAILED"
+		}, error))
+		this.updateLoaderStatus()
+	}
+	recordWarmupFailure(error){
+		this.warmupFailedResources.push(error)
+		this.recordResourceFailure(error)
+		this.showWarmupWarning()
+	}
+	formatResourceError(error){
+		var status = error.status ? "HTTP " + error.status : error.name || "error"
+		return "[" + (error.stage || "boot") + "] " + (error.url || "unknown") + " - " + status + ": " + (error.message || "")
+	}
+	waitForStage(promises, stage){
+		var stagePromises = promises.filter(promise => !promise.resource || promise.resource.critical !== false)
+		return Promise.allSettled(stagePromises).then(results => {
+			var failed = results
+				.filter(result => result.status === "rejected")
+				.map(result => result.reason)
+			if(failed.length){
+				this.showBootError(failed)
+				return Promise.reject(failed[0])
+			}
+		})
+	}
+	withTimeout(promise, resource, timeout){
+		timeout = timeout || 15000
+		if(!timeout){
+			return promise
+		}
+		var timer
+		var timeoutPromise = new Promise((resolve, reject) => {
+			timer = setTimeout(() => {
+				var error = new Error("Timeout after " + timeout + "ms")
+				error.code = "RESOURCE_TIMEOUT"
+				error.detail = {
+					url: resource && resource.url,
+					resourceType: resource && resource.resourceType,
+					retries: 0
+				}
+				reject(error)
+			}, timeout)
+		})
+		return Promise.race([promise, timeoutPromise]).then(value => {
+			clearTimeout(timer)
+			return value
+		}, error => {
+			clearTimeout(timer)
+			return Promise.reject(error)
+		})
+	}
+	sleep(ms){
+		return new Promise(resolve => setTimeout(resolve, ms))
+	}
+	async fetchWithRetry(url, options){
+		options = options || {}
+		var retries = options.retries == null ? 3 : options.retries
+		var timeout = options.timeout || 12000
+		var baseDelay = options.baseDelay || 500
+		var retryOnStatus = options.retryOnStatus || [408, 425, 429, 500, 502, 503, 504]
+		var resourceType = options.resourceType || this.inferResourceType(url)
+		var critical = options.critical !== false
+		var fetchOptions = options.fetchOptions || {}
+		var lastError = null
+		for(var attempt = 0; attempt <= retries; attempt++){
+			var controller = new AbortController()
+			var timer = setTimeout(() => controller.abort(), timeout)
+			var startedAt = Date.now()
+			if(attempt > 0){
+				this.retryingResource = {
+					url: url,
+					attempt: attempt + 1,
+					retries: retries + 1
+				}
+				this.updateLoaderStatus()
+			}
+			try{
+				var response = await fetch(url, Object.assign({}, fetchOptions, {
+					signal: controller.signal
+				}))
+				clearTimeout(timer)
+				var duration = Date.now() - startedAt
+				if(!response.ok){
+					var httpError = new Error("HTTP " + response.status + " " + response.statusText)
+					httpError.status = response.status
+					httpError.url = url
+					httpError.resourceType = resourceType
+					httpError.duration = duration
+					throw httpError
+				}
+				this.retryingResource = null
+				return response
+			}catch(error){
+				clearTimeout(timer)
+				lastError = {
+					message: error && error.message || String(error),
+					name: error && error.name || "Error",
+					status: error && error.status || null,
+					url: url,
+					resourceType: resourceType,
+					attempt: attempt,
+					retries: retries,
+					critical: critical,
+					duration: Date.now() - startedAt
+				}
+				var retryableStatus = !lastError.status || retryOnStatus.indexOf(lastError.status) !== -1
+				if(attempt >= retries || !retryableStatus){
+					break
+				}
+				var delay = baseDelay * Math.pow(2, attempt) + Math.floor(Math.random() * 300)
+				await this.sleep(delay)
+			}
+		}
+		this.retryingResource = null
+		var finalError = new Error("Failed to fetch resource after " + (retries + 1) + " attempts: " + url)
+		finalError.code = "RESOURCE_FETCH_FAILED"
+		finalError.detail = lastError
+		throw finalError
+	}
+	getVersion(){
+		if(gameConfig && gameConfig._version && gameConfig._version.version){
+			return gameConfig._version.version
+		}
+		var versionLink = document.getElementById("version-link")
+		return versionLink ? versionLink.textContent.trim() : "unknown"
+	}
+	getBuildId(){
+		if(gameConfig && gameConfig._version){
+			return gameConfig._version.commit_short || gameConfig._version.commit || "unknown"
+		}
+		return "unknown"
+	}
+	getBrowserName(){
+		var ua = navigator.userAgent
+		if(ua.indexOf("Edg/") !== -1){
+			return "Edge"
+		}
+		if(ua.indexOf("Chrome/") !== -1){
+			return "Chrome"
+		}
+		if(ua.indexOf("Safari/") !== -1 && ua.indexOf("Chrome/") === -1){
+			return "Safari"
+		}
+		if(ua.indexOf("Firefox/") !== -1){
+			return "Firefox"
+		}
+		return "unknown"
+	}
+	getOsName(){
+		var ua = navigator.userAgent
+		if(/Android/.test(ua)){
+			return "Android"
+		}
+		if(/iPhone|iPad|iPod/.test(ua)){
+			return "iOS"
+		}
+		if(/Windows/.test(ua)){
+			return "Windows"
+		}
+		if(/Mac OS X/.test(ua)){
+			return "macOS"
+		}
+		if(/Linux/.test(ua)){
+			return "Linux"
+		}
+		return "unknown"
+	}
+	escapeHtml(value){
+		return String(value == null ? "" : value)
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#39;")
+	}
+	async collectDiagnostics(failures){
+		var serviceWorker = false
+		var serviceWorkerScript = null
+		var cacheKeys = []
+		try{
+			if("serviceWorker" in navigator){
+				var registration = await navigator.serviceWorker.getRegistration()
+				serviceWorker = !!registration
+				serviceWorkerScript = registration && registration.active && registration.active.scriptURL || null
+			}
+		}catch(e){}
+		try{
+			if("caches" in window){
+				cacheKeys = await caches.keys()
+			}
+		}catch(e){}
+		return {
+			code: "BOOT_CRITICAL_RESOURCE_FAILED",
+			version: this.getVersion(),
+			buildId: this.getBuildId(),
+			stage: this.currentStage,
+			failures: failures,
+			browser: this.getBrowserName(),
+			os: this.getOsName(),
+			userAgent: navigator.userAgent,
+			serviceWorker: serviceWorker,
+			serviceWorkerScript: serviceWorkerScript,
+			cacheKeys: cacheKeys,
+			clientErrors: window.taikoClientErrors || []
+		}
+	}
+	showBootError(failures){
+		failures = failures.map(error => this.normalizeResourceError(error))
+		if(!failures.length){
+			failures = [this.normalizeResourceError("Unknown boot failure")]
+		}
+		failures.forEach(error => {
+			if(this.failedResources.indexOf(error) === -1){
+				this.recordResourceFailure(error)
+			}
+		})
+		if(this.error){
+			return
+		}
+		this.error = true
+		if(typeof cancelTouch !== "undefined"){
+			cancelTouch = false
+		}
+		var first = failures[0]
+		var failureRows = failures.map(error => {
+			return "<li><code>" + this.escapeHtml(error.url) + "</code><span>" + this.escapeHtml(error.message || error.name) + "</span></li>"
+		}).join("")
+		this.screen.innerHTML = `
+			<div class="view-outer loader-error-div boot-error-visible">
+				<div class="view boot-error-panel">
+					<div class="boot-error-title">taiko.asia loading failed</div>
+					<div class="boot-error-code">BOOT_CRITICAL_RESOURCE_FAILED</div>
+					<div class="boot-error-grid">
+						<span>Version</span><strong>${this.escapeHtml(this.getVersion())}</strong>
+						<span>Build ID</span><strong>${this.escapeHtml(this.getBuildId())}</strong>
+						<span>Failed resource</span><strong>${this.escapeHtml(first.url)}</strong>
+						<span>Error type</span><strong>${this.escapeHtml(first.status ? "HTTP " + first.status : first.message || first.name)}</strong>
+						<span>Retries</span><strong>${this.escapeHtml(first.attempts == null ? "unknown" : first.attempts - 1)}</strong>
+						<span>Browser</span><strong>${this.escapeHtml(this.getBrowserName())}</strong>
+						<span>System</span><strong>${this.escapeHtml(this.getOsName())}</strong>
+					</div>
+					<ul class="boot-error-resources">${failureRows}</ul>
+					<div class="boot-error-actions">
+						<button type="button" class="boot-reload">Reload</button>
+						<button type="button" class="boot-repair">Clear cache and retry</button>
+						<button type="button" class="boot-copy">Copy error info</button>
+					</div>
+					<textarea class="boot-error-diag" readonly></textarea>
+				</div>
+			</div>
+		`
+		var diagTextarea = this.screen.querySelector(".boot-error-diag")
+		var copyButton = this.screen.querySelector(".boot-copy")
+		this.collectDiagnostics(failures).then(diagnostics => {
+			var text = JSON.stringify(diagnostics, null, 2)
+			diagTextarea.value = text
+			copyButton.addEventListener("click", () => this.copyText(text, copyButton))
+		})
+		this.screen.querySelector(".boot-reload").addEventListener("click", () => location.reload())
+		this.screen.querySelector(".boot-repair").addEventListener("click", () => this.repairLocalCache())
+		this.clean(true)
+	}
+	copyText(text, button){
+		var done = () => {
+			button.textContent = "Copied"
+			setTimeout(() => button.textContent = "Copy error info", 1500)
+		}
+		if(navigator.clipboard && navigator.clipboard.writeText){
+			return navigator.clipboard.writeText(text).then(done, () => this.copyTextFallback(text, done))
+		}
+		return this.copyTextFallback(text, done)
+	}
+	copyTextFallback(text, done){
+		var textarea = document.createElement("textarea")
+		textarea.value = text
+		document.body.appendChild(textarea)
+		textarea.select()
+		try{
+			document.execCommand("copy")
+		}catch(e){}
+		document.body.removeChild(textarea)
+		done()
+	}
+	showWarmupWarning(){
+		var warning = document.querySelector(".loader-warmup-warning")
+		if(warning){
+			warning.style.display = "block"
+			warning.textContent = "Some resources failed and will retry in the background. Basic play is still available."
+		}
+	}
+	showRepairPage(){
+		this.screen.innerHTML = `
+			<div class="view-outer loader-error-div boot-error-visible">
+				<div class="view boot-error-panel">
+					<div class="boot-error-title">Repair local cache</div>
+					<div class="boot-error-code">TAIKO_LOCAL_CACHE_REPAIR</div>
+					<div class="boot-error-grid">
+						<span>Version</span><strong>${this.escapeHtml(this.getVersion())}</strong>
+						<span>Build ID</span><strong>${this.escapeHtml(this.getBuildId())}</strong>
+						<span>Browser</span><strong>${this.escapeHtml(this.getBrowserName())}</strong>
+						<span>System</span><strong>${this.escapeHtml(this.getOsName())}</strong>
+					</div>
+					<div class="boot-error-actions">
+						<button type="button" class="boot-repair">Clear cache and reload</button>
+						<button type="button" class="boot-reload">Back to game</button>
+					</div>
+				</div>
+			</div>
+		`
+		this.screen.querySelector(".boot-repair").addEventListener("click", () => this.repairLocalCache())
+		this.screen.querySelector(".boot-reload").addEventListener("click", () => location.href = "/")
+	}
+	async deleteIndexedDb(name){
+		return new Promise(resolve => {
+			var request = indexedDB.deleteDatabase(name)
+			request.onsuccess = resolve
+			request.onerror = resolve
+			request.onblocked = resolve
+		})
+	}
+	async repairLocalCache(){
+		if("serviceWorker" in navigator){
+			var registrations = await navigator.serviceWorker.getRegistrations()
+			for(var registration of registrations){
+				await registration.unregister()
+			}
+		}
+		if("caches" in window){
+			var keys = await caches.keys()
+			for(var key of keys){
+				await caches.delete(key)
+			}
+		}
+		if("indexedDB" in window && indexedDB.databases){
+			var databases = await indexedDB.databases()
+			for(var dbInfo of databases){
+				if(!dbInfo.name){
+					continue
+				}
+				var safeToDelete =
+					dbInfo.name.startsWith("taiko-cache") ||
+					dbInfo.name.startsWith("taiko-assets") ||
+					dbInfo.name.startsWith("taiko-temp") ||
+					dbInfo.name.startsWith("taiko-song-cache")
+				if(safeToDelete){
+					await this.deleteIndexedDb(dbInfo.name)
+				}
+			}
+		}
+		localStorage.removeItem("taiko_boot_state")
+		sessionStorage.clear()
+		location.href = "/"
+	}
 	run(){
 		this.promises = []
+		this.currentStage = "boot-minimal"
+		this.currentStageLabel = "Boot Minimal"
 		this.loaderDiv = document.querySelector("#loader")
 		this.loaderPercentage = document.querySelector("#loader .percentage")
 		this.loaderProgress = document.querySelector("#loader .progress")
 		this.loaderStatusText = document.querySelector("#loader .loader-status-text")
+		this.loaderStage = document.querySelector("#loader .loader-stage")
+		this.loaderCount = document.querySelector("#loader .loader-count")
+		this.loaderFailed = document.querySelector("#loader .loader-failed")
+		this.loaderRetry = document.querySelector("#loader .loader-retry")
 		
 		this.queryString = gameConfig._version.commit_short ? "?" + gameConfig._version.commit_short : ""
 		
@@ -157,7 +662,11 @@ class Loader{
 			var url = gameConfig.assets_baseurl + "fonts/" + assets.fonts[name]
 			this.addPromise(new FontFace(name, "url('" + url + "')").load().then(font => {
 				document.fonts.add(font)
-			}), url)
+			}), url, {
+				critical: false,
+				resourceType: "font",
+				stage: "background-warmup"
+			})
 		}
 		
 		assets.img.forEach(name => {
@@ -249,7 +758,7 @@ class Loader{
 			assets.audioSfxLoud.length +
 			(gameConfig.accounts ? 1 : 0)
 		
-		Promise.all(this.promises).then(() => {
+		this.waitForStage(this.promises, "boot-minimal").then(() => {
 			if(this.error){
 				return
 			}
@@ -257,6 +766,8 @@ class Loader{
 			var style = document.createElement("style")
 			style.appendChild(document.createTextNode(css.join("\n")))
 			document.head.appendChild(style)
+			this.currentStage = "boot-minimal"
+			this.currentStageLabel = "Boot Minimal"
 			
 			this.addPromise(this.ajax("api/songs").then(songs => {
 				songs = JSON.parse(songs)
@@ -303,11 +814,18 @@ class Loader{
 						this.assetsDiv.appendChild(image)
 						assets.image[id] = image
 						return promise
-					}).catch(response => {
-						return this.errorMsg(response, url)
 					}))
 				})
-			this.addPromise(Promise.all(categoryPromises))
+			this.addPromise(Promise.allSettled(categoryPromises).then(results => {
+				var failed = results.filter(result => result.status === "rejected")
+				if(failed.length){
+					return Promise.reject(failed.map(result => result.reason).join("\n"))
+				}
+			}), "category-backgrounds", {
+				critical: false,
+				resourceType: "category-background",
+				stage: "background-warmup"
+			})
 			
 			snd.buffer = new SoundBuffer()
 			if(!oggSupport){
@@ -378,7 +896,7 @@ class Loader{
 
 			this.startBackgroundPreload()
 
-			Promise.all(this.promises).then(() => {
+			this.waitForStage(this.promises, "boot-minimal").then(() => {
 				if(this.error){
 					return
 				}
@@ -460,29 +978,67 @@ class Loader{
 										return plugin.start(false, true)
 									}
 								}).catch(response => {
-									return this.errorMsg(response, obj.url)
+									this.recordWarmupFailure(this.normalizeResourceError(response, {
+										url: obj.url,
+										stage: "background-warmup",
+										resourceType: "plugin",
+										critical: false
+									}))
+									return null
 								}))
 							}
 						}
 					})
 				}
 				
-				Promise.all(promises).then(() => {
+				Promise.allSettled(promises).then(results => {
+					var failed = results.filter(result => result.status === "rejected")
+					if(failed.length){
+						this.showBootError(failed.map(result => this.normalizeResourceError(result.reason, {
+							url: "boot-finalize",
+							stage: "boot-minimal",
+							resourceType: "finalize",
+							critical: true
+						})))
+						return
+					}
 					perf.load = Date.now() - this.startTime
 					this.canvasTest.clean()
 					this.clean()
 					this.callback(songId)
 					this.ready = true
 					pageEvents.send("ready", readyEvent)
-				}, e => this.errorMsg(e))
-			}, e => this.errorMsg(e))
-		})
+				})
+			}, () => {})
+		}, () => {})
 	}
-	addPromise(promise, url){
-		this.promises.push(promise)
-		promise.then(this.assetLoaded.bind(this), response => {
-			return this.errorMsg(response, url)
+	addPromise(promise, url, options){
+		options = options || {}
+		var resource = {
+			url: url || "unknown",
+			critical: options.critical !== false,
+			stage: options.stage || this.currentStage || "boot-minimal",
+			resourceType: options.resourceType || this.inferResourceType(url),
+			attempts: options.retries == null ? null : options.retries + 1
+		}
+		this.totalAssets++
+		this.updateLoaderStatus(resource)
+		var trackedPromise = this.withTimeout(Promise.resolve(promise), resource, options.timeout || (resource.critical ? 20000 : 15000)).then(value => {
+			this.assetLoaded()
+			return value
+		}, response => {
+			var error = this.normalizeResourceError(response, resource)
+			if(resource.critical){
+				this.recordResourceFailure(error)
+				return Promise.reject(error)
+			}
+			this.recordWarmupFailure(error)
+			this.assetLoaded()
+			return null
 		})
+		this.promises.push(trackedPromise)
+		trackedPromise.resource = resource
+		return trackedPromise
 	}
 	addBackgroundPromise(promise, url){
 		this.backgroundPromises.push(promise)
@@ -512,7 +1068,7 @@ class Loader{
 					error = (error ? error + ": " : "") + url
 				}
 				if(attempt <= retries){
-					var delay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay)
+					var delay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay) + Math.floor(Math.random() * 300)
 					console.warn("Background preload failed, retrying", {
 						url: url,
 						attempt: attempt,
@@ -528,6 +1084,13 @@ class Loader{
 				}else{
 					console.warn("Background preload failed", error || response)
 					pageEvents.send("background-load-error", url || error || response)
+					this.recordWarmupFailure(this.normalizeResourceError(response, {
+						url: url,
+						stage: "background-warmup",
+						resourceType: this.inferResourceType(url),
+						critical: false,
+						attempts: retries + 1
+					}))
 				}
 			})
 			return promise
@@ -584,7 +1147,12 @@ class Loader{
 		if(options.crossOrigin !== false){
 			img.crossOrigin = "anonymous"
 		}
-		this.imageLoadPromises[id] = pageEvents.load(img).then(() => {
+		this.imageLoadPromises[id] = this.withTimeout(pageEvents.load(img), {
+			url: url,
+			resourceType: "image",
+			stage: "song-runtime-load",
+			critical: false
+		}, options.timeout || 15000).then(() => {
 			return this.scaleImage(img, filename, prefix, options.force)
 		}).then(image => {
 			delete this.imageLoadPromises[id]
@@ -695,106 +1263,52 @@ class Loader{
 		return name.slice(0, name.lastIndexOf("."))
 	}
 	errorMsg(error, url){
-		var rethrow
-		if(url || error){
-			if(typeof error === "object" && error.constructor === Error){
-				rethrow = error
-				error = error.stack || ""
-				var index = error.indexOf("\n    ")
-				if(index !== -1){
-					error = error.slice(0, index)
-				}
-			}else if(Array.isArray(error)){
-				error = error[0]
-			}
-			if(url){
-				error = (error ? error + ": " : "") + url
-			}
-			this.errorMessages.push(error)
-			pageEvents.send("loader-error", url || error)
-		}
-		if(!this.error){
-			this.error = true
-			cancelTouch = false
-			this.loaderDiv.classList.add("loaderError")
-			if(typeof allStrings === "object"){
-				var lang = localStorage.lang
-				if(!lang){
-					var userLang = navigator.languages.slice()
-					userLang.unshift(navigator.language)
-					for(var i in userLang){
-						for(var j in allStrings){
-							if(allStrings[j].regex.test(userLang[i])){
-								lang = j
-							}
-						}
-					}
-				}
-				if(!lang){
-					lang = "en"
-				}
-				loader.screen.getElementsByClassName("view-content")[0].innerText = allStrings[lang] && allStrings[lang].errorOccured || allStrings.en.errorOccured
-			}
-			var loaderError = loader.screen.getElementsByClassName("loader-error-div")[0]
-			loaderError.style.display = "flex"
-			var diagTxt = loader.screen.getElementsByClassName("diag-txt")[0]
-			var debugLink = loader.screen.getElementsByClassName("debug-link")[0]
-			if(navigator.userAgent.indexOf("Android") >= 0){
-				var iframe = document.createElement("iframe")
-				diagTxt.appendChild(iframe)
-				var body = iframe.contentWindow.document.body
-				body.setAttribute("style", `
-					font-family: monospace;
-					margin: 2px 0 0 2px;
-					white-space: pre-wrap;
-					word-break: break-all;
-					cursor: text;
-				`)
-				body.setAttribute("onblur", `
-					getSelection().removeAllRanges()
-				`)
-				this.errorTxt = {
-					element: body,
-					method: "innerText"
-				}
-			}else{
-				var textarea = document.createElement("textarea")
-				textarea.readOnly = true
-				diagTxt.appendChild(textarea)
-				if(!this.touchEnabled){
-					textarea.addEventListener("focus", () => {
-						textarea.select()
-					})
-					textarea.addEventListener("blur", () => {
-						getSelection().removeAllRanges()
-					})
-				}
-				this.errorTxt = {
-					element: textarea,
-					method: "value"
-				}
-			}
-			var show = () => {
-				diagTxt.style.display = "block"
-				debugLink.style.display = "none"
-			}
-			debugLink.addEventListener("click", show)
-			debugLink.addEventListener("touchstart", show)
-			this.clean(true)
-		}
-		var percentage = Math.floor(this.loadedAssets * 100 / (this.promises.length + this.afterJSCount))
-		this.errorTxt.element[this.errorTxt.method] = "```\n" + this.errorMessages.join("\n") + "\nPercentage: " + percentage + "%\n```"
-		if(rethrow || error){
-			console.error(rethrow || error)
-		}
-		return Promise.reject()
+		var detail = this.normalizeResourceError(error, {
+			url: url,
+			stage: this.currentStage || "boot-minimal",
+			resourceType: this.inferResourceType(url),
+			critical: true
+		})
+		this.showBootError([detail])
+		console.error(error || detail)
+		return Promise.reject(detail)
 	}
 	assetLoaded(){
 		if(!this.error){
 			this.loadedAssets++
-			var percentage = Math.floor(this.loadedAssets * 100 / (this.promises.length + this.afterJSCount))
-			this.loaderProgress.style.width = percentage + "%"
-			this.loaderPercentage.firstChild.data = percentage + "%"
+			var total = Math.max(1, this.totalAssets + (this.afterJSCount || 0))
+			var percentage = Math.min(100, Math.floor(this.loadedAssets * 100 / total))
+			if(this.loaderProgress){
+				this.loaderProgress.style.width = percentage + "%"
+			}
+			if(this.loaderPercentage && this.loaderPercentage.firstChild){
+				this.loaderPercentage.firstChild.data = percentage + "%"
+			}
+			this.updateLoaderStatus()
+		}
+	}
+	updateLoaderStatus(resource){
+		if(this.loaderStatusText){
+			this.loaderStatusText.textContent = resource && resource.url ? "Loading: " + resource.url : "Loading"
+		}
+		if(this.loaderStage){
+			this.loaderStage.textContent = "Stage: " + (this.currentStageLabel || this.currentStage || "Boot Minimal")
+		}
+		if(this.loaderCount){
+			var total = Math.max(1, this.totalAssets + (this.afterJSCount || 0))
+			this.loaderCount.textContent = "Progress: " + this.loadedAssets + " / " + total
+		}
+		if(this.loaderFailed){
+			this.loaderFailed.textContent = "Failed: " + this.failedResources.length
+		}
+		if(this.loaderRetry){
+			if(this.retryingResource){
+				this.loaderRetry.style.display = "block"
+				this.loaderRetry.textContent = "Retrying: " + this.retryingResource.url + " (" + this.retryingResource.attempt + " / " + this.retryingResource.retries + ")"
+			}else{
+				this.loaderRetry.style.display = "none"
+				this.loaderRetry.textContent = ""
+			}
 		}
 	}
 	changePage(name, patternBg){
@@ -815,30 +1329,42 @@ class Loader{
 		}
 		return css.join("\n")
 	}
-	ajax(url, customRequest, customResponse){
-		if(!customResponse && (url.startsWith("src/") || url.startsWith("assets/") || url.indexOf("img/") !== -1 || url.indexOf("audio/") !== -1 || url.indexOf("fonts/") !== -1 || url.indexOf("views/") !== -1)){
-			var type = "text"
-			if(customRequest){
-				var reqStub = {}
-				customRequest(reqStub)
-				if(reqStub.responseType){
-					type = reqStub.responseType
-				}
+	ajax(url, customRequest, customResponse, retryOptions){
+		retryOptions = retryOptions || {}
+		var type = "text"
+		if(customRequest){
+			var reqStub = {}
+			customRequest(reqStub)
+			if(reqStub.responseType){
+				type = reqStub.responseType
 			}
-			return this.workerFetch(url, type)
 		}
-		var request = new XMLHttpRequest()
-		request.open("GET", url)
-		var promise = pageEvents.load(request)
+		if(!customResponse && (url.startsWith("src/") || url.startsWith("assets/") || url.indexOf("img/") !== -1 || url.indexOf("audio/") !== -1 || url.indexOf("fonts/") !== -1 || url.indexOf("views/") !== -1)){
+			return this.workerFetch(url, type, Object.assign({
+				resourceType: this.inferResourceType(url),
+				timeout: 12000,
+				retries: 3
+			}, retryOptions))
+		}
 		if(!customResponse){
-			promise = promise.then(() => {
-				if(request.status === 200){
-					return request.response
+			return this.fetchWithRetry(url, Object.assign({
+				resourceType: this.inferResourceType(url),
+				timeout: 12000,
+				retries: 3
+			}, retryOptions)).then(response => {
+				if(type === "arraybuffer"){
+					return response.arrayBuffer()
+				}else if(type === "blob"){
+					return response.blob()
 				}else{
-					return Promise.reject(`${url} (${request.status})`)
+					return response.text()
 				}
 			})
 		}
+		var request = new XMLHttpRequest()
+		request.open("GET", url)
+		request.timeout = retryOptions.timeout || 12000
+		var promise = pageEvents.load(request)
 		if(customRequest){
 			customRequest(request)
 		}
@@ -847,7 +1373,11 @@ class Loader{
 	}
 	loadScript(url){
 		var url = url + this.queryString
-		return this.workerFetch(url, "text").then(code => {
+		return this.workerFetch(url, "text", {
+			resourceType: "javascript",
+			timeout: 12000,
+			retries: 3
+		}).then(code => {
 			var script = document.createElement("script")
 			code += "\n//# sourceURL=" + url
 			script.text = code
@@ -872,10 +1402,16 @@ class Loader{
 		delete this.loaderPercentage
 		delete this.loaderProgress
 		delete this.loaderStatusText
+		delete this.loaderStage
+		delete this.loaderCount
+		delete this.loaderFailed
+		delete this.loaderRetry
 		if(!error){
 			delete this.promises
 			delete this.errorText
 		}
-		pageEvents.remove(root, "touchstart")
+		if(typeof root !== "undefined"){
+			pageEvents.remove(root, "touchstart")
+		}
 	}
 }

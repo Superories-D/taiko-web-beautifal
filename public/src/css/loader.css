@@ -273,6 +273,38 @@ body {
 	animation-delay: 0.4s;
 }
 
+#loader .loader-meta {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 0.5rem 0.9rem;
+	max-width: min(90vw, 720px);
+	font-family: 'Outfit', sans-serif;
+	font-size: clamp(0.72rem, 1.7vmin, 0.95rem);
+	font-weight: 600;
+	color: rgba(255, 255, 255, 0.82);
+	text-shadow: 0 1px 4px rgba(0, 0, 0, 0.24);
+}
+
+#loader .loader-retry,
+#loader .loader-warmup-warning {
+	display: none;
+	max-width: min(90vw, 720px);
+	padding: 0.55rem 0.8rem;
+	border-radius: 8px;
+	background: rgba(16, 19, 32, 0.58);
+	border: 1px solid rgba(255, 255, 255, 0.22);
+	font-family: 'Outfit', sans-serif;
+	font-size: clamp(0.72rem, 1.7vmin, 0.95rem);
+	color: #fff;
+	text-align: center;
+	word-break: break-word;
+}
+
+#loader .loader-warmup-warning {
+	background: rgba(26, 83, 92, 0.64);
+}
+
 @keyframes dotPulse {
 
 	0%,
@@ -412,4 +444,135 @@ body {
 .loader-error-div .diag-txt textarea,
 .loader-error-div .diag-txt iframe {
 	height: 10em;
+}
+
+.loader-error-div.boot-error-visible {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: clamp(16px, 4vw, 40px);
+	box-sizing: border-box;
+	background:
+		linear-gradient(180deg, rgba(8, 11, 20, 0.64), rgba(8, 11, 20, 0.82)),
+		url("../../assets/img/ai_loader_stage_gpt2.png") center / cover no-repeat,
+		#101420;
+	z-index: 20;
+}
+
+.boot-error-panel {
+	width: min(720px, 100%);
+	max-height: 94vh;
+	overflow: auto;
+	box-sizing: border-box;
+	border-radius: 8px;
+	padding: clamp(18px, 4vw, 32px);
+	background: rgba(255, 255, 255, 0.94);
+	border: 1px solid rgba(255, 255, 255, 0.72);
+	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+	color: #172033;
+	font-family: 'Outfit', system-ui, sans-serif;
+}
+
+.boot-error-title {
+	font-size: clamp(1.7rem, 5vw, 2.6rem);
+	font-weight: 800;
+	line-height: 1.05;
+	margin-bottom: 0.5rem;
+}
+
+.boot-error-code {
+	display: inline-block;
+	margin-bottom: 1rem;
+	padding: 0.35rem 0.55rem;
+	border-radius: 6px;
+	background: #2d3748;
+	color: #fff;
+	font: 700 0.84rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.boot-error-grid {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	gap: 0.55rem 0.9rem;
+	align-items: start;
+	margin-bottom: 1rem;
+	font-size: 0.95rem;
+}
+
+.boot-error-grid span {
+	color: #526070;
+}
+
+.boot-error-grid strong,
+.boot-error-resources code,
+.boot-error-resources span {
+	word-break: break-word;
+}
+
+.boot-error-resources {
+	margin: 0 0 1rem 0;
+	padding: 0;
+	list-style: none;
+	display: grid;
+	gap: 0.45rem;
+	font-size: 0.9rem;
+}
+
+.boot-error-resources li {
+	display: grid;
+	gap: 0.2rem;
+	padding: 0.55rem 0.65rem;
+	border-radius: 6px;
+	background: #f1f5f9;
+}
+
+.boot-error-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.65rem;
+	margin-bottom: 1rem;
+}
+
+.boot-error-actions button {
+	min-height: 42px;
+	border: 0;
+	border-radius: 6px;
+	padding: 0.65rem 0.85rem;
+	background: #e63b46;
+	color: #fff;
+	font: 800 0.95rem/1 'Outfit', system-ui, sans-serif;
+	cursor: pointer;
+}
+
+.boot-error-actions button:nth-child(2) {
+	background: #147c8a;
+}
+
+.boot-error-actions button:nth-child(3) {
+	background: #2d3748;
+}
+
+.boot-error-diag {
+	width: 100%;
+	min-height: 9rem;
+	box-sizing: border-box;
+	border: 1px solid #cbd5e1;
+	border-radius: 6px;
+	padding: 0.65rem;
+	background: #f8fafc;
+	color: #172033;
+	font: 0.78rem/1.35 ui-monospace, SFMono-Regular, Consolas, monospace;
+	resize: vertical;
+}
+
+@media (max-width: 540px) {
+	.boot-error-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.boot-error-actions button {
+		width: 100%;
+	}
 }

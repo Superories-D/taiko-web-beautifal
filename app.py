@@ -445,6 +445,11 @@ def route_api_board_posts_create():
     return jsonify({'status': 'ok', 'post': serialize_board_post(post)})
 
 
+@app.route(basedir + 'repair')
+def route_repair():
+    return route_index()
+
+
 @app.route(basedir + 'api/csrftoken')
 def route_csrftoken():
     return jsonify({'status': 'ok', 'token': generate_csrf()})

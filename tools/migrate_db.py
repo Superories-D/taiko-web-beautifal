@@ -4,6 +4,7 @@
 import sqlite3
 from pymongo import MongoClient
 
+import datetime
 import os,sys,inspect
 current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parent_dir = os.path.dirname(current_dir)
@@ -11,15 +12,19 @@ sys.path.insert(0, parent_dir)
 import config
 
 client = MongoClient(config.MONGO['host'])
-client.drop_database(config.MONGO['database'])
 db = client[config.MONGO['database']]
 sqdb = sqlite3.connect('taiko.db')
 sqdb.row_factory = sqlite3.Row
 curs = sqdb.cursor()
+MIGRATION_ID = 'sqlite_to_mongodb_initial_import'
+
+def upsert_on_insert(collection, key, document):
+    db[collection].update_one(key, {'$setOnInsert': document}, upsert=True)
 
 def migrate_songs():
     curs.execute('select * from songs order by id')
     rows = curs.fetchall()
+    last_song = 0
 
     for row in rows:
         song = {
@@ -68,47 +73,58 @@ def migrate_songs():
                 else:
                     song['subtitle_lang']['en'] = lang
 
-        db.songs.insert_one(song)
+        upsert_on_insert('songs', {'id': song['id']}, song)
         last_song = song['id']
-    
-    db.seq.insert_one({'name': 'songs', 'value': last_song})
+
+    db.seq.update_one(
+        {'name': 'songs'},
+        {'$setOnInsert': {'name': 'songs'}, '$max': {'value': last_song}},
+        upsert=True
+    )
 
 def migrate_makers():
     curs.execute('select * from makers')
     rows = curs.fetchall()
 
     for row in rows:
-        db.makers.insert_one({
+        maker = {
             'id': row['maker_id'],
             'name': row['name'],
             'url': row['url']
-        })
+        }
+        upsert_on_insert('makers', {'id': maker['id']}, maker)
 
 def migrate_categories():
     curs.execute('select * from categories')
     rows = curs.fetchall()
 
     for row in rows:
-        db.categories.insert_one({
+        category = {
             'id': row['id'],
             'title': row['title']
-        })
+        }
+        upsert_on_insert('categories', {'id': category['id']}, category)
 
 def migrate_song_skins():
     curs.execute('select * from song_skins')
     rows = curs.fetchall()
 
     for row in rows:
-        db.song_skins.insert_one({
+        song_skin = {
             'id': row['id'],
             'name': row['name'],
             'song': row['song'],
             'stage': row['stage'],
             'don': row['don']
-        })
+        }
+        upsert_on_insert('song_skins', {'id': song_skin['id']}, song_skin)
 
 if __name__ == '__main__':
+    if db.migrations.find_one({'id': MIGRATION_ID}):
+        print(f'Migration {MIGRATION_ID} already applied, skip.')
+        sys.exit(0)
     migrate_songs()
     migrate_makers()
     migrate_categories()
     migrate_song_skins()
+    db.migrations.insert_one({'id': MIGRATION_ID, 'appliedAt': datetime.datetime.utcnow()})

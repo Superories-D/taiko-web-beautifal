@@ -1,14 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{seo.html_lang}}">
 
 <head>
 	<meta charset="utf-8">
-	<title>Taiko Web | Browser Rhythm Game Simulator</title>
+	<base href="{{config.basedir}}">
+	<title>{{seo.title}}</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
-	<meta name="description"
-		content="Play Taiko Web, a fast HTML5 taiko rhythm game simulator for desktop, tablet, and mobile browsers. Search songs, import custom TJA charts, and play with keyboard, touch, or controllers.">
-	<meta name="keywords"
-		content="taiko, Taiko Web, Taiko no Tatsujin, rhythm game, browser game, HTML5 game, drum game, custom songs, TJA, online taiko, 太鼓, 太鼓网页, 太鼓網頁, 太鼓の達人, 리듬 게임">
+	<meta name="description" content="{{seo.description}}">
+	<meta name="keywords" content="{{seo.keywords}}">
 	<meta name="application-name" content="Taiko Web">
 	<meta name="theme-color" content="#ff5a3d">
 	<meta name="color-scheme" content="only light">
@@ -17,48 +16,52 @@
 
 	<meta property="og:type" content="website">
 	<meta property="og:site_name" content="Taiko Web">
-	<meta property="og:title" content="Taiko Web | Browser Rhythm Game Simulator">
-	<meta property="og:description"
-		content="A playful browser-based taiko rhythm game simulator with song search, custom songs, touch controls, and global language support.">
+	<meta property="og:title" content="{{seo.title}}">
+	<meta property="og:description" content="{{seo.description}}">
 	<meta property="og:image" content="{{config.assets_baseurl}}img/favicon-512.png">
-	<meta property="og:url" content="{{request.url_root}}">
+	<meta property="og:url" content="{{seo.canonical_url}}">
+	<meta property="og:locale" content="{{seo.html_lang|replace('-', '_')}}">
 	<meta name="twitter:card" content="summary">
-	<meta name="twitter:title" content="Taiko Web">
-	<meta name="twitter:description" content="Play taiko rhythm charts in your browser.">
+	<meta name="twitter:title" content="{{seo.title}}">
+	<meta name="twitter:description" content="{{seo.description}}">
 	<meta name="twitter:image" content="{{config.assets_baseurl}}img/favicon-512.png">
 
-	<link rel="canonical" href="{{request.url_root}}">
+	<link rel="canonical" href="{{seo.canonical_url}}">
+	{% for alternate in seo.alternate_urls %}
+	<link rel="alternate" hreflang="{{alternate.hreflang}}" href="{{alternate.url}}">
+	{% endfor %}
+	<link rel="alternate" hreflang="x-default" href="{{seo.default_url}}">
 	<link rel="icon" href="{{config.assets_baseurl}}img/favicon.ico" sizes="any">
 	<link rel="icon" href="{{config.assets_baseurl}}img/favicon-32.png" type="image/png" sizes="32x32">
 	<link rel="icon" href="{{config.assets_baseurl}}img/favicon-16.png" type="image/png" sizes="16x16">
 	<link rel="apple-touch-icon" href="{{config.assets_baseurl}}img/apple-touch-icon.png">
-	<link rel="manifest" href="manifest.json">
+	<link rel="manifest" href="{{config.basedir}}manifest.json">
 
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap">
 
-	<link rel="stylesheet" href="src/css/loader.css?{{version.commit_short}}">
+	<link rel="stylesheet" href="{{config.basedir}}src/css/loader.css?{{version.commit_short}}">
 
 	<script type="application/ld+json">
 	{
 		"@context": "https://schema.org",
 		"@type": "VideoGame",
-		"name": "Taiko Web",
+		"name": {{seo.title|tojson}},
 		"applicationCategory": "Game",
 		"operatingSystem": "Web browser",
 		"genre": ["Rhythm", "Music"],
 		"inLanguage": ["en", "ja", "zh-Hans", "zh-Hant", "ko"],
-		"description": "A browser-based taiko rhythm game simulator with song search and custom chart support.",
-		"url": "{{request.url_root}}"
+		"description": {{seo.description|tojson}},
+		"url": {{seo.canonical_url|tojson}}
 	}
 	</script>
 
-	<script src="src/js/assets.js?{{version.commit_short}}"></script>
-	<script src="src/js/strings.js?{{version.commit_short}}"></script>
-	<script src="src/js/pageevents.js?{{version.commit_short}}"></script>
-	<script src="src/js/loader.js?{{version.commit_short}}"></script>
-	<script src="src/js/lib/jszip.js"></script>
+	<script src="{{config.basedir}}src/js/assets.js?{{version.commit_short}}"></script>
+	<script src="{{config.basedir}}src/js/strings.js?{{version.commit_short}}"></script>
+	<script src="{{config.basedir}}src/js/pageevents.js?{{version.commit_short}}"></script>
+	<script src="{{config.basedir}}src/js/loader.js?{{version.commit_short}}"></script>
+	<script src="{{config.basedir}}src/js/lib/jszip.js"></script>
 </head>
 
 <body>
@@ -67,14 +70,14 @@
 	<div data-nosnippet id="version">
 		{% if version.version and version.commit_short and version.commit %}
 		<a href="{{version.url}}commit/{{version.commit}}" target="_blank" rel="noopener" id="version-link"
-			class="stroke-sub" alt="vLightNova 2.0.1 beta">vLightNova 2.0.1 beta</a>
+			class="stroke-sub" alt="vLightNova 2.0.3">vLightNova 2.0.3</a>
 		{% else %}
-		<a target="_blank" rel="noopener" id="version-link" class="stroke-sub" alt="vLightNova 2.0.1 beta">vLightNova
-			2.0.1 beta</a>
+		<a target="_blank" rel="noopener" id="version-link" class="stroke-sub" alt="vLightNova 2.0.3">vLightNova
+			2.0.3</a>
 		{% endif %}
 	</div>
-	<script src="src/js/browsersupport.js?{{version.commit_short}}"></script>
-	<script src="src/js/main.js?{{version.commit_short}}"></script>
+	<script src="{{config.basedir}}src/js/browsersupport.js?{{version.commit_short}}"></script>
+	<script src="{{config.basedir}}src/js/main.js?{{version.commit_short}}"></script>
 	<noscript>
 		<div data-nosnippet id="unsupportedBrowser">
 			<div id="unsupportedWarn">!</div>

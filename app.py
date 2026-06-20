@@ -118,6 +118,54 @@ limiter = Limiter(
 
 client = MongoClient(host=os.environ.get("TAIKO_WEB_MONGO_HOST") or take_config('MONGO', required=True)['host'])
 basedir = take_config('BASEDIR') or '/'
+SEO_DEFAULT_LANG = 'ja'
+SEO_LANGUAGES = {
+    'ja': {
+        'html_lang': 'ja',
+        'hreflang': 'ja',
+        'title': 'Taiko Web | ブラウザ太鼓リズムゲーム',
+        'description': 'Taiko Webで太鼓リズム譜面をブラウザですぐにプレイ。曲検索、カスタムTJA譜面、キーボード・タッチ・コントローラー操作に対応。',
+        'keywords': '太鼓, 太鼓ウェブ, 太鼓の達人, リズムゲーム, ブラウザゲーム, HTML5ゲーム, TJA, カスタム曲, オンライン太鼓',
+    },
+    'en': {
+        'html_lang': 'en',
+        'hreflang': 'en',
+        'title': 'Taiko Web | Browser Rhythm Game Simulator',
+        'description': 'Play Taiko Web, a fast HTML5 taiko rhythm game simulator for desktop, tablet, and mobile browsers. Search songs, import custom TJA charts, and play with keyboard, touch, or controllers.',
+        'keywords': 'taiko, Taiko Web, Taiko no Tatsujin, rhythm game, browser game, HTML5 game, drum game, custom songs, TJA, online taiko',
+    },
+    'cn': {
+        'html_lang': 'zh-Hans',
+        'hreflang': 'zh-Hans',
+        'title': 'Taiko Web | 浏览器太鼓节奏游戏',
+        'description': '在浏览器中游玩 Taiko Web 太鼓节奏游戏，支持歌曲搜索、自定义 TJA 谱面、键盘、触控和手柄操作。',
+        'keywords': '太鼓, 太鼓网页, 太鼓达人, 节奏游戏, 浏览器游戏, HTML5游戏, 鼓游戏, 自定义歌曲, TJA, 在线太鼓',
+    },
+    'tw': {
+        'html_lang': 'zh-Hant',
+        'hreflang': 'zh-Hant',
+        'title': 'Taiko Web | 瀏覽器太鼓節奏遊戲',
+        'description': '在瀏覽器中遊玩 Taiko Web 太鼓節奏遊戲，支援歌曲搜尋、自訂 TJA 譜面、鍵盤、觸控和控制器操作。',
+        'keywords': '太鼓, 太鼓網頁, 太鼓達人, 節奏遊戲, 瀏覽器遊戲, HTML5遊戲, 鼓遊戲, 自訂歌曲, TJA, 線上太鼓',
+    },
+    'ko': {
+        'html_lang': 'ko',
+        'hreflang': 'ko',
+        'title': 'Taiko Web | 브라우저 태고 리듬 게임',
+        'description': '브라우저에서 Taiko Web 태고 리듬 게임을 플레이하세요. 곡 검색, 커스텀 TJA 채보, 키보드, 터치, 컨트롤러 조작을 지원합니다.',
+        'keywords': '태고, Taiko Web, 태고의 달인, 리듬 게임, 브라우저 게임, HTML5 게임, 드럼 게임, 커스텀 곡, TJA, 온라인 태고',
+    },
+}
+SEO_LANG_ALIASES = {
+    'jp': 'ja',
+    'zh': 'cn',
+    'zh-cn': 'cn',
+    'zh-hans': 'cn',
+    'zh-sg': 'cn',
+    'zh-tw': 'tw',
+    'zh-hk': 'tw',
+    'zh-hant': 'tw',
+}
 
 app.secret_key = take_config('SECRET_KEY') or 'change-me'
 if redis_available:
@@ -364,6 +412,50 @@ def get_version():
 
     return version
 
+
+def site_path(path=''):
+    base = basedir if basedir.endswith('/') else basedir + '/'
+    return base + path.lstrip('/')
+
+
+def localized_index_path(lang):
+    return site_path(lang)
+
+
+def absolute_site_url(path):
+    return request.url_root.rstrip('/') + path
+
+
+def resolve_seo_lang(lang):
+    lang = (lang or SEO_DEFAULT_LANG).lower()
+    lang = SEO_LANG_ALIASES.get(lang, lang)
+    if lang in SEO_LANGUAGES:
+        return lang
+    return None
+
+
+def get_seo_meta(lang=SEO_DEFAULT_LANG):
+    lang = resolve_seo_lang(lang) or SEO_DEFAULT_LANG
+    meta = dict(SEO_LANGUAGES[lang])
+    meta['lang'] = lang
+    meta['canonical_url'] = absolute_site_url(localized_index_path(lang))
+    meta['default_url'] = absolute_site_url(localized_index_path(SEO_DEFAULT_LANG))
+    meta['alternate_urls'] = [
+        {
+            'lang': code,
+            'hreflang': details['hreflang'],
+            'url': absolute_site_url(localized_index_path(code))
+        }
+        for code, details in SEO_LANGUAGES.items()
+    ]
+    return meta
+
+
+def render_index_page(lang=SEO_DEFAULT_LANG):
+    version = get_version()
+    return render_template('index.html', version=version, config=get_config(), seo=get_seo_meta(lang))
+
+
 def get_db_don(user):
     don_body_fill = user['don_body_fill'] if 'don_body_fill' in user else get_default_don('body_fill')
     don_face_fill = user['don_face_fill'] if 'don_face_fill' in user else get_default_don('face_fill')
@@ -390,8 +482,18 @@ def is_hex(input):
 
 @app.route(basedir)
 def route_index():
-    version = get_version()
-    return render_template('index.html', version=version, config=get_config())
+    return redirect(localized_index_path(SEO_DEFAULT_LANG), code=302)
+
+
+@app.route(basedir + '<lang_code>', strict_slashes=False)
+def route_localized_index(lang_code):
+    lang = resolve_seo_lang(lang_code)
+    if not lang:
+        abort(404)
+    canonical_path = localized_index_path(lang)
+    if request.path != canonical_path:
+        return redirect(canonical_path, code=302)
+    return render_index_page(lang)
 
 
 @app.route(basedir + 'board')
@@ -447,7 +549,7 @@ def route_api_board_posts_create():
 
 @app.route(basedir + 'repair')
 def route_repair():
-    return route_index()
+    return render_index_page(SEO_DEFAULT_LANG)
 
 
 @app.route(basedir + 'api/csrftoken')

@@ -482,7 +482,7 @@ def is_hex(input):
 
 @app.route(basedir)
 def route_index():
-    return redirect(localized_index_path(SEO_DEFAULT_LANG), code=302)
+    return render_index_page(SEO_DEFAULT_LANG)
 
 
 @app.route(basedir + '<lang_code>', strict_slashes=False)

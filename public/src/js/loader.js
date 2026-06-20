@@ -559,7 +559,7 @@ class Loader{
 			</div>
 		`
 		this.screen.querySelector(".boot-repair").addEventListener("click", () => this.repairLocalCache())
-		this.screen.querySelector(".boot-reload").addEventListener("click", () => location.href = "/")
+		this.screen.querySelector(".boot-reload").addEventListener("click", () => location.href = gameConfig.basedir || "/")
 	}
 	async deleteIndexedDb(name){
 		return new Promise(resolve => {
@@ -600,7 +600,7 @@ class Loader{
 		}
 		localStorage.removeItem("taiko_boot_state")
 		sessionStorage.clear()
-		location.href = "/"
+		location.href = gameConfig.basedir || "/"
 	}
 	run(){
 		this.promises = []

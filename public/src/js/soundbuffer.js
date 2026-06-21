@@ -7,18 +7,143 @@
 		this.context = new AudioContext()
 		this.audioDecoder = this.context.decodeAudioData.bind(this.context)
 		this.oggDecoder = this.audioDecoder
+		this.oggmentedPromise = null
+		this.oggFallbackQueue = Promise.resolve()
+		this.oggFallbackActive = false
 		pageEvents.add(window, ["click", "touchend", "keypress"], this.pageClicked.bind(this))
 		this.gainList = []
 	}
 	load(file, gain){
-		var decoder = file.name.endsWith(".ogg") ? this.oggDecoder : this.audioDecoder
-		return file.arrayBuffer().then(response => {
-			return new Promise((resolve, reject) => {
-				return decoder(response, resolve, reject)
-			}).catch(error => Promise.reject([error, file.url]))
-		}).then(buffer => {
+		var promise = file.name.endsWith(".ogg") ? this.loadOgg(file) : this.loadAudio(file, this.audioDecoder)
+		return promise.then(buffer => {
 			return new Sound(gain || {soundBuffer: this}, buffer)
 		})
+	}
+	loadAudio(file, decoder){
+		return file.arrayBuffer().then(response => {
+			return this.decodeBuffer(decoder, response)
+		}).catch(error => Promise.reject([error, file.url]))
+	}
+	loadOgg(file){
+		if(this.oggFallbackActive && this.canUseOggFallback()){
+			return this.loadOggFallbackFile(file, new Error("Skipped native OGG decoder after previous native decode failure"))
+		}
+		return file.arrayBuffer().then(response => {
+			return this.decodeBuffer(this.oggDecoder, response).catch(nativeError => {
+				if(!this.canUseOggFallback()){
+					return Promise.reject(nativeError)
+				}
+				return this.loadOggFallbackFile(file, nativeError).then(buffer => {
+					this.oggFallbackActive = true
+					return buffer
+				})
+			})
+		}).catch(error => Promise.reject([error, file.url]))
+	}
+	decodeBuffer(decoder, response){
+		return new Promise((resolve, reject) => {
+			var promise
+			try{
+				promise = decoder(response, resolve, reject)
+			}catch(error){
+				reject(error)
+			}
+			if(promise && typeof promise.then === "function"){
+				promise.then(resolve, reject)
+			}
+		})
+	}
+	canUseOggFallback(){
+		return "WebAssembly" in window
+	}
+	loadOggFallbackFile(file, nativeError){
+		return file.arrayBuffer().then(response => {
+			return this.decodeOggFallback(response)
+		}).catch(fallbackError => {
+			return Promise.reject(this.createOggFallbackError(nativeError, fallbackError))
+		})
+	}
+	decodeOggFallback(response){
+		var task = this.oggFallbackQueue.then(() => {
+			return this.getOggmented().then(oggmented => {
+				return new Promise((resolve, reject) => {
+					try{
+						oggmented.decodeOggData(response, resolve, reject)
+					}catch(error){
+						reject(error)
+					}
+				})
+			})
+		})
+		this.oggFallbackQueue = task.catch(() => {})
+		return task
+	}
+	getOggmented(){
+		if(typeof Oggmented === "function"){
+			return Oggmented()
+		}
+		if(!this.oggmentedPromise){
+			this.oggmentedPromise = this.loadOggmentedScript().then(() => {
+				if(typeof Oggmented !== "function"){
+					throw new Error("Oggmented decoder did not load")
+				}
+				return Oggmented()
+			}, error => {
+				this.oggmentedPromise = null
+				return Promise.reject(error)
+			})
+		}
+		return this.oggmentedPromise
+	}
+	loadOggmentedScript(){
+		return new Promise((resolve, reject) => {
+			var script = document.createElement("script")
+			script.src = this.getOggmentedScriptUrl()
+			script.async = true
+			script.setAttribute("data-taiko-oggmented", "true")
+			script.onload = resolve
+			script.onerror = () => {
+				reject(new Error("Failed to load OGG fallback decoder: " + script.src))
+			}
+			document.head.appendChild(script)
+		})
+	}
+	getOggmentedScriptUrl(){
+		var queryString = ""
+		if(typeof loader !== "undefined" && loader && loader.queryString){
+			queryString = loader.queryString
+		}else if(typeof gameConfig !== "undefined" && gameConfig._version && gameConfig._version.commit_short){
+			queryString = "?" + gameConfig._version.commit_short
+		}
+		return "src/js/lib/oggmented-wasm.js" + queryString
+	}
+	createOggFallbackError(nativeError, fallbackError){
+		var error = new Error(
+			"OGG decode failed (native: " + this.formatDecodeError(nativeError) +
+			"; fallback: " + this.formatDecodeError(fallbackError) + ")"
+		)
+		error.name = "AudioDecodeError"
+		error.nativeError = nativeError
+		error.fallbackError = fallbackError
+		return error
+	}
+	formatDecodeError(error){
+		if(!error){
+			return "Unknown error"
+		}
+		if(typeof error === "string"){
+			return error
+		}
+		if(error.name && error.message){
+			return error.name + ": " + error.message
+		}
+		if(error.message){
+			return error.message
+		}
+		if(error.name){
+			return error.name
+		}
+		return String(error)
 	}
 	createGain(channel){
 		var gain = new SoundGain(this, channel)

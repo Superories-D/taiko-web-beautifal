@@ -225,11 +225,13 @@ class Loader{
 		if(typeof error === "string"){
 			message = error
 		}else if(Array.isArray(error)){
-			message = error[0]
+			var arrayError = error[0]
+			detail = arrayError && arrayError.detail || arrayError || detail
+			message = this.formatErrorMessage(arrayError)
 		}else if(error && error.message){
 			message = error.message
 		}else{
-			message = String(error || "Unknown error")
+			message = this.formatErrorMessage(error)
 		}
 		return {
 			code: error && error.code || "BOOT_RESOURCE_FAILED",
@@ -243,6 +245,21 @@ class Loader{
 			attempts: detail && detail.retries != null ? detail.retries + 1 : resource.attempts || null,
 			duration: detail && detail.duration || null
 		}
+	}
+	formatErrorMessage(error){
+		if(error == null){
+			return "Unknown error"
+		}
+		if(typeof error === "string"){
+			return error
+		}
+		if(error.message){
+			return error.name && error.name !== "Error" ? error.name + ": " + error.message : error.message
+		}
+		if(error.name){
+			return error.name
+		}
+		return String(error)
 	}
 	recordResourceFailure(error){
 		this.failedResources.push(error)
@@ -620,10 +637,6 @@ class Loader{
 		if(gameConfig.custom_js){
 			this.addPromise(this.loadScript(gameConfig.custom_js), gameConfig.custom_js)
 		}
-		var oggSupport = new Audio().canPlayType("audio/ogg;codecs=vorbis")
-		if(!oggSupport){
-			assets.js.push("lib/oggmented-wasm.js")
-		}
 		assets.js.forEach(name => {
 			this.addPromise(this.loadScript("src/js/" + name), "src/js/" + name)
 		})
@@ -828,9 +841,6 @@ class Loader{
 			})
 			
 			snd.buffer = new SoundBuffer()
-			if(!oggSupport){
-				snd.buffer.oggDecoder = snd.buffer.fallbackDecoder
-			}
 			snd.musicGain = snd.buffer.createGain()
 			snd.sfxGain = snd.buffer.createGain()
 			snd.previewGain = snd.buffer.createGain()

@@ -413,30 +413,6 @@ def get_version():
     return version
 
 
-def get_asset_version(version=None):
-    version = version or get_version()
-    if version.get('commit_short'):
-        return version['commit_short']
-
-    paths = [
-        'templates/index.html',
-        'public/src/css/loader.css',
-        'public/src/js/assets.js',
-        'public/src/js/strings.js',
-        'public/src/js/pageevents.js',
-        'public/src/js/loader.js',
-        'public/src/js/browsersupport.js',
-        'public/src/js/main.js'
-    ]
-    mtimes = []
-    for path in paths:
-        try:
-            mtimes.append(int((APP_ROOT / path).stat().st_mtime))
-        except OSError:
-            pass
-    return str(max(mtimes)) if mtimes else 'local'
-
-
 def site_path(path=''):
     base = basedir if basedir.endswith('/') else basedir + '/'
     return base + path.lstrip('/')
@@ -477,13 +453,7 @@ def get_seo_meta(lang=SEO_DEFAULT_LANG):
 
 def render_index_page(lang=SEO_DEFAULT_LANG):
     version = get_version()
-    return render_template(
-        'index.html',
-        version=version,
-        asset_version=get_asset_version(version),
-        config=get_config(),
-        seo=get_seo_meta(lang)
-    )
+    return render_template('index.html', version=version, config=get_config(), seo=get_seo_meta(lang))
 
 
 def get_db_don(user):

@@ -4,8 +4,9 @@ body {
 	width: 100%;
 	height: 100%;
 	background:
+		radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.18), transparent 34vmin),
 		linear-gradient(180deg, rgba(26, 8, 20, 0.18), rgba(6, 10, 22, 0.28)),
-		url("../../assets/img/ai_loader_stage_gpt2.png") center / cover no-repeat,
+		url("../../assets/img/ai_loader_stage_gpt2_500k.jpg") center / cover no-repeat,
 		linear-gradient(135deg, #ff7a3d 0%, #f44c45 45%, #20b7c8 100%);
 	position: absolute;
 	user-select: none;
@@ -18,7 +19,9 @@ body {
 	height: 100%;
 	margin: 0;
 	padding: 0;
-	background-color: #000;
+	background:
+		radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.2), transparent 36vmin),
+		linear-gradient(135deg, #ff7a3d 0%, #f44c45 45%, #20b7c8 100%);
 	background-position: center;
 	background-size: 30vh;
 }
@@ -27,13 +30,71 @@ body {
 	background:
 		radial-gradient(circle at center, rgba(8, 10, 24, 0.08) 0 24vmin, rgba(8, 10, 24, 0.42) 62vmin),
 		linear-gradient(180deg, rgba(255, 150, 76, 0.08), rgba(0, 120, 150, 0.12)),
-		url("../../assets/img/ai_loader_stage_gpt2.png") center / cover no-repeat,
+		url("../../assets/img/ai_loader_stage_gpt2_500k.jpg") center / cover no-repeat,
 		linear-gradient(135deg, #ff7a3d 0%, #f44c45 45%, #20b7c8 100%);
 }
 
 #assets,
 #browse {
 	display: none;
+}
+
+#initial-loader {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 1rem;
+	padding: 24px;
+	box-sizing: border-box;
+	color: #fff;
+	font-family: 'Outfit', system-ui, sans-serif;
+	text-align: center;
+	text-shadow: 0 2px 14px rgba(0, 0, 0, 0.28);
+}
+
+.initial-loader-title {
+	font-size: clamp(2.4rem, 8vmin, 5rem);
+	font-weight: 800;
+	line-height: 1;
+}
+
+.initial-loader-status {
+	font-size: clamp(0.8rem, 2.5vmin, 1.2rem);
+	font-weight: 700;
+	letter-spacing: 0;
+	text-transform: uppercase;
+	color: rgba(255, 255, 255, 0.86);
+}
+
+.initial-loader-bar {
+	width: min(78vw, 420px);
+	height: 8px;
+	border-radius: 999px;
+	overflow: hidden;
+	background: rgba(255, 255, 255, 0.28);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.initial-loader-bar span {
+	display: block;
+	width: 42%;
+	height: 100%;
+	border-radius: inherit;
+	background: linear-gradient(90deg, #ffe15a, #ff7a3d, #f02e4f);
+	animation: initialLoaderSlide 1.2s ease-in-out infinite;
+}
+
+@keyframes initialLoaderSlide {
+	0% {
+		transform: translateX(-105%);
+	}
+
+	100% {
+		transform: translateX(245%);
+	}
 }
 
 /* ==========================================
@@ -456,7 +517,7 @@ body {
 	box-sizing: border-box;
 	background:
 		linear-gradient(180deg, rgba(8, 11, 20, 0.64), rgba(8, 11, 20, 0.82)),
-		url("../../assets/img/ai_loader_stage_gpt2.png") center / cover no-repeat,
+		url("../../assets/img/ai_loader_stage_gpt2_500k.jpg") center / cover no-repeat,
 		#101420;
 	z-index: 20;
 }

@@ -66,7 +66,13 @@
 
 <body>
 	<div id="assets"></div>
-	<div id="screen" class="pattern-bg"></div>
+	<div id="screen" class="pattern-bg">
+		<div id="initial-loader" role="status" aria-live="polite">
+			<div class="initial-loader-title">Taiko Web</div>
+			<div class="initial-loader-bar"><span></span></div>
+			<div class="initial-loader-status">Loading</div>
+		</div>
+	</div>
 	<div data-nosnippet id="version">
 		{% if version.version and version.commit_short and version.commit %}
 		<a href="{{version.url}}commit/{{version.commit}}" target="_blank" rel="noopener" id="version-link"

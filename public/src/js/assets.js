@@ -6,6 +6,7 @@ var assets = {
 		"parseosu.js",
 		"titlescreen.js",
 		"scoresheet.js",
+		"weeklychallenge.js",
 		"songselect.js",
 		"keyboard.js",
 		"gameinput.js",
@@ -93,6 +94,8 @@ var assets = {
 		"#touch-pause-btn": "touch_pause.png",
 		"#touch-full-btn": "touch_fullscreen.png",
 		"#song-search-btn": "search_icon.png",
+		"#weekly-challenge-btn": "weekly_challenge_icon.png",
+		"#weekly-challenge": "weekly_challenge_panel.jpg",
 		"#gamepad-bg, #gamepad-buttons": "settings_gamepad.png",
 		".song-search-result-crown": "crown.png",
 		".song-search-tip-error": "miss.png"
@@ -153,6 +156,7 @@ var assets = {
 		"account.html",
 		"login.html",
 		"customsongs.html",
+		"weekly_challenge.html",
 		"search.html",
 		"upload.html"
 	],

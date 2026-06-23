@@ -75,10 +75,10 @@
 	background-size: contain;
 	background-repeat: no-repeat;
 }
-#song-search-btn{
+#song-search-btn,
+#weekly-challenge-btn{
 	display: none;
 	position: absolute;
-	right: max(14vmin, 132px);
 	bottom: max(2vmin, 14px);
 	width: clamp(46px, 7.2vmin, 68px);
 	height: clamp(46px, 7.2vmin, 68px);
@@ -96,17 +96,29 @@
 	touch-action: manipulation;
 	transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.12s ease;
 }
-#song-search-btn[hidden]{
+#song-search-btn{
+	right: max(14vmin, 132px);
+}
+#weekly-challenge-btn{
+	right: calc(max(14vmin, 132px) + clamp(56px, 8.4vmin, 82px));
+}
+#song-search-btn[hidden],
+#weekly-challenge-btn[hidden]{
 	display: none !important;
 }
 #song-search-btn:hover,
-#song-search-btn:focus-visible{
+#song-search-btn:focus-visible,
+#weekly-challenge-btn:hover,
+#weekly-challenge-btn:focus-visible{
 	background-color: rgba(255, 249, 35, 0.35);
 	opacity: 1;
 	transform: scale(1.05);
 	outline: none;
 }
 #song-select.search-button-visible #song-search-btn{
+	display: block;
+}
+#song-select.weekly-challenge-visible #weekly-challenge-btn{
 	display: block;
 }
 #song-sel-selectable{

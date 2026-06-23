@@ -7,6 +7,9 @@ class Controller{
 		this.songData = songData
 		this.autoPlayEnabled = autoPlayEnabled
 		this.saveScore = !autoPlayEnabled
+		if (selectedSong.weeklyChallenge && typeof WeeklyChallenge !== "undefined") {
+			WeeklyChallenge.lockOptions()
+		}
 		this.multiplayer = multiplayer
 		this.touchEnabled = touchEnabled
 		if(multiplayer === 2){
@@ -254,6 +257,9 @@ class Controller{
 				return
 			}
 			this.clean()
+		}
+		if(this.selectedSong.weeklyChallenge && typeof WeeklyChallenge !== "undefined"){
+			WeeklyChallenge.clearRun()
 		}
 		if(this.calibrationMode){
 			new SettingsView(this.touchEnabled, false, null, "latency")

@@ -92,3 +92,21 @@ playcount_record = {
     },
     'required': ['hash', 'difficulty', 'score', 'is_auto']
 }
+
+weekly_challenge_submit = {
+    '$schema': 'http://json-schema.org/schema#',
+    'type': 'object',
+    'properties': {
+        'challenge_id': {'type': 'string'},
+        'hash': {'type': 'string'},
+        'song_hash': {'type': 'string'},
+        'difficulty': {'type': 'string'},
+        'score': {'type': 'number'},
+        'good': {'type': 'number'},
+        'ok': {'type': 'number'},
+        'bad': {'type': 'number'},
+        'max_combo': {'type': 'number'},
+        'drumroll': {'type': 'number'}
+    },
+    'required': ['challenge_id', 'difficulty', 'score']
+}

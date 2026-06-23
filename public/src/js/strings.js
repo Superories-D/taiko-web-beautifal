@@ -522,6 +522,57 @@ var translations = {
 		tw: "未進入前100名",
 		ko: "상위 100위에 진입하지 못했습니다"
 	},
+	weeklyChallenge: {
+		title: {
+			ja: "週間チャレンジ",
+			en: "Weekly Challenge",
+			cn: "每周挑战",
+			tw: "每週挑戰",
+			ko: "주간 챌린지"
+		},
+		thisWeekSong: {
+			ja: "今週の課題曲",
+			en: "This Week's Song",
+			cn: "本周课题曲目",
+			tw: "本週課題曲目",
+			ko: "이번 주 과제곡"
+		},
+		currentLeaderboard: {
+			ja: "今週のランキング",
+			en: "This Week",
+			cn: "本周排行榜",
+			tw: "本週排行榜",
+			ko: "이번 주 순위"
+		},
+		previousLeaderboard: {
+			ja: "先週のランキング",
+			en: "Last Week",
+			cn: "上周排行榜",
+			tw: "上週排行榜",
+			ko: "지난주 순위"
+		},
+		start: {
+			ja: "チャレンジ開始",
+			en: "Start Challenge",
+			cn: "开始挑战",
+			tw: "開始挑戰",
+			ko: "챌린지 시작"
+		},
+		noChallenge: {
+			ja: "挑戦できる魔王難度の曲がありません。",
+			en: "No Extreme song is available for the challenge.",
+			cn: "暂无可挑战的魔王难度曲目。",
+			tw: "暫無可挑戰的魔王難度曲目。",
+			ko: "챌린지에 사용할 귀신 난이도 곡이 없습니다."
+		},
+		noPrevious: {
+			ja: "先週の記録はありません",
+			en: "No last-week record",
+			cn: "暂无上周记录",
+			tw: "暫無上週記錄",
+			ko: "지난주 기록 없음"
+		}
+	},
 
 	errorOccured: {
 		ja: "エラーが発生しました。再読み込みしてください。",
@@ -1345,6 +1396,27 @@ var translations = {
 			cn: "安全令牌已过期，请刷新页面。",
 			tw: "安全權杖過期。請重新載入頁面。",
 			ko: "보안 토큰이 만료되었습니다. 페이지를 새로고침해주세요."
+		},
+		no_oni_songs: {
+			ja: "挑戦できる魔王難度の曲がありません。",
+			en: "No Extreme song is available for the challenge.",
+			cn: "暂无可挑战的魔王难度曲目。",
+			tw: "暫無可挑戰的魔王難度曲目。",
+			ko: "챌린지에 사용할 귀신 난이도 곡이 없습니다."
+		},
+		challenge_song_missing: {
+			ja: "課題曲を読み込めませんでした。",
+			en: "Could not load the challenge song.",
+			cn: "无法加载挑战课题曲。",
+			tw: "無法載入挑戰課題曲。",
+			ko: "챌린지 곡을 불러올 수 없습니다."
+		},
+		challenge_not_active: {
+			ja: "このチャレンジは現在有効ではありません。",
+			en: "This challenge is not active.",
+			cn: "该挑战当前不可用。",
+			tw: "該挑戰目前不可用。",
+			ko: "이 챌린지는 현재 활성화되어 있지 않습니다."
 		}
 	},
 	browserSupport: {

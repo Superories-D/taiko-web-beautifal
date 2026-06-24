@@ -150,10 +150,6 @@ class SongSelect {
 				return a.id > b.id ? 1 : -1
 			}
 		})
-		const titlesort = localStorage.getItem("titlesort") ?? "false";
-		if (titlesort === "true") {
-			this.songs.sort((a, b) => a.title.localeCompare(b.title));
-		}
 		if (assets.songs.length) {
 			this.songs.push({
 				title: strings.back,
@@ -273,13 +269,6 @@ class SongSelect {
 			title: "でたらめ",
 			skin: this.songSkin.customSettings,
 			action: "detarame",
-		});
-
-
-		this.songs.push({
-			title: "タイトル順で並べ替え",
-			skin: this.songSkin.customSettings,
-			action: "titlesort",
 		});
 
 		this.songs.push({
@@ -1084,24 +1073,6 @@ class SongSelect {
 						detarame = input;
 					}
 					localStorage.setItem("detarame", detarame);
-				}, 100);
-			} else if (currentSong.action === "titlesort") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let titlesort = localStorage.getItem("titlesort") ?? "false";
-					const input = prompt("タイトル順で並べ替えするには\"true\"を入力してね！", titlesort);
-					if (input === null) {
-						// キャンセル
-					} else if (input === "") {
-						titlesort = "false";
-					} else {
-						titlesort = input;
-					}
-					const preValue = localStorage.getItem("titlesort") ?? "false";
-					localStorage.setItem("titlesort", titlesort);
-					if (preValue !== titlesort) {
-						location.reload();
-					}
 				}, 100);
 			}
 		}

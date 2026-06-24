@@ -4,4 +4,4 @@ WORKDIR /app
 RUN pip install -r requirements.txt
 ENV PYTHONUNBUFFERED 1
 EXPOSE 80
-CMD ["gunicorn", "app:app", "--access-logfile", "-", "--bind", "0.0.0.0:80"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app", "--access-logfile", "-"]

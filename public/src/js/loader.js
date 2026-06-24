@@ -23,6 +23,9 @@ class Loader{
 		this.backgroundRetryLimit = 5
 		this.imageLoadPromises = {}
 		this.soundLoadPromises = {}
+		this.downloadedBytes = 0
+		this.downloadSamples = []
+		this.downloadSpeedTimer = null
 		
 		this.installClientErrorHandlers()
 		this.initWorkers()
@@ -76,21 +79,41 @@ class Loader{
 		this.workerQueue = []
 		this.workerCallbacks = {}
 		this.workerId = 0
-		var concurrency = navigator.hardwareConcurrency || 4
+		var concurrency = this.getDownloadConcurrency()
 		for(var i = 0; i < concurrency; i++){
 			var worker = new Worker("src/js/loader-worker.js")
 			worker.onmessage = this.onWorkerMessage.bind(this)
 			this.workers.push({
 				worker: worker,
-				active: 0
+				active: false,
+				taskId: null
 			})
 		}
+	}
+	getDownloadConcurrency(){
+		var connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection
+		if(connection && connection.saveData){
+			return 6
+		}
+		if(connection && (connection.effectiveType === "slow-2g" || connection.effectiveType === "2g")){
+			return 4
+		}
+		if(connection && connection.effectiveType === "3g"){
+			return 8
+		}
+		var cpuConcurrency = navigator.hardwareConcurrency || 4
+		return Math.min(24, Math.max(12, cpuConcurrency * 2))
 	}
 	onWorkerMessage(e){
 		var data = e.data
 		var callback = this.workerCallbacks[data.id]
 		if(callback){
+			if(data.progress){
+				this.updateDownloadProgress(callback, data.loaded, data.total)
+				return
+			}
 			delete this.workerCallbacks[data.id]
+			this.updateDownloadProgress(callback, data.loaded, data.total)
 			if(data.error){
 				callback.reject(data.error)
 			}else{
@@ -108,7 +131,9 @@ class Loader{
 				type: type,
 				options: options || {},
 				resolve: resolve,
-				reject: reject
+				reject: reject,
+				loaded: 0,
+				total: 0
 			})
 			this.workerRun()
 		})
@@ -117,18 +142,14 @@ class Loader{
 		if(this.workerQueue.length === 0){
 			return
 		}
-		var workerIndex = -1
-		var minActive = Infinity
-		for(var i = 0; i < this.workers.length; i++){
-			if(this.workers[i].active < minActive){
-				minActive = this.workers[i].active
-				workerIndex = i
-			}
-		}
-		if(workerIndex !== -1){
-			var task = this.workerQueue.shift()
+		for(var workerIndex = 0; workerIndex < this.workers.length && this.workerQueue.length; workerIndex++){
 			var workerObj = this.workers[workerIndex]
-			workerObj.active++
+			if(workerObj.active){
+				continue
+			}
+			var task = this.workerQueue.shift()
+			workerObj.active = true
+			workerObj.taskId = task.id
 			this.workerCallbacks[task.id] = task
 			task.workerIndex = workerIndex
 			workerObj.worker.postMessage({
@@ -141,9 +162,73 @@ class Loader{
 	}
 	workerFree(index){
 		if(this.workers[index]){
-			this.workers[index].active--
+			this.workers[index].active = false
+			this.workers[index].taskId = null
 			this.workerRun()
 		}
+	}
+	updateDownloadProgress(task, loaded, total){
+		if(!task || loaded == null){
+			return
+		}
+		loaded = Math.max(0, Number(loaded) || 0)
+		var delta = Math.max(0, loaded - task.loaded)
+		task.loaded = loaded
+		task.total = Math.max(task.total || 0, Number(total) || 0)
+		if(delta){
+			this.downloadedBytes += delta
+			this.recordDownloadSample()
+		}
+	}
+	recordDownloadSample(){
+		var now = performance.now()
+		this.downloadSamples.push({
+			at: now,
+			bytes: this.downloadedBytes
+		})
+		while(this.downloadSamples.length > 2 && this.downloadSamples[1].at < now - 2000){
+			this.downloadSamples.shift()
+		}
+	}
+	startDownloadSpeedMeter(){
+		this.recordDownloadSample()
+		clearInterval(this.downloadSpeedTimer)
+		this.downloadSpeedTimer = setInterval(() => {
+			this.updateDownloadSpeed()
+		}, 250)
+		this.updateDownloadSpeed()
+	}
+	updateDownloadSpeed(){
+		if(!this.loaderSpeed){
+			return
+		}
+		var now = performance.now()
+		this.downloadSamples.push({
+			at: now,
+			bytes: this.downloadedBytes
+		})
+		while(this.downloadSamples.length > 2 && this.downloadSamples[1].at < now - 1500){
+			this.downloadSamples.shift()
+		}
+		var first = this.downloadSamples[0]
+		var last = this.downloadSamples[this.downloadSamples.length - 1]
+		var elapsed = Math.max(1, last.at - first.at)
+		var bytesPerSecond = (last.bytes - first.bytes) * 1000 / elapsed
+		var active = this.workers.filter(worker => worker.active).length
+		this.loaderSpeed.textContent = "Speed: " + this.formatBytes(bytesPerSecond) + "/s · " + active + " active"
+	}
+	formatBytes(bytes){
+		if(!isFinite(bytes) || bytes <= 0){
+			return "0 B"
+		}
+		var units = ["B", "KB", "MB", "GB"]
+		var unit = 0
+		while(bytes >= 1024 && unit < units.length - 1){
+			bytes /= 1024
+			unit++
+		}
+		var precision = unit === 0 || bytes >= 100 ? 0 : bytes >= 10 ? 1 : 2
+		return bytes.toFixed(precision) + " " + units[unit]
 	}
 	installClientErrorHandlers(){
 		if(window.taikoClientErrorHandlersInstalled){
@@ -630,7 +715,9 @@ class Loader{
 		this.loaderStage = document.querySelector("#loader .loader-stage")
 		this.loaderCount = document.querySelector("#loader .loader-count")
 		this.loaderFailed = document.querySelector("#loader .loader-failed")
+		this.loaderSpeed = document.querySelector("#loader .loader-speed")
 		this.loaderRetry = document.querySelector("#loader .loader-retry")
+		this.startDownloadSpeedMeter()
 		
 		this.queryString = gameConfig._version.commit_short ? "?" + gameConfig._version.commit_short : ""
 		
@@ -1157,21 +1244,29 @@ class Loader{
 		if(options.crossOrigin !== false){
 			img.crossOrigin = "anonymous"
 		}
-		this.imageLoadPromises[id] = this.withTimeout(pageEvents.load(img), {
-			url: url,
+		var sourceUrl
+		this.imageLoadPromises[id] = this.workerFetch(url, "blob", {
 			resourceType: "image",
-			stage: "song-runtime-load",
-			critical: false
-		}, options.timeout || 15000).then(() => {
+			timeout: options.timeout || 15000,
+			retries: options.retries == null ? 3 : options.retries
+		}).then(blob => {
+			sourceUrl = URL.createObjectURL(blob)
+			var loaded = pageEvents.load(img)
+			img.src = sourceUrl
+			return loaded
+		}).then(() => {
 			return this.scaleImage(img, filename, prefix, options.force)
 		}).then(image => {
+			URL.revokeObjectURL(sourceUrl)
 			delete this.imageLoadPromises[id]
 			return image
 		}, response => {
+			if(sourceUrl){
+				URL.revokeObjectURL(sourceUrl)
+			}
 			delete this.imageLoadPromises[id]
 			return Promise.reject(response)
 		})
-		img.src = url
 		return this.imageLoadPromises[id]
 	}
 	scaleImage(img, filename, prefix, force){
@@ -1415,7 +1510,10 @@ class Loader{
 		delete this.loaderStage
 		delete this.loaderCount
 		delete this.loaderFailed
+		delete this.loaderSpeed
 		delete this.loaderRetry
+		clearInterval(this.downloadSpeedTimer)
+		this.downloadSpeedTimer = null
 		if(!error){
 			delete this.promises
 			delete this.errorText

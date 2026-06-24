@@ -481,7 +481,7 @@ Environment=TAIKO_WEB_SONGS_DIR=$DATA_DIR/songs
 Environment=TAIKO_WEB_MONGO_HOST=127.0.0.1:27017
 Environment=TAIKO_WEB_REDIS_HOST=127.0.0.1
 Environment=REDIS_URI=redis://127.0.0.1:6379/0
-ExecStart=$INSTALL_DIR/.venv/bin/gunicorn -b 0.0.0.0:80 app:app
+ExecStart=$INSTALL_DIR/.venv/bin/gunicorn -c gunicorn.conf.py app:app
 Restart=always
 User=$APP_USER
 Group=$APP_GROUP

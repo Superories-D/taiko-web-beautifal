@@ -79,7 +79,7 @@ http://<服务器IP>/
    ```bash
    sudo setcap 'cap_net_bind_service=+ep' /srv/taiko-web/.venv/bin/python3
    export TAIKO_WEB_MONGO_HOST=${TAIKO_WEB_MONGO_HOST:-127.0.0.1:27017}
-   sudo /srv/taiko-web/.venv/bin/gunicorn -b 0.0.0.0:80 app:app
+   sudo /srv/taiko-web/.venv/bin/gunicorn -c /srv/taiko-web/gunicorn.conf.py app:app
    ```
 
 
@@ -131,7 +131,7 @@ journalctl -u taiko-web -n 100 --no-pager
 5. 赋予 80 端口绑定权限并启动：
    ```bash
    sudo setcap 'cap_net_bind_service=+ep' /srv/taiko-web/.venv/bin/python3
-   sudo /srv/taiko-web/.venv/bin/gunicorn -b 0.0.0.0:80 app:app
+   sudo /srv/taiko-web/.venv/bin/gunicorn -c /srv/taiko-web/gunicorn.conf.py app:app
    ```
 
 ## 开发与调试

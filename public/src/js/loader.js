@@ -26,6 +26,9 @@ class Loader{
 		this.downloadedBytes = 0
 		this.downloadSamples = []
 		this.downloadSpeedTimer = null
+		this.networkConnection = navigator.connection || navigator.mozConnection || navigator.webkitConnection
+		this.networkProfile = null
+		this.networkChangeHandler = this.onNetworkChange.bind(this)
 		
 		this.installClientErrorHandlers()
 		this.initWorkers()
@@ -79,61 +82,267 @@ class Loader{
 		this.workerQueue = []
 		this.workerCallbacks = {}
 		this.workerId = 0
-		var concurrency = this.getDownloadConcurrency()
-		for(var i = 0; i < concurrency; i++){
-			var worker = new Worker("src/js/loader-worker.js")
-			worker.onmessage = this.onWorkerMessage.bind(this)
-			this.workers.push({
-				worker: worker,
-				active: false,
-				taskId: null
-			})
+		this.networkProfile = this.getNetworkProfile()
+		this.workerTarget = this.networkProfile.concurrency
+		this.resizeWorkers(this.workerTarget)
+		if(this.networkConnection && this.networkConnection.addEventListener){
+			this.networkConnection.addEventListener("change", this.networkChangeHandler)
 		}
+		window.addEventListener("online", this.networkChangeHandler)
+		window.addEventListener("offline", this.networkChangeHandler)
 	}
 	getDownloadConcurrency(){
-		var connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection
-		if(connection && connection.saveData){
-			return 6
-		}
-		if(connection && (connection.effectiveType === "slow-2g" || connection.effectiveType === "2g")){
-			return 4
-		}
-		if(connection && connection.effectiveType === "3g"){
-			return 8
-		}
-		var cpuConcurrency = navigator.hardwareConcurrency || 4
-		return Math.min(24, Math.max(12, cpuConcurrency * 2))
+		return this.getNetworkProfile().concurrency
 	}
-	onWorkerMessage(e){
+	getNetworkProfile(){
+		var connection = this.networkConnection || navigator.connection || navigator.mozConnection || navigator.webkitConnection
+		var cpuConcurrency = navigator.hardwareConcurrency || 4
+		var effectiveType = connection && connection.effectiveType || "unknown"
+		var downlink = connection && Number(connection.downlink) || 0
+		var rtt = connection && Number(connection.rtt) || 0
+		var profile = {
+			name: effectiveType === "4g" ? "fast" : "default",
+			label: effectiveType === "unknown" ? "Auto" : effectiveType.toUpperCase(),
+			concurrency: Math.min(24, Math.max(12, cpuConcurrency * 2)),
+			retries: 3,
+			timeout: 12000,
+			baseDelay: 500,
+			maxDelay: 5000,
+			jitter: 300,
+			workerRecoveries: 2
+		}
+		if(navigator.onLine === false){
+			return Object.assign(profile, {
+				name: "offline",
+				label: "Offline recovery",
+				concurrency: 2,
+				retries: 8,
+				timeout: 5000,
+				baseDelay: 750,
+				maxDelay: 5000,
+				jitter: 500,
+				workerRecoveries: 4
+			})
+		}
+		if(connection && connection.saveData){
+			return Object.assign(profile, {
+				name: "save-data",
+				label: "Data saver",
+				concurrency: 4,
+				retries: 5,
+				timeout: 22000,
+				baseDelay: 1200,
+				maxDelay: 12000,
+				jitter: 700,
+				workerRecoveries: 3
+			})
+		}
+		if(effectiveType === "slow-2g" || effectiveType === "2g" || downlink && downlink <= 0.5 || rtt >= 800){
+			return Object.assign(profile, {
+				name: "slow",
+				label: effectiveType === "unknown" ? "Slow network" : effectiveType.toUpperCase(),
+				concurrency: 4,
+				retries: 5,
+				timeout: 20000,
+				baseDelay: 1200,
+				maxDelay: 12000,
+				jitter: 700,
+				workerRecoveries: 3
+			})
+		}
+		if(effectiveType === "3g" || downlink && downlink < 2 || rtt >= 300){
+			return Object.assign(profile, {
+				name: "moderate",
+				label: effectiveType === "unknown" ? "Moderate network" : effectiveType.toUpperCase(),
+				concurrency: 8,
+				retries: 4,
+				timeout: 18000,
+				baseDelay: 800,
+				maxDelay: 8000,
+				jitter: 500,
+				workerRecoveries: 3
+			})
+		}
+		return profile
+	}
+	getRetryOptions(overrides){
+		var profile = this.networkProfile || this.getNetworkProfile()
+		var options = {
+			retries: profile.retries,
+			timeout: profile.timeout,
+			baseDelay: profile.baseDelay,
+			maxDelay: profile.maxDelay,
+			jitter: profile.jitter,
+			workerRecoveries: profile.workerRecoveries
+		}
+		overrides = overrides || {}
+		for(var key in overrides){
+			if(overrides[key] != null){
+				options[key] = overrides[key]
+			}
+		}
+		return options
+	}
+	getRetryBudget(options){
+		options = this.getRetryOptions(options)
+		var delayBudget = 0
+		for(var attempt = 0; attempt < options.retries; attempt++){
+			delayBudget += Math.min(options.baseDelay * Math.pow(2, attempt), options.maxDelay) + options.jitter
+		}
+		return (options.retries + 1) * options.timeout + delayBudget
+	}
+	onNetworkChange(){
+		var previous = this.networkProfile
+		this.networkProfile = this.getNetworkProfile()
+		this.workerTarget = this.networkProfile.concurrency
+		this.workerQueue.forEach(task => {
+			task.options = this.getRetryOptions(task.retryOverrides)
+			task.maxWorkerRecoveries = task.options.workerRecoveries
+		})
+		if(previous && (previous.name !== this.networkProfile.name || previous.concurrency !== this.networkProfile.concurrency)){
+			this.requeueActiveTasksForNetworkChange()
+		}
+		this.resizeWorkers(this.workerTarget)
+		this.workerRun()
+		if(!previous || previous.name !== this.networkProfile.name || previous.concurrency !== this.networkProfile.concurrency){
+			this.updateLoaderStatus()
+		}
+	}
+	requeueActiveTasksForNetworkChange(){
+		var tasks = []
+		this.workers.slice().forEach(workerObj => {
+			if(!workerObj.active || workerObj.taskId == null){
+				return
+			}
+			var task = this.workerCallbacks[workerObj.taskId]
+			if(task){
+				delete this.workerCallbacks[task.id]
+				clearTimeout(task.watchdog)
+				task.worker = null
+				task.loaded = 0
+				task.options = this.getRetryOptions(task.retryOverrides)
+				task.maxWorkerRecoveries = Math.max(task.maxWorkerRecoveries, task.options.workerRecoveries)
+				tasks.push(task)
+			}
+			this.removeWorker(workerObj)
+		})
+		if(tasks.length){
+			this.workerQueue = tasks.concat(this.workerQueue)
+		}
+	}
+	createWorker(){
+		var worker = new Worker("src/js/loader-worker.js")
+		var workerObj = {
+			worker: worker,
+			active: false,
+			taskId: null,
+			retiring: false,
+			failed: false
+		}
+		worker.onmessage = e => this.onWorkerMessage(e, workerObj)
+		worker.onerror = event => {
+			if(event && event.preventDefault){
+				event.preventDefault()
+			}
+			this.handleWorkerFailure(workerObj, {
+				code: "WORKER_CRASHED",
+				message: event && event.message || "Resource worker crashed"
+			})
+		}
+		worker.onmessageerror = () => {
+			this.handleWorkerFailure(workerObj, {
+				code: "WORKER_MESSAGE_ERROR",
+				message: "Resource worker returned an unreadable message"
+			})
+		}
+		this.workers.push(workerObj)
+		return workerObj
+	}
+	resizeWorkers(target){
+		target = Math.max(1, Math.min(32, Number(target) || 1))
+		var current = this.workers.filter(worker => !worker.retiring && !worker.failed).length
+		while(current < target){
+			this.createWorker()
+			current++
+		}
+		if(current > target){
+			var excess = current - target
+			for(var i = this.workers.length - 1; i >= 0 && excess > 0; i--){
+				var workerObj = this.workers[i]
+				if(workerObj.retiring || workerObj.failed){
+					continue
+				}
+				if(workerObj.active){
+					workerObj.retiring = true
+				}else{
+					this.removeWorker(workerObj)
+				}
+				excess--
+			}
+		}
+	}
+	removeWorker(workerObj){
+		if(!workerObj){
+			return
+		}
+		workerObj.failed = true
+		workerObj.worker.onmessage = null
+		workerObj.worker.onerror = null
+		workerObj.worker.onmessageerror = null
+		workerObj.worker.terminate()
+		var index = this.workers.indexOf(workerObj)
+		if(index !== -1){
+			this.workers.splice(index, 1)
+		}
+	}
+	onWorkerMessage(e, workerObj){
 		var data = e.data
 		var callback = this.workerCallbacks[data.id]
-		if(callback){
-			if(data.progress){
+		if(callback && callback.worker === workerObj){
+			this.armWorkerWatchdog(callback)
+			if(data.progress || data.retry){
 				this.updateDownloadProgress(callback, data.loaded, data.total)
+				if(data.retry){
+					this.retryingResource = {
+						url: callback.url,
+						attempt: data.attempt,
+						retries: data.retries
+					}
+					this.updateLoaderStatus()
+				}
 				return
 			}
 			delete this.workerCallbacks[data.id]
+			clearTimeout(callback.watchdog)
 			this.updateDownloadProgress(callback, data.loaded, data.total)
+			if(this.retryingResource && this.retryingResource.url === callback.url){
+				this.retryingResource = null
+			}
 			if(data.error){
 				callback.reject(data.error)
 			}else{
 				callback.resolve(data.data)
 			}
-			this.workerFree(callback.workerIndex)
+			this.workerFree(workerObj)
 		}
 	}
 	workerFetch(url, type, options){
 		return new Promise((resolve, reject) => {
 			var id = ++this.workerId
+			var retryOverrides = Object.assign({}, options || {})
+			var taskOptions = this.getRetryOptions(retryOverrides)
 			this.workerQueue.push({
 				id: id,
 				url: new URL(url, location.href).href,
 				type: type,
-				options: options || {},
+				options: taskOptions,
+				retryOverrides: retryOverrides,
 				resolve: resolve,
 				reject: reject,
 				loaded: 0,
-				total: 0
+				total: 0,
+				recoveryAttempts: 0,
+				maxWorkerRecoveries: taskOptions.workerRecoveries
 			})
 			this.workerRun()
 		})
@@ -144,14 +353,15 @@ class Loader{
 		}
 		for(var workerIndex = 0; workerIndex < this.workers.length && this.workerQueue.length; workerIndex++){
 			var workerObj = this.workers[workerIndex]
-			if(workerObj.active){
+			if(workerObj.active || workerObj.retiring || workerObj.failed){
 				continue
 			}
 			var task = this.workerQueue.shift()
 			workerObj.active = true
 			workerObj.taskId = task.id
+			task.worker = workerObj
 			this.workerCallbacks[task.id] = task
-			task.workerIndex = workerIndex
+			this.armWorkerWatchdog(task)
 			workerObj.worker.postMessage({
 				id: task.id,
 				url: task.url,
@@ -160,10 +370,64 @@ class Loader{
 			})
 		}
 	}
-	workerFree(index){
-		if(this.workers[index]){
-			this.workers[index].active = false
-			this.workers[index].taskId = null
+	armWorkerWatchdog(task){
+		clearTimeout(task.watchdog)
+		var timeout = Math.max(15000, (task.options.timeout || 15000) + (task.options.maxDelay || 5000) + 5000)
+		task.watchdog = setTimeout(() => {
+			this.handleWorkerFailure(task.worker, {
+				code: "WORKER_STALLED",
+				message: "Resource worker stopped responding"
+			})
+		}, timeout)
+	}
+	handleWorkerFailure(workerObj, failure){
+		if(!workerObj || workerObj.failed){
+			return
+		}
+		var task = workerObj.taskId != null ? this.workerCallbacks[workerObj.taskId] : null
+		if(task){
+			delete this.workerCallbacks[task.id]
+			clearTimeout(task.watchdog)
+			task.worker = null
+		}
+		this.removeWorker(workerObj)
+		if(task){
+			task.recoveryAttempts++
+			if(task.recoveryAttempts <= task.maxWorkerRecoveries){
+				task.options = this.getRetryOptions(task.retryOverrides)
+				task.maxWorkerRecoveries = Math.max(task.maxWorkerRecoveries, task.options.workerRecoveries)
+				task.loaded = 0
+				this.retryingResource = {
+					url: task.url,
+					attempt: task.recoveryAttempts + 1,
+					retries: task.maxWorkerRecoveries + 1
+				}
+				this.workerQueue.unshift(task)
+				this.updateLoaderStatus()
+			}else{
+				var error = new Error(failure.message)
+				error.code = failure.code
+				error.detail = {
+					url: task.url,
+					resourceType: task.options.resourceType,
+					retries: task.recoveryAttempts - 1
+				}
+				if(this.retryingResource && this.retryingResource.url === task.url){
+					this.retryingResource = null
+				}
+				task.reject(error)
+			}
+		}
+		this.resizeWorkers(this.workerTarget || this.getDownloadConcurrency())
+		this.workerRun()
+	}
+	workerFree(workerObj){
+		if(workerObj && !workerObj.failed){
+			workerObj.active = false
+			workerObj.taskId = null
+			if(workerObj.retiring){
+				this.removeWorker(workerObj)
+			}
 			this.workerRun()
 		}
 	}
@@ -215,7 +479,8 @@ class Loader{
 		var elapsed = Math.max(1, last.at - first.at)
 		var bytesPerSecond = (last.bytes - first.bytes) * 1000 / elapsed
 		var active = this.workers.filter(worker => worker.active).length
-		this.loaderSpeed.textContent = "Speed: " + this.formatBytes(bytesPerSecond) + "/s · " + active + " active"
+		var networkLabel = this.networkProfile && this.networkProfile.label || "Auto"
+		this.loaderSpeed.textContent = "Speed: " + this.formatBytes(bytesPerSecond) + "/s | " + active + " active | " + networkLabel
 	}
 	formatBytes(bytes){
 		if(!isFinite(bytes) || bytes <= 0){
@@ -406,10 +671,12 @@ class Loader{
 		return new Promise(resolve => setTimeout(resolve, ms))
 	}
 	async fetchWithRetry(url, options){
-		options = options || {}
-		var retries = options.retries == null ? 3 : options.retries
-		var timeout = options.timeout || 12000
-		var baseDelay = options.baseDelay || 500
+		options = this.getRetryOptions(options)
+		var retries = options.retries
+		var timeout = options.timeout
+		var baseDelay = options.baseDelay
+		var maxDelay = options.maxDelay
+		var jitter = options.jitter
 		var retryOnStatus = options.retryOnStatus || [408, 425, 429, 500, 502, 503, 504]
 		var resourceType = options.resourceType || this.inferResourceType(url)
 		var critical = options.critical !== false
@@ -431,7 +698,6 @@ class Loader{
 				var response = await fetch(url, Object.assign({}, fetchOptions, {
 					signal: controller.signal
 				}))
-				clearTimeout(timer)
 				var duration = Date.now() - startedAt
 				if(!response.ok){
 					var httpError = new Error("HTTP " + response.status + " " + response.statusText)
@@ -441,8 +707,17 @@ class Loader{
 					httpError.duration = duration
 					throw httpError
 				}
+				var result = response
+				if(options.responseType === "arraybuffer"){
+					result = await response.arrayBuffer()
+				}else if(options.responseType === "blob"){
+					result = await response.blob()
+				}else if(options.responseType === "text"){
+					result = await response.text()
+				}
+				clearTimeout(timer)
 				this.retryingResource = null
-				return response
+				return result
 			}catch(error){
 				clearTimeout(timer)
 				lastError = {
@@ -460,8 +735,8 @@ class Loader{
 				if(attempt >= retries || !retryableStatus){
 					break
 				}
-				var delay = baseDelay * Math.pow(2, attempt) + Math.floor(Math.random() * 300)
-				await this.sleep(delay)
+				var delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay) + Math.floor(Math.random() * jitter)
+				await this.waitForNetworkRetry(delay)
 			}
 		}
 		this.retryingResource = null
@@ -469,6 +744,97 @@ class Loader{
 		finalError.code = "RESOURCE_FETCH_FAILED"
 		finalError.detail = lastError
 		throw finalError
+	}
+	waitForNetworkRetry(delay){
+		if(navigator.onLine !== false){
+			return this.sleep(delay)
+		}
+		return new Promise(resolve => {
+			var done = () => {
+				clearTimeout(timer)
+				window.removeEventListener("online", done)
+				resolve()
+			}
+			var timer = setTimeout(done, delay)
+			window.addEventListener("online", done, {
+				once: true
+			})
+		})
+	}
+	loadImageElement(image, url, options){
+		options = options || {}
+		return this.workerFetch(url, "blob", Object.assign({
+			resourceType: "image"
+		}, options)).then(blob => {
+			var blobUrl = URL.createObjectURL(blob)
+			var loadPromise = pageEvents.load(image)
+			image.src = blobUrl
+			return loadPromise.then(() => {
+				return {
+					image: image,
+					blobUrl: blobUrl
+				}
+			}, error => {
+				URL.revokeObjectURL(blobUrl)
+				return Promise.reject(error)
+			})
+		})
+	}
+	loadStylesheet(url, options){
+		options = this.getRetryOptions(options)
+		var attempt = 0
+		var run = () => {
+			return new Promise((resolve, reject) => {
+				var stylesheet = document.createElement("link")
+				stylesheet.rel = "stylesheet"
+				var timer
+				var settled = false
+				var cleanup = () => {
+					clearTimeout(timer)
+					stylesheet.onload = null
+					stylesheet.onerror = null
+				}
+				stylesheet.onload = () => {
+					if(settled){
+						return
+					}
+					settled = true
+					cleanup()
+					resolve(stylesheet)
+				}
+				stylesheet.onerror = () => {
+					if(settled){
+						return
+					}
+					settled = true
+					cleanup()
+					stylesheet.remove()
+					reject(new Error("Stylesheet failed to load: " + url))
+				}
+				timer = setTimeout(stylesheet.onerror, options.timeout)
+				stylesheet.href = url
+				document.head.appendChild(stylesheet)
+			}).catch(error => {
+				if(attempt >= options.retries){
+					return Promise.reject(error)
+				}
+				var delay = Math.min(options.baseDelay * Math.pow(2, attempt), options.maxDelay) + Math.floor(Math.random() * options.jitter)
+				attempt++
+				this.retryingResource = {
+					url: url,
+					attempt: attempt + 1,
+					retries: options.retries + 1
+				}
+				this.updateLoaderStatus()
+				return this.waitForNetworkRetry(delay).then(run)
+			})
+		}
+		return run().then(stylesheet => {
+			if(this.retryingResource && this.retryingResource.url === url){
+				this.retryingResource = null
+			}
+			return stylesheet
+		})
 	}
 	getVersion(){
 		if(gameConfig && gameConfig._version && gameConfig._version.version){
@@ -741,26 +1107,16 @@ class Loader{
 			){
 				reject("Version on the page and config does not match\n(page:  " + pageVersion + ",\nconfig: "+ gameConfig._version.commit + ")")
 			}
-			var cssCount = document.styleSheets.length + assets.css.length
-			assets.css.forEach(name => {
-				var stylesheet = document.createElement("link")
-				stylesheet.rel = "stylesheet"
-				stylesheet.href = "src/css/" + name + this.queryString
-				document.head.appendChild(stylesheet)
-			})
-			var checkStyles = () => {
-				if(document.styleSheets.length >= cssCount){
-					resolve()
-					clearInterval(interval)
-				}
-			}
-			var interval = setInterval(checkStyles, 100)
-			checkStyles()
+			Promise.all(assets.css.map(name => {
+				return this.loadStylesheet("src/css/" + name + this.queryString)
+			})).then(resolve, reject)
 		}))
 		
 		for(var name in assets.fonts){
 			var url = gameConfig.assets_baseurl + "fonts/" + assets.fonts[name]
-			this.addPromise(new FontFace(name, "url('" + url + "')").load().then(font => {
+			this.addPromise(this.workerFetch(url, "arraybuffer", {
+				resourceType: "font"
+			}).then(buffer => new FontFace(name, buffer).load()).then(font => {
 				document.fonts.add(font)
 			}), url, {
 				critical: false,
@@ -774,11 +1130,10 @@ class Loader{
 			var image = document.createElement("img")
 			image.crossOrigin = "anonymous"
 			var url = gameConfig.assets_baseurl + "img/" + name
-			this.addPromise(pageEvents.load(image), url)
 			image.id = name
-			image.src = url
 			this.assetsDiv.appendChild(image)
 			assets.image[id] = image
+			this.addPromise(this.loadImageElement(image, url), url)
 		})
 		
 		var css = []
@@ -1120,7 +1475,8 @@ class Loader{
 		}
 		this.totalAssets++
 		this.updateLoaderStatus(resource)
-		var trackedPromise = this.withTimeout(Promise.resolve(promise), resource, options.timeout || (resource.critical ? 20000 : 15000)).then(value => {
+		var timeout = options.timeout || Math.max(resource.critical ? 20000 : 15000, this.getRetryBudget() + 10000)
+		var trackedPromise = this.withTimeout(Promise.resolve(promise), resource, timeout).then(value => {
 			this.assetLoaded()
 			return value
 		}, response => {
@@ -1247,8 +1603,8 @@ class Loader{
 		var sourceUrl
 		this.imageLoadPromises[id] = this.workerFetch(url, "blob", {
 			resourceType: "image",
-			timeout: options.timeout || 15000,
-			retries: options.retries == null ? 3 : options.retries
+			timeout: options.timeout,
+			retries: options.retries
 		}).then(blob => {
 			sourceUrl = URL.createObjectURL(blob)
 			var loaded = pageEvents.load(img)
@@ -1446,29 +1802,18 @@ class Loader{
 		}
 		if(!customResponse && (url.startsWith("src/") || url.startsWith("assets/") || url.indexOf("img/") !== -1 || url.indexOf("audio/") !== -1 || url.indexOf("fonts/") !== -1 || url.indexOf("views/") !== -1)){
 			return this.workerFetch(url, type, Object.assign({
-				resourceType: this.inferResourceType(url),
-				timeout: 12000,
-				retries: 3
+				resourceType: this.inferResourceType(url)
 			}, retryOptions))
 		}
 		if(!customResponse){
 			return this.fetchWithRetry(url, Object.assign({
 				resourceType: this.inferResourceType(url),
-				timeout: 12000,
-				retries: 3
-			}, retryOptions)).then(response => {
-				if(type === "arraybuffer"){
-					return response.arrayBuffer()
-				}else if(type === "blob"){
-					return response.blob()
-				}else{
-					return response.text()
-				}
-			})
+				responseType: type
+			}, retryOptions))
 		}
 		var request = new XMLHttpRequest()
 		request.open("GET", url)
-		request.timeout = retryOptions.timeout || 12000
+		request.timeout = this.getRetryOptions(retryOptions).timeout
 		var promise = pageEvents.load(request)
 		if(customRequest){
 			customRequest(request)
@@ -1479,9 +1824,7 @@ class Loader{
 	loadScript(url){
 		var url = url + this.queryString
 		return this.workerFetch(url, "text", {
-			resourceType: "javascript",
-			timeout: 12000,
-			retries: 3
+			resourceType: "javascript"
 		}).then(code => {
 			var script = document.createElement("script")
 			code += "\n//# sourceURL=" + url

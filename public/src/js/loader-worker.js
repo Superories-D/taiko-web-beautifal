@@ -1,8 +1,31 @@
-async function fetchWithRetry(url, options){
+function sleep(ms){
+	return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function waitForNetworkRetry(delay){
+	if(self.navigator && self.navigator.onLine !== false){
+		return sleep(delay)
+	}
+	return new Promise(resolve => {
+		var done = () => {
+			clearTimeout(timer)
+			self.removeEventListener("online", done)
+			resolve()
+		}
+		var timer = setTimeout(done, delay)
+		self.addEventListener("online", done, {
+			once: true
+		})
+	})
+}
+
+async function fetchWithRetry(url, options, onRetry, consumeResponse){
 	options = options || {}
 	var retries = options.retries == null ? 3 : options.retries
 	var timeout = options.timeout || 12000
 	var baseDelay = options.baseDelay || 500
+	var maxDelay = options.maxDelay || 5000
+	var jitter = options.jitter == null ? 300 : options.jitter
 	var retryOnStatus = options.retryOnStatus || [408, 425, 429, 500, 502, 503, 504]
 	var lastError = null
 	for(var attempt = 0; attempt <= retries; attempt++){
@@ -14,13 +37,14 @@ async function fetchWithRetry(url, options){
 				signal: controller.signal,
 				cache: options.cache || "default"
 			})
-			clearTimeout(timer)
 			if(!response.ok){
 				var httpError = new Error("HTTP " + response.status + " " + response.statusText)
 				httpError.status = response.status
 				throw httpError
 			}
-			return response
+			var result = consumeResponse ? await consumeResponse(response) : response
+			clearTimeout(timer)
+			return result
 		}catch(error){
 			clearTimeout(timer)
 			lastError = {
@@ -36,8 +60,17 @@ async function fetchWithRetry(url, options){
 			if(attempt >= retries || !retryableStatus){
 				break
 			}
-			var delay = baseDelay * Math.pow(2, attempt) + Math.floor(Math.random() * 300)
-			await new Promise(resolve => setTimeout(resolve, delay))
+			var delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay) + Math.floor(Math.random() * jitter)
+			if(onRetry){
+				onRetry({
+					attempt: attempt + 2,
+					retries: retries + 1,
+					delay: delay,
+					loaded: 0,
+					total: 0
+				})
+			}
+			await waitForNetworkRetry(delay)
 		}
 	}
 	var finalError = new Error("Failed to fetch resource after " + (retries + 1) + " attempts: " + url)
@@ -117,8 +150,12 @@ async function readResponse(response, id, type){
 self.addEventListener('message', async e => {
 	const { id, url, type, options } = e.data
 	try{
-		const response = await fetchWithRetry(url, options)
-		const result = await readResponse(response, id, type)
+		const result = await fetchWithRetry(url, options, retry => {
+			self.postMessage(Object.assign({
+				id: id,
+				retry: true
+			}, retry))
+		}, response => readResponse(response, id, type))
 		self.postMessage({
 			id: id,
 			data: result.data,

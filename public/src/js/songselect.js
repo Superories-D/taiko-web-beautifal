@@ -124,10 +124,7 @@ class SongSelect {
 
 		this.songs = []
 		for (let song of assets.songs) {
-			var title = this.getLocalTitle(song.title, song.title_lang)
-			song.titlePrepared = title ? fuzzysort.prepare(this.search.normalizeString(title)) : null
-			var subtitle = this.getLocalTitle(title === song.title ? song.subtitle : "", song.subtitle_lang)
-			song.subtitlePrepared = subtitle ? fuzzysort.prepare(this.search.normalizeString(subtitle)) : null
+			this.prepareSongSearch(song)
 			this.songs.push(this.addSong(song))
 		}
 		this.songs.sort((a, b) => {
@@ -3019,6 +3016,7 @@ class SongSelect {
 			if (index !== -1) {
 				assets.songs[index] = imported
 			}
+			this.prepareSongSearch(imported)
 			this.songs[selectedSong] = this.addSong(imported)
 			this.state.moveMS = this.getMS() - this.songSelecting.speed * this.songSelecting.resize
 			if (imported.music && currentId === this.previewId) {
@@ -3032,6 +3030,21 @@ class SongSelect {
 			}
 		})
 	}
+
+	prepareSongSearch(song) {
+		var title = this.getLocalTitle(song.title, song.title_lang)
+		var subtitle = this.getLocalTitle(title === song.title ? song.subtitle : "", song.subtitle_lang)
+
+		song.titlePrepared = this.search.prepareSearchText(title)
+		song.subtitlePrepared = this.search.prepareSearchText(subtitle)
+		song.titleSearchPrepared = this.search.prepareSearchAliases(
+			this.search.getTextAliases(song.title, song.title_lang)
+		)
+		song.subtitleSearchPrepared = this.search.prepareSearchAliases(
+			this.search.getTextAliases(song.subtitle, song.subtitle_lang)
+		)
+	}
+
 	addSong(song) {
 		var title = this.getLocalTitle(song.title, song.title_lang)
 		var subtitle = this.getLocalTitle(title === song.title ? song.subtitle : "", song.subtitle_lang)

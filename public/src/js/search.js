@@ -101,6 +101,68 @@ class Search{
 		}
 		return aliases.map(alias => this.normalizeToken(alias))
 	}
+
+	getTextAliases(text, textLang){
+		var aliases = []
+		var addAlias = value => {
+			if(value && aliases.indexOf(value) === -1){
+				aliases.push(value)
+			}
+		}
+		addAlias(text)
+		if(textLang){
+			Object.keys(textLang).forEach(lang => {
+				addAlias(textLang[lang])
+			})
+		}
+		return aliases
+	}
+
+	prepareSearchText(text){
+		text = this.normalizeString(text || "")
+		return text ? fuzzysort.prepare(text) : null
+	}
+
+	prepareSearchAliases(aliases){
+		var normalized = []
+		aliases.forEach(alias => {
+			alias = this.normalizeString(alias || "")
+			if(alias && normalized.indexOf(alias) === -1){
+				normalized.push(alias)
+			}
+		})
+		return normalized.length ? fuzzysort.prepare(normalized.join("\n")) : null
+	}
+
+	getSearchScore(result, query, penalty=0){
+		if(!result){
+			return -Infinity
+		}
+
+		var score = result.score + penalty
+		result.ranges = this.indexesToRanges(result.indexes)
+		if(result.indexes.length > 1){
+			var rangeAmount = result.ranges.length
+			var lastIdx = -3
+			result.ranges.forEach(range => {
+				if(range[0] - lastIdx <= 2){
+					rangeAmount--
+					score -= 1000
+				}
+				lastIdx = range[1]
+			})
+			var index = result.target.toLowerCase().indexOf(query.toLowerCase())
+			if(index !== -1){
+				result.ranges = [[index, index + query.length - 1]]
+			}else if(rangeAmount > result.indexes.length / 2){
+				score = -Infinity
+				result.ranges = null
+			}else if(rangeAmount !== 1){
+				score -= 9000
+			}
+		}
+		return score
+	}
 	
 	perform(query){
 		var results = []
@@ -248,72 +310,25 @@ class Search{
 		
 		if(query){
 			results = fuzzysort.go(query, results, {
-				keys: ["titlePrepared", "subtitlePrepared"],
+				keys: ["titlePrepared", "subtitlePrepared", "titleSearchPrepared", "subtitleSearchPrepared"],
 				allowTypo: true,
 				limit: maxResults,
 				scoreFn: a => {
-					if(a[0]){
-						var score0 = a[0].score
-						a[0].ranges = this.indexesToRanges(a[0].indexes)
-						if(a[0].indexes.length > 1){
-							var rangeAmount = a[0].ranges.length
-							var lastIdx = -3
-							a[0].ranges.forEach(range => {
-								if(range[0] - lastIdx <= 2){
-									rangeAmount--
-									score0 -= 1000
-								}
-								lastIdx = range[1]
-							})
-							var index = a[0].target.toLowerCase().indexOf(query)
-							if(index !== -1){
-								a[0].ranges = [[index, index + query.length - 1]]
-							}else if(rangeAmount > a[0].indexes.length / 2){
-								score0 = -Infinity
-								a[0].ranges = null
-							}else if(rangeAmount !== 1){
-								score0 -= 9000
-							}
-						}
-					}
-					if(a[1]){
-						var score1 = a[1].score - 1000
-						a[1].ranges = this.indexesToRanges(a[1].indexes)
-						if(a[1].indexes.length > 1){
-							var rangeAmount = a[1].ranges.length
-							var lastIdx = -3
-							a[1].ranges.forEach(range => {
-								if(range[0] - lastIdx <= 2){
-									rangeAmount--
-									score1 -= 1000
-								}
-								lastIdx = range[1]
-							})
-							var index = a[1].target.indexOf(query)
-							if(index !== -1){
-								a[1].ranges = [[index, index + query.length - 1]]
-							}else if(rangeAmount > a[1].indexes.length / 2){
-								score1 = -Infinity
-								a[1].ranges = null
-							}else if(rangeAmount !== 1){
-								score1 -= 9000
-							}
-						}
-					}
+					var scores = [
+						this.getSearchScore(a[0], query),
+						this.getSearchScore(a[1], query, -1000),
+						this.getSearchScore(a[2], query, -500),
+						this.getSearchScore(a[3], query, -1500)
+					]
 					if(random){
 						var rand = Math.random() * -9000
-						if(score0 !== -Infinity){
-							score0 = rand
-						}
-						if(score1 !== -Infinity){
-							score1 = rand
+						for(var i = 0; i < scores.length; i++){
+							if(scores[i] !== -Infinity){
+								scores[i] = rand
+							}
 						}
 					}
-					if(a[0]){
-						return a[1] ? Math.max(score0, score1) : score0
-					}else{
-						return a[1] ? score1 : -Infinity
-					}
+					return Math.max.apply(null, scores)
 				}
 			})
 		}else{

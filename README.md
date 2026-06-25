@@ -91,6 +91,11 @@ http://<服务器IP>/
 sudo bash setup.sh upgrade-direct
 ```
 
+也可以直接运行 `sudo bash update.sh`。脚本会自动识别当前是 Docker Compose
+还是 systemd + Gunicorn 部署；如需手动指定，可设置
+`TAIKO_WEB_UPDATE_MODE=container` 或 `TAIKO_WEB_UPDATE_MODE=direct`。部署前可使用
+`TAIKO_WEB_UPDATE_DRY_RUN=1 bash update.sh` 检查将要执行的更新模式。
+
 这个命令会：
 - 同步最新代码到 `/srv/taiko-web`（保留 `config.py` 与数据目录）
 - 更新虚拟环境依赖（`requirements.txt`）

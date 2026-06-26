@@ -69,7 +69,27 @@ SONG_TYPES = [
     "09 Namco Original",
     "10 Taiko Towers",
     "11 Dan Dojo",
+    "12 Custom",
 ]
+CUSTOM_CATEGORY = {
+    "id": 12,
+    "title": "12 Custom",
+    "title_lang": {
+        "ja": "カスタム",
+        "en": "Custom",
+        "cn": "自定义",
+        "tw": "自訂",
+        "ko": "커스텀",
+    },
+    "song_skin": {
+        "sort": 12,
+        "background": "#2fb7ac",
+        "border": ["#a8fff2", "#08736f"],
+        "outline": "#07585f",
+        "info_fill": "#07585f",
+    },
+    "aliases": ["custom", "user upload", "upload", "自定义", "自訂", "カスタム", "커스텀"],
+}
 
 redis_config = dict(take_config('REDIS', required=True))
 redis_config['CACHE_REDIS_HOST'] = os.environ.get("TAIKO_WEB_REDIS_HOST") or redis_config['CACHE_REDIS_HOST']
@@ -800,7 +820,8 @@ def route_api_songs():
         del song['maker_id']
 
         if song['category_id']:
-            song['category'] = db.categories.find_one({'id': song['category_id']})['title']
+            category = db.categories.find_one({'id': song['category_id']})
+            song['category'] = category['title'] if category else None
         else:
             song['category'] = None
         #del song['category_id']
@@ -817,6 +838,8 @@ def route_api_songs():
 @app.cache.cached(timeout=15)
 def route_api_categories():
     categories = list(db.categories.find({},{'_id': False}))
+    if not any(category.get('id') == CUSTOM_CATEGORY['id'] or category.get('title') == CUSTOM_CATEGORY['title'] for category in categories):
+        categories.append(CUSTOM_CATEGORY)
     return jsonify(categories)
 
 @app.route(basedir + 'api/config')

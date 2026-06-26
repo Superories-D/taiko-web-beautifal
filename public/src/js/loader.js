@@ -1185,6 +1185,26 @@ class Loader{
 					delete cat.songSkin.info_fill
 				}
 			})
+			if(!assets.categories.some(cat => cat.title === "12 Custom")){
+				assets.categories.push({
+					id: 12,
+					title: "12 Custom",
+					title_lang: {
+						ja: "カスタム",
+						en: "Custom",
+						cn: "自定义",
+						tw: "自訂",
+						ko: "커스텀"
+					},
+					songSkin: {
+						sort: 12,
+						background: "#2fb7ac",
+						border: ["#a8fff2", "#08736f"],
+						outline: "#07585f",
+						infoFill: "#07585f"
+					}
+				})
+			}
 			
 			assets.categories.push({
 				title: "default",

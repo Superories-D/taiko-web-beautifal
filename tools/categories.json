@@ -138,5 +138,24 @@
 			"bg_img": "bg_genre_6.png"
 		},
 		"aliases": ["namco", "namco original", "namcooriginal", "ナムコ", "原创", "原創", "남코"]
+	},
+	{
+		"id": 12,
+		"title": "12 Custom",
+		"title_lang": {
+			"ja": "カスタム",
+			"en": "Custom",
+			"cn": "自定义",
+			"tw": "自訂",
+			"ko": "커스텀"
+		},
+		"song_skin": {
+			"sort": 12,
+			"background": "#2fb7ac",
+			"border": ["#a8fff2", "#08736f"],
+			"outline": "#07585f",
+			"info_fill": "#07585f"
+		},
+		"aliases": ["custom", "user upload", "upload", "自定义", "自訂", "カスタム", "커스텀"]
 	}
 ]

@@ -44,13 +44,11 @@ class UploadModal {
 
 	populateTypes() {
 		this.typeSelect.innerHTML = ""
-		this.songSelect.songTypes.forEach((type, index) => {
-			var option = document.createElement("option")
-			option.value = type
-			option.innerText = type
-			option.selected = index === this.songSelect.songTypeIndex
-			this.typeSelect.appendChild(option)
-		})
+		var option = document.createElement("option")
+		option.value = "12 Custom"
+		option.innerText = "12 Custom"
+		option.selected = true
+		this.typeSelect.appendChild(option)
 	}
 
 	remove(byUser = false) {

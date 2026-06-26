@@ -35,6 +35,7 @@ class Game{
 		this.fadeOutStarted = false
 		this.currentTimingPoint = 0
 		this.branchNames = ["normal", "advanced", "master"]
+		this.rollCounter = null
 		this.resetSection()
 		this.gameLagSync = !this.controller.touchEnabled && !(/Firefox/.test(navigator.userAgent))
 		
@@ -72,6 +73,7 @@ class Game{
 		// Main operations
 		this.updateCirclesStatus()
 		this.checkPlays()
+		this.updateRollCounter()
 		// Event operations
 		this.whenFadeoutMusic()
 		if(this.controller.multiplayer !== 2){
@@ -471,6 +473,53 @@ class Game{
 		this.sectionDrumroll++
 		this.globalScore.points += score * (dai ? 2 : 1)
 		this.view.setDarkBg(false)
+	}
+	isRollCounterCircle(circle){
+		var type = circle.type
+		return (type === "drumroll" || type === "daiDrumroll") && (!circle.branch || circle.branch.active)
+	}
+	updateRollCounter(){
+		var ms = this.elapsedTime
+		var latency = this.controller.audioLatency
+		var circles = this.songData.circles
+		var activeCircle = null
+
+		for(var i = 0; i < circles.length; i++){
+			var circle = circles[i]
+			if(this.isRollCounterCircle(circle) && ms >= circle.ms + latency && ms <= circle.endTime + latency){
+				activeCircle = circle
+				break
+			}
+		}
+
+		if(activeCircle){
+			if(!this.rollCounter || this.rollCounter.circle !== activeCircle){
+				this.rollCounter = {
+					circle: activeCircle,
+					startedAt: ms,
+					endedAt: null,
+					count: 0
+				}
+			}
+			this.rollCounter.count = activeCircle.timesHit
+			return
+		}
+
+		if(!this.rollCounter){
+			return
+		}
+
+		var circle = this.rollCounter.circle
+		this.rollCounter.count = circle.timesHit
+		if(!this.rollCounter.endedAt || ms < this.rollCounter.endedAt){
+			this.rollCounter.endedAt = this.isRollCounterCircle(circle) ? circle.endTime + latency : ms
+		}
+		if(ms >= this.rollCounter.endedAt + 1300){
+			this.rollCounter = null
+		}
+	}
+	getRollCounter(){
+		return this.rollCounter
 	}
 	getLastCircle(circles){
 		for(var i = circles.length; i--;){

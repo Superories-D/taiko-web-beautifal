@@ -354,6 +354,12 @@
 				paddingLeft: 0
 			}
 			this.scorePos = {x: 363, y: frameTop + (this.player === 2 ? 520 : 227)}
+			var nameplatePos = {
+				x: 167,
+				y: frameTop + (this.player === 2 ? 565 : 160),
+				w: 219,
+				h: 53
+			}
 			
 			var animPos = {
 				x1: this.slotPos.x + 13,
@@ -370,10 +376,10 @@
 			
 			this.nameplateCache.get({
 				ctx: ctx,
-				x: 167,
-				y: this.player === 2 ? 565 : 160,
-				w: 219,
-				h: 53,
+				x: nameplatePos.x,
+				y: nameplatePos.y - frameTop,
+				w: nameplatePos.w,
+				h: nameplatePos.h,
 				id: "1p",
 			}, ctx => {
 				var defaultName = this.player === 1 ? strings.defaultName : strings.default2PName
@@ -543,6 +549,12 @@
 				x: 155,
 				y: frameTop + (this.player === 2 ? 318 : 193)
 			}
+			var nameplatePos = {
+				x: touchMultiplayer ? 47 : 320,
+				y: frameTop + (touchMultiplayer ? (this.player === 2 ? 361 : 119) : (this.player === 2 ? 460 : 20)),
+				w: 273,
+				h: 66
+			}
 			
 			var animPos = {
 				x1: this.slotPos.x + 14,
@@ -554,10 +566,10 @@
 			
 			this.nameplateCache.get({
 				ctx: ctx,
-				x: touchMultiplayer ? 47 : 320,
-				y: touchMultiplayer ? (this.player === 2 ? 361 : 119) : (this.player === 2 ? 460 : 20),
-				w: 273,
-				h: 66,
+				x: nameplatePos.x,
+				y: nameplatePos.y - frameTop,
+				w: nameplatePos.w,
+				h: nameplatePos.h,
 				id: "1p",
 			}, ctx => {
 				var defaultName = this.player === 1 ? strings.defaultName : strings.default2PName
@@ -952,7 +964,9 @@
 			ctx.miterLimit = 10
 			ctx.fillText(strings.combo, comboX, comboTextY)
 		}
-		
+
+		this.drawRollCounter(nameplatePos, taikoPos)
+
 		// Slot
 		this.draw.slot(ctx, this.slotPos.x, this.slotPos.y, this.slotPos.size)
 		
@@ -1598,6 +1612,86 @@
 				}
 			}
 		}
+	}
+	drawRollCounter(nameplatePos, taikoPos){
+		var rollCounter = this.controller.game.getRollCounter()
+		if(!rollCounter){
+			return
+		}
+
+		var ctx = this.ctx
+		var ms = this.controller.game.elapsedTime
+		var alpha = 1
+		if(rollCounter.endedAt){
+			var fadeStart = rollCounter.endedAt + 1000
+			if(ms >= fadeStart){
+				alpha = 1 - (ms - fadeStart) / 300
+			}
+		}
+		if(alpha <= 0){
+			return
+		}
+
+		var img = assets.image["roll_count_bubble"]
+		if(!img || !img.complete){
+			return
+		}
+
+		var imgRatio = img.naturalWidth / img.naturalHeight
+		var maxH = this.portrait ? 76 : 96
+		var availableH
+		if(this.player === 2){
+			availableH = this.winH / this.ratio - nameplatePos.y - nameplatePos.h - 8
+		}else{
+			availableH = taikoPos.y - nameplatePos.y - nameplatePos.h - 8
+		}
+		var h = Math.max(62, Math.min(maxH, availableH))
+		var w = h * imgRatio
+		var x = nameplatePos.x + (nameplatePos.w - w) / 2
+		var y = nameplatePos.y + nameplatePos.h + 2
+		if(this.player !== 2 && y + h > taikoPos.y - 4){
+			y = taikoPos.y - h - 4
+		}
+
+		ctx.save()
+		ctx.globalAlpha = Math.min(1, alpha)
+		ctx.drawImage(img, x, y, w, h)
+
+		var label = strings.drumroll
+		var centerX = x + w / 2
+		var labelY = y + h * 0.34
+		var countY = y + h * 0.61
+		var maxTextW = w * 0.72
+		var labelSize = Math.round(h * 0.17)
+		var countSize = Math.round(h * 0.41)
+
+		ctx.textAlign = "center"
+		ctx.textBaseline = "middle"
+		ctx.miterLimit = 1
+
+		ctx.font = this.draw.bold(this.font) + labelSize + "px " + this.font
+		while(labelSize > 11 && ctx.measureText(label).width > maxTextW){
+			labelSize--
+			ctx.font = this.draw.bold(this.font) + labelSize + "px " + this.font
+		}
+		ctx.lineWidth = Math.max(3, labelSize * 0.22)
+		ctx.strokeStyle = "#fff7dc"
+		ctx.fillStyle = "#6f2b15"
+		ctx.strokeText(label, centerX, labelY)
+		ctx.fillText(label, centerX, labelY)
+
+		var count = rollCounter.count.toString()
+		ctx.font = this.draw.bold(taikoUiFont) + countSize + "px " + taikoUiFont
+		while(countSize > 24 && ctx.measureText(count).width > maxTextW){
+			countSize--
+			ctx.font = this.draw.bold(taikoUiFont) + countSize + "px " + taikoUiFont
+		}
+		ctx.lineWidth = Math.max(4, countSize * 0.14)
+		ctx.strokeStyle = "#fff"
+		ctx.fillStyle = "#f04424"
+		ctx.strokeText(count, centerX, countY)
+		ctx.fillText(count, centerX, countY)
+		ctx.restore()
 	}
 	calcBezierPoint(t, data){
 		var at = 1 - t

@@ -326,6 +326,7 @@ class SongSelect {
 		this.sessionCache = new CanvasCache(noSmoothing)
 		this.currentSongCache = new CanvasCache(noSmoothing)
 		this.nameplateCache = new CanvasCache(noSmoothing)
+		this.selectedSongSkinCache = {}
 
 
 		this.difficulty = [strings.easy, strings.normal, strings.hard, strings.oni]
@@ -398,6 +399,7 @@ class SongSelect {
 			"09 Namco Original",
 			"10 Taiko Towers",
 			"11 Dan Dojo",
+			"12 Custom",
 		]
 		this.songTypeIndex = Math.max(0, Math.min(this.songTypes.length - 1, +(localStorage.getItem("songTypeIndex") || 0)))
 		this.typeLabel = document.createElement("div")
@@ -1714,7 +1716,7 @@ class SongSelect {
 		if (this.state.moveHover === 0) {
 			highlight = 1
 		}
-		var selectedSkin = this.songSkin.selected
+		var selectedSkin = this.getSelectedSongSkin(currentSong)
 		if (screen === "title" || screen === "titleFadeIn" || this.state.locked === 3 || currentSong.unloaded) {
 			selectedSkin = currentSong.skin
 			highlight = 2
@@ -2810,6 +2812,63 @@ class SongSelect {
 		}
 	}
 
+	getSelectedSongSkin(song) {
+		if(!song || song.action || !song.skin){
+			return song && song.skin || this.songSkin.selected
+		}
+		var skin = song.skin
+		if(!skin.border){
+			return skin
+		}
+		var key = [
+			skin.background,
+			skin.border && skin.border.join("|"),
+			skin.outline
+		].join("|")
+		if(!this.selectedSongSkinCache[key]){
+			this.selectedSongSkinCache[key] = {
+				background: this.mixColor(skin.background, "#ffffff", 0.18),
+				border: [
+					this.mixColor(skin.border[0], "#ffffff", 0.28),
+					this.mixColor(skin.border[1], "#000000", 0.12)
+				],
+				outline: skin.outline
+			}
+		}
+		return this.selectedSongSkinCache[key]
+	}
+
+	mixColor(color, target, amount) {
+		var source = this.hexToRgb(color)
+		var targetRgb = this.hexToRgb(target)
+		if(!source || !targetRgb){
+			return color
+		}
+		var rgb = source.map((value, i) => {
+			return Math.round(value + (targetRgb[i] - value) * amount)
+		})
+		return "#" + rgb.map(value => value.toString(16).padStart(2, "0")).join("")
+	}
+
+	hexToRgb(color) {
+		if(typeof color !== "string"){
+			return null
+		}
+		var match = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+		if(!match){
+			return null
+		}
+		var hex = match[1]
+		if(hex.length === 3){
+			hex = hex.split("").map(value => value + value).join("")
+		}
+		return [
+			parseInt(hex.slice(0, 2), 16),
+			parseInt(hex.slice(2, 4), 16),
+			parseInt(hex.slice(4, 6), 16)
+		]
+	}
+
 	drawClosedSong(config) {
 		var ctx = config.ctx
 
@@ -3059,11 +3118,13 @@ class SongSelect {
 		} else if (song.category) {
 			var categoryName = song.category
 			var originalCategory = song.category
+			var skin = this.songSkin[song.category]
 		}
 		if (!categoryName) {
 			if (song.song_type) {
 				categoryName = song.song_type
 				originalCategory = song.song_type
+				skin = this.songSkin[song.song_type]
 			}
 		}
 		var addedSong = {

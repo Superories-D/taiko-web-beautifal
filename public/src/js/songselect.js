@@ -494,6 +494,7 @@ class SongSelect {
 		this.selectedDiff = 0
 		this.lastCurrentSong = {}
 		this.lastRandom = false
+		this.typeLoading = false
 		this.closed = false
 		loader.playBgm("bgm_songsel.mp3", [0.1, false, 0, 1.442, 3.506], () => !this.closed)
 
@@ -806,16 +807,31 @@ class SongSelect {
 	}
 
 	changeType(delta) {
+		if (this.closed || this.typeLoading || !this.songTypes.length) {
+			return
+		}
+		var previousTypeIndex = this.songTypeIndex
 		this.songTypeIndex = (this.songTypeIndex + delta + this.songTypes.length) % this.songTypes.length
 		localStorage.setItem("songTypeIndex", this.songTypeIndex)
 		this.updateTypeLabel()
 		var type = encodeURIComponent(this.songTypes[this.songTypeIndex])
+		var touchEnabled = this.touchEnabled
+		this.typeLoading = true
 		loader.ajax("api/songs?type=" + type).then(resp => {
 			var songs = JSON.parse(resp)
 			assets.songsDefault = prepareRemoteSongFiles(songs)
 			assets.songs = assets.songsDefault
-			new SongSelect(false, false, this.touchEnabled)
-		}).catch(() => { })
+			this.clean()
+			setTimeout(() => {
+				new SongSelect(false, false, touchEnabled)
+			}, 0)
+		}).catch(error => {
+			this.typeLoading = false
+			this.songTypeIndex = previousTypeIndex
+			localStorage.setItem("songTypeIndex", this.songTypeIndex)
+			this.updateTypeLabel()
+			console.warn("Failed to change song type", error)
+		})
 	}
 
 	mouseDown(event) {
@@ -2964,11 +2980,16 @@ class SongSelect {
 	}
 
 	drawBackground(cat) {
+		if (!this.songSelect) {
+			return
+		}
+		var image = assets.image["bg_genre_def"]
 		if (this.songSkin[cat] && this.songSkin[cat].bg_img) {
 			let filename = this.songSkin[cat].bg_img.slice(0, this.songSkin[cat].bg_img.lastIndexOf("."))
-			this.songSelect.style.backgroundImage = "url('" + assets.image[filename].src + "')"
-		} else {
-			this.songSelect.style.backgroundImage = "url('" + assets.image["bg_genre_def"].src + "')"
+			image = assets.image[filename] || image
+		}
+		if (image && image.src) {
+			this.songSelect.style.backgroundImage = "url('" + image.src + "')"
 		}
 	}
 
@@ -3471,6 +3492,9 @@ class SongSelect {
 	}
 
 	clean() {
+		if (this.closed) {
+			return
+		}
 		this.closed = true
 		this.keyboard.clean()
 		this.gamepad.clean()

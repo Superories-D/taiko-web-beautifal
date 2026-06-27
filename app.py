@@ -1283,27 +1283,32 @@ def route_api_songs():
         query['song_type'] = type_q
     songs = list(db.songs.find(query, {'_id': False, 'enabled': False}))
     for song in songs:
-        if song['maker_id']:
-            if song['maker_id'] == 0:
+        maker_id = song.get('maker_id')
+        if maker_id is not None:
+            if maker_id == 0:
                 song['maker'] = 0
             else:
-                song['maker'] = db.makers.find_one({'id': song['maker_id']}, {'_id': False})
+                song['maker'] = db.makers.find_one({'id': maker_id}, {'_id': False})
         else:
             song['maker'] = None
-        del song['maker_id']
+        song.pop('maker_id', None)
 
-        if song['category_id']:
-            category = db.categories.find_one({'id': song['category_id']})
+        category_id = song.get('category_id')
+        if category_id:
+            category = db.categories.find_one({'id': category_id})
             song['category'] = category['title'] if category else None
         else:
             song['category'] = None
         #del song['category_id']
 
-        if song['skin_id']:
-            song['song_skin'] = db.song_skins.find_one({'id': song['skin_id']}, {'_id': False, 'id': False})
+        skin_id = song.get('skin_id')
+        if skin_id:
+            song['song_skin'] = db.song_skins.find_one({'id': skin_id}, {'_id': False, 'id': False})
         else:
             song['song_skin'] = None
-        del song['skin_id']
+        song.pop('skin_id', None)
+
+        song.setdefault('song_type', '')
 
     return cache_wrap(flask.jsonify(songs), 60)
 

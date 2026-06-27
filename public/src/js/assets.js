@@ -83,6 +83,13 @@ var assets = {
 		"fireworks_anim.png",
 		"bg_score_p1.png",
 		"bg_score_p2.png",
+		"bg_genre_0.png",
+		"bg_genre_1.png",
+		"bg_genre_2.png",
+		"bg_genre_3.png",
+		"bg_genre_4.png",
+		"bg_genre_5.png",
+		"bg_genre_6.png",
 		"bg_pause.png",
 		"badge_auto.png",
 		"mimizu.png"

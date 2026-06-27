@@ -8,6 +8,12 @@
 	errorMessage(stack)
 })
 
+addEventListener("pageshow", function(event){
+	if(event.persisted){
+		location.reload()
+	}
+})
+
 function errorMessage(stack){
 	localStorage["lastError"] = JSON.stringify({
 		timestamp: Date.now(),

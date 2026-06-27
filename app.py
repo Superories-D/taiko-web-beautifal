@@ -61,6 +61,9 @@ def take_config(name, required=False):
         return None
 
 app = Flask(__name__)
+FEATURE_ADMIN = False
+FEATURE_SITE_MESSAGES = False
+FEATURE_TOP_SONGS = False
 SONG_TYPES = [
     "01 Pop",
     "02 Anime",
@@ -632,6 +635,8 @@ def admin_required(level):
     def decorated_function(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
+            if not FEATURE_ADMIN:
+                return abort(404)
             if not session.get('username'):
                 return abort(403)
             
@@ -666,7 +671,11 @@ def get_config(credentials=False):
         'custom_js': take_config('CUSTOM_JS'),
         'plugins': take_config('PLUGINS') and [x for x in take_config('PLUGINS') if x['url']],
         'preview_type': take_config('PREVIEW_TYPE') or 'mp3',
-        'multiplayer_url': take_config('MULTIPLAYER_URL')
+        'multiplayer_url': take_config('MULTIPLAYER_URL'),
+        'features': {
+            'site_messages': FEATURE_SITE_MESSAGES,
+            'top_songs': FEATURE_TOP_SONGS
+        }
     }
     relative_urls = ['songs_baseurl', 'assets_baseurl']
     for name in relative_urls:
@@ -881,6 +890,13 @@ def route_api_visits_record():
 
 @app.route(basedir + 'api/site-messages')
 def route_api_site_messages():
+    if not FEATURE_SITE_MESSAGES:
+        return jsonify({
+            'status': 'ok',
+            'logged_in': bool(session.get('username')),
+            'messages': [],
+            'unread_count': 0
+        })
     messages = get_site_messages(request.args.get('limit', 50), active_only=True)
     message_ids = [str(message.get('_id')) for message in messages]
     username = session.get('username')
@@ -898,6 +914,8 @@ def route_api_site_messages():
 @app.route(basedir + 'api/site-messages/<message_id>/read', methods=['POST'])
 @login_required
 def route_api_site_messages_read(message_id):
+    if not FEATURE_SITE_MESSAGES:
+        return abort(404)
     object_id = object_id_or_404(message_id)
     if not db.site_messages.find_one({'_id': object_id, 'active': True}, {'_id': True}):
         return abort(404)
@@ -928,6 +946,8 @@ def get_current_admin(min_level=50):
 
 @app.route(basedir + '1128admin1128', methods=['GET', 'POST'])
 def route_secret_admin_login():
+    if not FEATURE_ADMIN:
+        return abort(404)
     if request.method == 'GET' and get_current_admin(50):
         return redirect(basedir + 'admin/overview')
 
@@ -1316,6 +1336,8 @@ def route_api_songs():
 @app.route(basedir + 'api/songs/top10')
 @app.cache.cached(timeout=PUBLIC_TOP_SONGS_CACHE_SECONDS, query_string=True)
 def route_api_songs_top10():
+    if not FEATURE_TOP_SONGS:
+        return abort(404)
     songs = get_public_top_songs(request.args.get('limit', 10))
     return cache_wrap(jsonify({
         'status': 'ok',

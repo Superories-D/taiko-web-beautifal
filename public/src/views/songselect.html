@@ -1,6 +1,22 @@
 <div id="song-select">
 	<canvas id="song-sel-canvas"></canvas>
 	<div id="song-sel-selectable" tabindex="1"></div>
+	<button id="site-message-button" type="button" aria-label="Messages" title="Messages">
+		<span id="site-message-badge" hidden></span>
+	</button>
+	<div id="site-message-overlay" hidden>
+		<div id="site-message-modal" role="dialog" aria-modal="true" aria-labelledby="site-message-heading">
+			<div class="site-message-header">
+				<h2 id="site-message-heading"></h2>
+				<button id="site-message-close" type="button" aria-label="Close" title="Close">
+					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+						<path d="M6 6l12 12M18 6 6 18"></path>
+					</svg>
+				</button>
+			</div>
+			<div id="site-message-list"></div>
+		</div>
+	</div>
 	<button id="song-search-btn" type="button" aria-label="Search Songs" title="Search Songs"></button>
 	<div id="touch-full-btn"></div>
 </div>

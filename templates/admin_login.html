@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Taiko Web Admin Login</title>
+        <link rel="icon" href="{{config.assets_baseurl}}img/favicon.png" type="image/png">
+        <meta name="viewport" content="width=device-width, user-scalable=no">
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+        <link href="{{config.basedir}}src/css/admin.css" rel="stylesheet">
+    </head>
+    <body class="admin-login-page">
+        <main class="admin-login-main">
+            <div class="admin-login-box">
+                <h1>Admin Login</h1>
+                {% for category, message in get_flashed_messages(with_categories=true) %}
+                <div class="message{% if category == 'error' %} message-error{% endif %}">{{ message }}</div>
+                {% endfor %}
+                <form method="post">
+                    <div class="form-field">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" value="{{username}}" required autofocus>
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <button type="submit" class="save-song admin-login-button">Login</button>
+                </form>
+            </div>
+        </main>
+    </body>
+</html>

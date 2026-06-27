@@ -437,6 +437,7 @@ sync_source() {
     --exclude 'backups' \
     --exclude 'config.py' \
     --exclude 'public/songs' \
+    --exclude 'public/notice_uploads' \
     --exclude 'taiko-editor/.venv' \
     --exclude 'taiko-editor/build' \
     --exclude 'taiko-editor/dist' \
@@ -450,7 +451,7 @@ ensure_config() {
 }
 
 ensure_data_dirs() {
-  mkdir -p "$DATA_DIR/songs" "$DATA_DIR/mongo" "$DATA_DIR/redis"
+  mkdir -p "$DATA_DIR/songs" "$DATA_DIR/mongo" "$DATA_DIR/redis" "$DATA_DIR/notice_uploads"
 }
 
 write_compose_env() {
@@ -481,6 +482,7 @@ Environment=TAIKO_WEB_SONGS_DIR=$DATA_DIR/songs
 Environment=TAIKO_WEB_MONGO_HOST=127.0.0.1:27017
 Environment=TAIKO_WEB_REDIS_HOST=127.0.0.1
 Environment=REDIS_URI=redis://127.0.0.1:6379/0
+Environment=TAIKO_WEB_NOTICE_UPLOADS_DIR=$DATA_DIR/notice_uploads
 ExecStart=$INSTALL_DIR/.venv/bin/gunicorn -c gunicorn.conf.py app:app
 Restart=always
 User=$APP_USER
@@ -648,6 +650,194 @@ ensure_direct_datastores() {
   fi
 }
 
+run_app_python() {
+  if command -v docker >/dev/null 2>&1 &&
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^taiko-web-app$'; then
+    docker exec -i taiko-web-app python -
+    return
+  fi
+
+  if [ -x "$INSTALL_DIR/.venv/bin/python" ]; then
+    (
+      cd "$INSTALL_DIR"
+      "$INSTALL_DIR/.venv/bin/python" -
+    )
+    return
+  fi
+
+  echo "Cannot run application Python for admin setup."
+  return 1
+}
+
+admin_user_count() {
+  run_app_python <<'PY'
+from app import db
+print(db.users.count_documents({'user_level': {'$gte': 100}}))
+PY
+}
+
+create_admin_user() {
+  local username="$1"
+  local password="$2"
+
+  if command -v docker >/dev/null 2>&1 &&
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^taiko-web-app$'; then
+    docker exec -i \
+      -e "TAIKO_ADMIN_USERNAME=$username" \
+      -e "TAIKO_ADMIN_PASSWORD=$password" \
+      taiko-web-app python - <<'PY'
+import bcrypt
+import os
+import re
+
+from app import db, get_default_don
+
+username = os.environ['TAIKO_ADMIN_USERNAME'].strip()
+password = os.environ['TAIKO_ADMIN_PASSWORD']
+if not re.match(r'^[A-Za-z0-9_]{3,20}$', username):
+    raise SystemExit('Invalid admin username.')
+if len(password.encode('utf-8')) < 6:
+    raise SystemExit('Admin password must be at least 6 bytes.')
+
+hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+existing = db.users.find_one({'username_lower': username.lower()})
+session_id = os.urandom(24).hex()
+if existing:
+    try:
+        current_level = int(existing.get('user_level', 0))
+    except (TypeError, ValueError):
+        current_level = 0
+    db.users.update_one({'_id': existing['_id']}, {'$set': {
+        'password': hashed,
+        'display_name': existing.get('display_name') or existing.get('username') or username,
+        'don': existing.get('don') or get_default_don(),
+        'user_level': max(current_level, 100),
+        'session_id': existing.get('session_id') or session_id
+    }})
+    print('updated')
+else:
+    db.users.insert_one({
+        'username': username,
+        'username_lower': username.lower(),
+        'password': hashed,
+        'display_name': username,
+        'don': get_default_don(),
+        'user_level': 100,
+        'session_id': session_id
+    })
+    print('created')
+PY
+    return
+  fi
+
+  if [ -x "$INSTALL_DIR/.venv/bin/python" ]; then
+    (
+      cd "$INSTALL_DIR"
+      TAIKO_ADMIN_USERNAME="$username" TAIKO_ADMIN_PASSWORD="$password" "$INSTALL_DIR/.venv/bin/python" - <<'PY'
+import bcrypt
+import os
+import re
+
+from app import db, get_default_don
+
+username = os.environ['TAIKO_ADMIN_USERNAME'].strip()
+password = os.environ['TAIKO_ADMIN_PASSWORD']
+if not re.match(r'^[A-Za-z0-9_]{3,20}$', username):
+    raise SystemExit('Invalid admin username.')
+if len(password.encode('utf-8')) < 6:
+    raise SystemExit('Admin password must be at least 6 bytes.')
+
+hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+existing = db.users.find_one({'username_lower': username.lower()})
+session_id = os.urandom(24).hex()
+if existing:
+    try:
+        current_level = int(existing.get('user_level', 0))
+    except (TypeError, ValueError):
+        current_level = 0
+    db.users.update_one({'_id': existing['_id']}, {'$set': {
+        'password': hashed,
+        'display_name': existing.get('display_name') or existing.get('username') or username,
+        'don': existing.get('don') or get_default_don(),
+        'user_level': max(current_level, 100),
+        'session_id': existing.get('session_id') or session_id
+    }})
+    print('updated')
+else:
+    db.users.insert_one({
+        'username': username,
+        'username_lower': username.lower(),
+        'password': hashed,
+        'display_name': username,
+        'don': get_default_don(),
+        'user_level': 100,
+        'session_id': session_id
+    })
+    print('created')
+PY
+    )
+    return
+  fi
+
+  echo "Cannot run application Python for admin setup."
+  return 1
+}
+
+prompt_admin_credentials() {
+  ADMIN_USERNAME_RESULT="${TAIKO_WEB_ADMIN_USERNAME:-}"
+  ADMIN_PASSWORD_RESULT="${TAIKO_WEB_ADMIN_PASSWORD:-}"
+
+  if [ -n "$ADMIN_USERNAME_RESULT" ] && [ -n "$ADMIN_PASSWORD_RESULT" ]; then
+    return
+  fi
+
+  if [ ! -t 0 ]; then
+    echo "No administrator account found. Set TAIKO_WEB_ADMIN_USERNAME and TAIKO_WEB_ADMIN_PASSWORD, then rerun setup/update."
+    exit 1
+  fi
+
+  echo "No administrator account found. Create one for /1128admin1128."
+  while true; do
+    read -r -p "Admin username [admin]: " ADMIN_USERNAME_RESULT
+    ADMIN_USERNAME_RESULT=${ADMIN_USERNAME_RESULT:-admin}
+    if printf '%s' "$ADMIN_USERNAME_RESULT" | grep -Eq '^[A-Za-z0-9_]{3,20}$'; then
+      break
+    fi
+    echo "Use 3-20 letters, numbers, or underscores."
+  done
+
+  while true; do
+    read -r -s -p "Admin password: " ADMIN_PASSWORD_RESULT
+    echo
+    read -r -s -p "Confirm admin password: " admin_password_confirm
+    echo
+    if [ "$ADMIN_PASSWORD_RESULT" != "$admin_password_confirm" ]; then
+      echo "Passwords do not match."
+    elif [ "${#ADMIN_PASSWORD_RESULT}" -lt 6 ]; then
+      echo "Password must be at least 6 characters."
+    else
+      break
+    fi
+  done
+}
+
+ensure_admin_user() {
+  local count
+  count=$(admin_user_count 2>/dev/null | tail -n 1 || true)
+  if ! printf '%s' "$count" | grep -Eq '^[0-9]+$'; then
+    echo "Could not check administrator accounts."
+    exit 1
+  fi
+  if [ "$count" -gt 0 ]; then
+    log "Administrator account exists; skipping admin creation."
+    return
+  fi
+
+  prompt_admin_credentials
+  create_admin_user "$ADMIN_USERNAME_RESULT" "$ADMIN_PASSWORD_RESULT" >/dev/null
+  log "Administrator account is ready: $ADMIN_USERNAME_RESULT"
+}
+
 deploy_direct() {
   begin_update_guard
   log "Starting direct deployment."
@@ -672,6 +862,7 @@ deploy_direct() {
   systemctl enable "$SERVICE_NAME"
   systemctl restart "$SERVICE_NAME"
   check_mongodb_health "$UPDATE_BEFORE_SONGS_COUNT" "$LAST_BACKUP_DIR"
+  ensure_admin_user
   log "Direct deployment completed."
   log "Persistent data directory: $DATA_DIR"
   [ -n "$LAST_BACKUP_DIR" ] && log "MongoDB backup: $LAST_BACKUP_DIR"
@@ -698,6 +889,7 @@ deploy_container() {
     compose_up_or_recreate_named up -d --build --force-recreate --remove-orphans
   )
   check_mongodb_health "$UPDATE_BEFORE_SONGS_COUNT" "$LAST_BACKUP_DIR"
+  ensure_admin_user
   log "Container deployment completed."
   log "Persistent data directory: $DATA_DIR"
   [ -n "$LAST_BACKUP_DIR" ] && log "MongoDB backup: $LAST_BACKUP_DIR"
@@ -719,6 +911,7 @@ upgrade_container() {
     compose_up_or_recreate_named up -d --build --force-recreate --remove-orphans
   )
   check_mongodb_health "$UPDATE_BEFORE_SONGS_COUNT" "$LAST_BACKUP_DIR"
+  ensure_admin_user
   log "Container upgrade completed."
   log "Persistent data directory kept intact: $DATA_DIR"
   [ -n "$LAST_BACKUP_DIR" ] && log "MongoDB backup: $LAST_BACKUP_DIR"
@@ -750,6 +943,7 @@ upgrade_direct() {
   systemctl enable "$SERVICE_NAME"
   systemctl restart "$SERVICE_NAME"
   check_mongodb_health "$UPDATE_BEFORE_SONGS_COUNT" "$LAST_BACKUP_DIR"
+  ensure_admin_user
   log "Direct upgrade completed."
   log "Persistent data directory kept intact: $DATA_DIR"
   [ -n "$LAST_BACKUP_DIR" ] && log "MongoDB backup: $LAST_BACKUP_DIR"

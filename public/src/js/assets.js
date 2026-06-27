@@ -4,6 +4,7 @@ var assets = {
 		"lib/fuzzysort.js",
 		"loadsong.js",
 		"parseosu.js",
+		"sitemessages.js",
 		"titlescreen.js",
 		"scoresheet.js",
 		"songselect.js",
@@ -94,6 +95,7 @@ var assets = {
 		"#touch-pause-btn": "touch_pause.png",
 		"#touch-full-btn": "touch_fullscreen.png",
 		"#song-search-btn": "search_icon.png",
+		"#site-message-button::before": "site-message-bell.png",
 		"#gamepad-bg, #gamepad-buttons": "settings_gamepad.png",
 		".song-search-result-crown": "crown.png",
 		".song-search-tip-error": "miss.png"

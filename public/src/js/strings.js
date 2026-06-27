@@ -132,6 +132,185 @@ var translations = {
 		tw: "選項",
 		ko: "옵션"
 	},
+	download: {
+		ja: "ダウンロード",
+		en: "Download",
+		cn: "下载",
+		tw: "下載",
+		ko: "다운로드"
+	},
+	songSelectExtras: {
+		upload: {
+			ja: "曲を投稿！",
+			en: "Upload Song!",
+			cn: "投稿歌曲！",
+			tw: "投稿歌曲！",
+			ko: "곡 업로드!"
+		},
+		board: {
+			ja: "掲示板",
+			en: "Board",
+			cn: "留言板",
+			tw: "留言板",
+			ko: "게시판"
+		},
+		songSelectingSpeed: {
+			ja: "曲選択速度",
+			en: "Song Select Speed",
+			cn: "选曲速度",
+			tw: "選曲速度",
+			ko: "곡 선택 속도"
+		},
+		baisoku: {
+			ja: "ばいそく",
+			en: "Speed Up",
+			cn: "倍速",
+			tw: "倍速",
+			ko: "배속"
+		},
+		doron: {
+			ja: "ドロン",
+			en: "Hidden Notes",
+			cn: "隐谱",
+			tw: "隱譜",
+			ko: "도론"
+		},
+		abekobe: {
+			ja: "あべこべ",
+			en: "Reverse",
+			cn: "反转",
+			tw: "反轉",
+			ko: "반전"
+		},
+		detarame: {
+			ja: "でたらめ",
+			en: "Random Notes",
+			cn: "随机",
+			tw: "隨機",
+			ko: "랜덤"
+		},
+		titleSort: {
+			ja: "タイトル順で並べ替え",
+			en: "Sort by Title",
+			cn: "按标题排序",
+			tw: "依標題排序",
+			ko: "제목순 정렬"
+		},
+		songSelectingSpeedPrompt: {
+			ja: "曲選択速度を入力してね！",
+			en: "Enter song select speed!",
+			cn: "请输入选曲速度！",
+			tw: "請輸入選曲速度！",
+			ko: "곡 선택 속도를 입력하세요!"
+		},
+		baisokuPrompt: {
+			ja: "ばいそくの倍率を入力してね！",
+			en: "Enter the speed multiplier!",
+			cn: "请输入倍速倍率！",
+			tw: "請輸入倍速倍率！",
+			ko: "배속 배율을 입력하세요!"
+		},
+		doronPrompt: {
+			ja: "ドロンを有効にするには\"true\"を入力してね！",
+			en: "Enter \"true\" to enable Hidden Notes!",
+			cn: "输入 \"true\" 启用隐谱！",
+			tw: "輸入 \"true\" 啟用隱譜！",
+			ko: "도론을 켜려면 \"true\"를 입력하세요!"
+		},
+		abekobePrompt: {
+			ja: "あべこべを有効にするには\"true\"を入力してね！",
+			en: "Enter \"true\" to enable Reverse!",
+			cn: "输入 \"true\" 启用反转！",
+			tw: "輸入 \"true\" 啟用反轉！",
+			ko: "반전을 켜려면 \"true\"를 입력하세요!"
+		},
+		detaramePrompt: {
+			ja: "でたらめになる確率をパーセントで入力してね！",
+			en: "Enter the random-note chance as a percentage!",
+			cn: "请输入随机概率百分比！",
+			tw: "請輸入隨機概率百分比！",
+			ko: "랜덤 노트 확률을 퍼센트로 입력하세요!"
+		},
+		titleSortPrompt: {
+			ja: "タイトル順で並べ替えするには\"true\"を入力してね！",
+			en: "Enter \"true\" to sort by title!",
+			cn: "输入 \"true\" 按标题排序！",
+			tw: "輸入 \"true\" 依標題排序！",
+			ko: "제목순으로 정렬하려면 \"true\"를 입력하세요!"
+		}
+	},
+	siteMessages: {
+		title: {
+			ja: "お知らせ",
+			en: "Messages",
+			cn: "站内信",
+			tw: "站內信",
+			ko: "공지"
+		},
+		buttonLabel: {
+			ja: "お知らせ",
+			en: "Messages",
+			cn: "站内信",
+			tw: "站內信",
+			ko: "공지"
+		},
+		close: {
+			ja: "閉じる",
+			en: "Close",
+			cn: "关闭",
+			tw: "關閉",
+			ko: "닫기"
+		},
+		loading: {
+			ja: "読み込み中...",
+			en: "Loading...",
+			cn: "加载中...",
+			tw: "載入中...",
+			ko: "불러오는 중..."
+		},
+		empty: {
+			ja: "お知らせはありません。",
+			en: "No messages.",
+			cn: "暂无站内信。",
+			tw: "暫無站內信。",
+			ko: "공지 사항이 없습니다."
+		},
+		loadError: {
+			ja: "お知らせを読み込めませんでした。",
+			en: "Could not load messages.",
+			cn: "无法加载站内信。",
+			tw: "無法載入站內信。",
+			ko: "공지 사항을 불러오지 못했습니다."
+		},
+		markRead: {
+			ja: "既読にする",
+			en: "Mark as read",
+			cn: "标为已读",
+			tw: "標為已讀",
+			ko: "읽음 처리"
+		},
+		read: {
+			ja: "既読",
+			en: "Read",
+			cn: "已读",
+			tw: "已讀",
+			ko: "읽음"
+		},
+		loginToRead: {
+			ja: "ログインすると既読にできます",
+			en: "Log in to mark as read",
+			cn: "登录后可标为已读",
+			tw: "登入後可標為已讀",
+			ko: "로그인하면 읽음 처리할 수 있습니다."
+		},
+		imageAlt: {
+			ja: "お知らせ画像",
+			en: "Message image",
+			cn: "站内信图片",
+			tw: "站內信圖片",
+			ko: "공지 이미지"
+		}
+	},
 	none: {
 		ja: "なし",
 		en: "None",
@@ -1254,18 +1433,18 @@ var translations = {
 			],
 		},
 		deleteAccount: {
-			ja: "アカウント削除",
-			en: "Delete Account",
-			cn: "删除账号",
-			tw: "刪除帳號",
-			ko: "계정 삭제"
+			ja: "アカウントを外す",
+			en: "Remove Account",
+			cn: "移除账号",
+			tw: "移除帳號",
+			ko: "계정 제거"
 		},
 		verifyPassword: {
-			ja: "削除するパスワードの確認",
-			en: "Verify password to delete this account",
-			cn: "请输入密码以删除此账号",
-			tw: "請確認您的密碼以刪除帳號",
-			ko: "계정을 삭제하기 위해 비밀번호를 인증해주세요"
+			ja: "アカウントを外すためにパスワードを確認",
+			en: "Verify password to remove this account",
+			cn: "请输入密码以移除此账号",
+			tw: "請確認您的密碼以移除帳號",
+			ko: "계정을 제거하기 위해 비밀번호를 인증해주세요"
 		}
 	},
 	serverError: {

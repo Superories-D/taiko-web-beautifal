@@ -92,3 +92,11 @@ playcount_record = {
     },
     'required': ['hash', 'difficulty', 'score', 'is_auto']
 }
+
+visit_record = {
+    '$schema': 'http://json-schema.org/schema#',
+    'type': 'object',
+    'properties': {
+        'visitor_id': {'type': 'string'}
+    }
+}

@@ -1,0 +1,101 @@
+{% extends 'admin.html' %}
+{% block content %}
+<h1>Overview</h1>
+
+<div class="admin-stats-grid">
+    <div class="admin-stat-card">
+        <span>Total songs</span>
+        <strong>{{ stats.song_count }}</strong>
+    </div>
+    <div class="admin-stat-card">
+        <span>Enabled songs</span>
+        <strong>{{ stats.enabled_song_count }}</strong>
+    </div>
+    <div class="admin-stat-card">
+        <span>Users</span>
+        <strong>{{ stats.user_count }}</strong>
+    </div>
+    <div class="admin-stat-card">
+        <span>Messages</span>
+        <strong>{{ stats.message_count }}</strong>
+    </div>
+</div>
+
+<h2>Play totals</h2>
+<div class="admin-stats-grid admin-stats-grid-compact">
+    <div class="admin-stat-card">
+        <span>Last hour</span>
+        <strong>{{ stats.play_counts.hour }}</strong>
+    </div>
+    <div class="admin-stat-card">
+        <span>Today</span>
+        <strong>{{ stats.play_counts.day }}</strong>
+    </div>
+    <div class="admin-stat-card">
+        <span>This week</span>
+        <strong>{{ stats.play_counts.week }}</strong>
+    </div>
+    <div class="admin-stat-card">
+        <span>This month</span>
+        <strong>{{ stats.play_counts.month }}</strong>
+    </div>
+</div>
+
+<h2>Entering users</h2>
+<p class="admin-note">Unique users or visitors. Visit data is automatically removed after {{ stats.retention_days }} days.</p>
+<div class="admin-stats-grid admin-stats-grid-compact">
+    <div class="admin-stat-card">
+        <span>Today</span>
+        <strong>{{ stats.visit_counts.day }}</strong>
+    </div>
+    <div class="admin-stat-card">
+        <span>This week</span>
+        <strong>{{ stats.visit_counts.week }}</strong>
+    </div>
+    <div class="admin-stat-card">
+        <span>This month</span>
+        <strong>{{ stats.visit_counts.month }}</strong>
+    </div>
+</div>
+
+<h2>Song heat ranking</h2>
+{% if stats.heat_rows %}
+<div class="admin-table-wrap">
+    <table class="admin-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Song</th>
+                <th>Total</th>
+                <th>Hour</th>
+                <th>Day</th>
+                <th>Week</th>
+                <th>Month</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in stats.heat_rows %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>
+                    {% if row.song_id %}
+                    <a href="{{config.basedir}}admin/songs/{{ row.song_id }}">{{ row.title }}</a>
+                    {% else %}
+                    {{ row.title }}
+                    {% endif %}
+                    <small>{{ row.song_hash }}</small>
+                </td>
+                <td>{{ row.total }}</td>
+                <td>{{ row.periods.hour }}</td>
+                <td>{{ row.periods.day }}</td>
+                <td>{{ row.periods.week }}</td>
+                <td>{{ row.periods.month }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="admin-message empty-message">No play records yet.</div>
+{% endif %}
+{% endblock %}

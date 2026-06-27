@@ -13,6 +13,7 @@ import requests
 import schema
 import os
 import time
+import uuid
 from datetime import datetime, timedelta
 
 # -- カスタム --
@@ -33,9 +34,11 @@ from flask_caching import Cache
 from flask_session import Session
 from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError
 from ffmpy import FFmpeg
+from bson import ObjectId
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from redis import Redis
+from werkzeug.utils import secure_filename
 
 
 APP_ROOT = pathlib.Path(__file__).resolve().parent
@@ -46,6 +49,7 @@ def path_from_env(name, default):
 
 
 SONGS_DIR = path_from_env('TAIKO_WEB_SONGS_DIR', APP_ROOT / 'public' / 'songs')
+NOTICE_UPLOADS_DIR = path_from_env('TAIKO_WEB_NOTICE_UPLOADS_DIR', APP_ROOT / 'public' / 'notice_uploads')
 
 
 def take_config(name, required=False):
@@ -207,8 +211,222 @@ db.songs.create_index('song_type')
 db.scores.create_index('username')
 db.play_records.create_index('song_hash')
 db.play_records.create_index('played_at')
+db.play_records.create_index([('song_hash', 1), ('played_at', -1)])
 db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('score_value', -1)])
 db.leaderboard.create_index('username')
+db.site_messages.create_index([('active', 1), ('created_at', -1)])
+db.site_message_reads.create_index([('username', 1), ('message_id', 1)], unique=True)
+db.site_message_reads.create_index('message_id')
+
+VISIT_RETENTION_DAYS = 400
+VISIT_RETENTION_SECONDS = VISIT_RETENTION_DAYS * 24 * 60 * 60
+VISIT_ENTERED_AT_INDEX = 'entered_at_1'
+
+
+def ensure_visit_record_indexes():
+    try:
+        for index in db.visit_records.list_indexes():
+            if (
+                index.get('name') == VISIT_ENTERED_AT_INDEX and
+                index.get('expireAfterSeconds') != VISIT_RETENTION_SECONDS
+            ):
+                db.visit_records.drop_index(VISIT_ENTERED_AT_INDEX)
+                break
+        db.visit_records.create_index(
+            [('entered_at', 1)],
+            name=VISIT_ENTERED_AT_INDEX,
+            expireAfterSeconds=VISIT_RETENTION_SECONDS
+        )
+        db.visit_records.create_index([('visitor_key', 1), ('entered_at', -1)])
+    except Exception as e:
+        print('Warning: failed to ensure visit record indexes: {}'.format(e))
+
+
+ensure_visit_record_indexes()
+
+SITE_MESSAGE_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+SITE_MESSAGE_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+SITE_MESSAGE_MAX_TITLE_LENGTH = 120
+SITE_MESSAGE_MAX_BODY_LENGTH = 5000
+SITE_MESSAGE_MAX_IMAGE_URL_LENGTH = 1000
+
+
+def object_id_or_404(value):
+    try:
+        return ObjectId(value)
+    except Exception:
+        abort(404)
+
+
+def serialize_site_message(message, read_ids=None):
+    read_ids = read_ids or set()
+    message_id = str(message.get('_id'))
+    created_at = message.get('created_at')
+    if isinstance(created_at, datetime):
+        created_at = created_at.isoformat() + 'Z'
+
+    return {
+        'id': message_id,
+        'title': message.get('title') or '',
+        'body': message.get('body') or '',
+        'image_url': message.get('image_url') or '',
+        'created_at': created_at,
+        'created_by': message.get('created_by') or '',
+        'active': bool(message.get('active', True)),
+        'read': message_id in read_ids
+    }
+
+
+def get_site_message_read_ids(username, message_ids):
+    if not username or not message_ids:
+        return set()
+
+    return {
+        item.get('message_id')
+        for item in db.site_message_reads.find({
+            'username': username,
+            'message_id': {'$in': message_ids}
+        }, {'_id': False, 'message_id': True})
+    }
+
+
+def get_site_messages(limit=50, active_only=True):
+    try:
+        limit = max(1, min(int(limit), 100))
+    except (TypeError, ValueError):
+        limit = 50
+
+    query = {'active': True} if active_only else {}
+    return list(db.site_messages.find(query).sort('created_at', -1).limit(limit))
+
+
+def is_allowed_site_message_image(filename):
+    return pathlib.Path(filename or '').suffix.lower() in SITE_MESSAGE_IMAGE_EXTENSIONS
+
+
+def save_site_message_image(upload):
+    if not upload or not upload.filename:
+        return None
+
+    filename = secure_filename(upload.filename)
+    if not filename or not is_allowed_site_message_image(filename):
+        raise ValueError('Unsupported image type. Please upload jpg, png, gif, or webp.')
+
+    upload.stream.seek(0, os.SEEK_END)
+    size = upload.stream.tell()
+    upload.stream.seek(0)
+    if size > SITE_MESSAGE_MAX_IMAGE_BYTES:
+        raise ValueError('Image is too large. Please keep it under 5 MB.')
+
+    NOTICE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = pathlib.Path(filename).suffix.lower()
+    stored_name = '{}{}'.format(uuid.uuid4().hex, suffix)
+    upload.save(str(NOTICE_UPLOADS_DIR / stored_name))
+    return site_path('notice_uploads/{}'.format(stored_name))
+
+
+def utc_period_starts(now=None):
+    now = now or datetime.utcnow()
+    return {
+        'hour': now - timedelta(hours=1),
+        'day': now.replace(hour=0, minute=0, second=0, microsecond=0),
+        'week': (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0),
+        'month': now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    }
+
+
+def song_display_title(song):
+    if not song:
+        return 'Unknown song'
+    title_lang = song.get('title_lang') or {}
+    return title_lang.get('en') or song.get('title') or 'Untitled'
+
+
+def song_period_counts(song_hash, periods):
+    counts = {}
+    for name, start in periods.items():
+        counts[name] = db.play_records.count_documents({
+            'song_hash': song_hash,
+            'played_at': {'$gte': start}
+        })
+    return counts
+
+
+def total_period_counts(collection, datetime_field, periods):
+    counts = {}
+    for name, start in periods.items():
+        counts[name] = collection.count_documents({
+            datetime_field: {'$gte': start}
+        })
+    return counts
+
+
+def unique_visit_counts(periods):
+    counts = {}
+    for name, start in periods.items():
+        counts[name] = len(db.visit_records.distinct('visitor_key', {
+            'entered_at': {'$gte': start}
+        }))
+    return counts
+
+
+def get_song_heat_rows(limit=30):
+    limit = max(1, min(int(limit), 100))
+    periods = utc_period_starts()
+    songs = list(db.songs.find({}))
+    songs_by_hash = {song.get('hash'): song for song in songs if song.get('hash')}
+    songs_by_id = {str(song.get('id')): song for song in songs if song.get('id') is not None}
+    rows = []
+
+    grouped = db.play_records.aggregate([
+        {'$group': {'_id': '$song_hash', 'play_count': {'$sum': 1}}},
+        {'$sort': {'play_count': -1}},
+        {'$limit': limit}
+    ])
+    for item in grouped:
+        song_hash = item.get('_id')
+        song = songs_by_hash.get(song_hash) or songs_by_id.get(str(song_hash))
+        rows.append({
+            'song': song,
+            'song_id': song.get('id') if song else None,
+            'song_hash': song_hash,
+            'title': song_display_title(song),
+            'total': item.get('play_count', 0),
+            'periods': song_period_counts(song_hash, periods)
+        })
+
+    return rows
+
+
+def get_admin_overview_stats():
+    periods = utc_period_starts()
+    return {
+        'song_count': db.songs.count_documents({}),
+        'enabled_song_count': db.songs.count_documents({'enabled': True}),
+        'user_count': db.users.count_documents({}),
+        'message_count': db.site_messages.count_documents({}),
+        'play_counts': total_period_counts(db.play_records, 'played_at', periods),
+        'visit_counts': unique_visit_counts({
+            'day': periods['day'],
+            'week': periods['week'],
+            'month': periods['month']
+        }),
+        'heat_rows': get_song_heat_rows(20),
+        'retention_days': VISIT_RETENTION_DAYS
+    }
+
+
+def get_admin_song_stats(song):
+    periods = utc_period_starts()
+    song_hash = song.get('hash') or str(song.get('id'))
+    return {
+        'song_hash': song_hash,
+        'total': db.play_records.count_documents({'song_hash': song_hash}),
+        'periods': song_period_counts(song_hash, periods),
+        'recent_records': list(db.play_records.find(
+            {'song_hash': song_hash}
+        ).sort('played_at', -1).limit(25))
+    }
 
 BOARD_RETENTION_DAYS = 30
 BOARD_RETENTION_SECONDS = BOARD_RETENTION_DAYS * 24 * 60 * 60
@@ -358,7 +576,7 @@ def admin_required(level):
                 return abort(403)
             
             user = db.users.find_one({'username': session.get('username')})
-            if user['user_level'] < level:
+            if not user or user.get('user_level', 0) < level:
                 return abort(403)
 
             return f(*args, **kwargs)
@@ -577,10 +795,200 @@ def route_csrftoken():
     return jsonify({'status': 'ok', 'token': generate_csrf()})
 
 
+@app.route(basedir + 'api/visits/record', methods=['POST'])
+def route_api_visits_record():
+    data = request.get_json(silent=True) or {}
+    if not schema.validate(data, schema.visit_record):
+        return abort(400)
+
+    visitor_id = (data.get('visitor_id') or '').strip()
+    if not re.match(r'^[a-f0-9]{32}$', visitor_id):
+        visitor_id = hashlib.sha256(get_remote_address().encode('utf-8')).hexdigest()
+    username = session.get('username') or None
+    visitor_key = 'user:{}'.format(username) if username else 'visitor:{}'.format(visitor_id)
+
+    db.visit_records.insert_one({
+        'visitor_id': visitor_id,
+        'visitor_key': visitor_key,
+        'username': username,
+        'ip_hash': hashlib.sha256(get_remote_address().encode('utf-8')).hexdigest(),
+        'user_agent_hash': hashlib.sha256((request.headers.get('User-Agent') or '').encode('utf-8')).hexdigest(),
+        'entered_at': datetime.utcnow()
+    })
+
+    return jsonify({'status': 'ok'})
+
+
+@app.route(basedir + 'api/site-messages')
+def route_api_site_messages():
+    messages = get_site_messages(request.args.get('limit', 50), active_only=True)
+    message_ids = [str(message.get('_id')) for message in messages]
+    username = session.get('username')
+    read_ids = get_site_message_read_ids(username, message_ids)
+    serialized = [serialize_site_message(message, read_ids) for message in messages]
+
+    return jsonify({
+        'status': 'ok',
+        'logged_in': bool(username),
+        'messages': serialized,
+        'unread_count': sum(1 for message in serialized if not message['read'])
+    })
+
+
+@app.route(basedir + 'api/site-messages/<message_id>/read', methods=['POST'])
+@login_required
+def route_api_site_messages_read(message_id):
+    object_id = object_id_or_404(message_id)
+    if not db.site_messages.find_one({'_id': object_id, 'active': True}, {'_id': True}):
+        return abort(404)
+
+    db.site_message_reads.update_one({
+        'username': session.get('username'),
+        'message_id': message_id
+    }, {
+        '$setOnInsert': {
+            'username': session.get('username'),
+            'message_id': message_id,
+            'read_at': datetime.utcnow()
+        }
+    }, upsert=True)
+
+    return jsonify({'status': 'ok'})
+
+
+def get_current_admin(min_level=50):
+    username = session.get('username')
+    if not username:
+        return None
+    user = db.users.find_one({'username': username})
+    if user and user.get('user_level', 0) >= min_level:
+        return user
+    return None
+
+
+@app.route(basedir + '1128admin1128', methods=['GET', 'POST'])
+def route_secret_admin_login():
+    if request.method == 'GET' and get_current_admin(50):
+        return redirect(basedir + 'admin/overview')
+
+    username = ''
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').encode('utf-8')
+        user = db.users.find_one({'username_lower': username.lower()})
+        try:
+            password_ok = bool(user) and bcrypt.checkpw(password, user.get('password', b''))
+        except (TypeError, ValueError):
+            password_ok = False
+        if (
+            user and
+            user.get('user_level', 0) >= 50 and
+            password_ok
+        ):
+            session_id = user.get('session_id') or os.urandom(24).hex()
+            if not user.get('session_id'):
+                db.users.update_one({'_id': user['_id']}, {'$set': {'session_id': session_id}})
+            session.clear()
+            session['session_id'] = session_id
+            session['username'] = user.get('username')
+            session.permanent = True
+            return redirect(basedir + 'admin/overview')
+
+        flash('Invalid admin username or password.', 'error')
+
+    return render_template('admin_login.html', config=get_config(), username=username)
+
+
 @app.route(basedir + 'admin')
 @admin_required(level=50)
 def route_admin():
-    return redirect(basedir + 'admin/songs')
+    return redirect(basedir + 'admin/overview')
+
+
+@app.route(basedir + 'admin/overview')
+@admin_required(level=50)
+def route_admin_overview():
+    user = db.users.find_one({'username': session['username']})
+    return render_template('admin_overview.html',
+        stats=get_admin_overview_stats(), admin=user, config=get_config())
+
+
+@app.route(basedir + 'admin/messages')
+@admin_required(level=50)
+def route_admin_messages():
+    messages = get_site_messages(100, active_only=False)
+    user = db.users.find_one({'username': session['username']})
+    return render_template('admin_messages.html',
+        messages=messages, admin=user, config=get_config())
+
+
+@app.route(basedir + 'admin/messages', methods=['POST'])
+@admin_required(level=50)
+def route_admin_messages_post():
+    title = (request.form.get('title') or '').strip()
+    body = (request.form.get('body') or '').strip()
+    image_url = (request.form.get('image_url') or '').strip()
+
+    if len(title) > SITE_MESSAGE_MAX_TITLE_LENGTH:
+        flash('Error: Title is too long.', 'error')
+        return redirect(basedir + 'admin/messages')
+    if len(body) > SITE_MESSAGE_MAX_BODY_LENGTH:
+        flash('Error: Message is too long.', 'error')
+        return redirect(basedir + 'admin/messages')
+    if len(image_url) > SITE_MESSAGE_MAX_IMAGE_URL_LENGTH:
+        flash('Error: Image URL is too long.', 'error')
+        return redirect(basedir + 'admin/messages')
+    if image_url and not (image_url.startswith('http://') or image_url.startswith('https://') or image_url.startswith('/')):
+        flash('Error: Image URL must start with http://, https://, or /.', 'error')
+        return redirect(basedir + 'admin/messages')
+
+    try:
+        uploaded_url = save_site_message_image(request.files.get('image_file'))
+    except ValueError as e:
+        flash('Error: {}'.format(e), 'error')
+        return redirect(basedir + 'admin/messages')
+
+    if uploaded_url:
+        image_url = uploaded_url
+    if not title and not body and not image_url:
+        flash('Error: Please enter text or upload an image.', 'error')
+        return redirect(basedir + 'admin/messages')
+
+    db.site_messages.insert_one({
+        'title': title,
+        'body': body,
+        'image_url': image_url,
+        'active': bool(request.form.get('active')),
+        'created_at': datetime.utcnow(),
+        'created_by': session.get('username')
+    })
+    flash('Message published.')
+    return redirect(basedir + 'admin/messages')
+
+
+@app.route(basedir + 'admin/messages/<message_id>/remove', methods=['POST'])
+@admin_required(level=50)
+def route_admin_messages_remove(message_id):
+    object_id = object_id_or_404(message_id)
+    db.site_messages.delete_one({'_id': object_id})
+    db.site_message_reads.delete_many({'message_id': message_id})
+    flash('Message removed.')
+    return redirect(basedir + 'admin/messages')
+
+
+@app.route(basedir + 'admin/messages/<message_id>/toggle', methods=['POST'])
+@admin_required(level=50)
+def route_admin_messages_toggle(message_id):
+    object_id = object_id_or_404(message_id)
+    message = db.site_messages.find_one({'_id': object_id})
+    if not message:
+        return abort(404)
+
+    db.site_messages.update_one({'_id': object_id}, {'$set': {
+        'active': not bool(message.get('active', True))
+    }})
+    flash('Message updated.')
+    return redirect(basedir + 'admin/messages')
 
 
 @app.route(basedir + 'admin/songs')
@@ -605,7 +1013,8 @@ def route_admin_songs_id(id):
     user = db.users.find_one({'username': session['username']})
 
     return render_template('admin_song_detail.html',
-        song=song, categories=categories, song_skins=song_skins, makers=makers, admin=user, config=get_config())
+        song=song, song_stats=get_admin_song_stats(song),
+        categories=categories, song_skins=song_skins, makers=makers, admin=user, config=get_config())
 
 
 @app.route(basedir + 'admin/songs/new')
@@ -725,16 +1134,20 @@ def route_admin_songs_id_post(id):
     return redirect(basedir + 'admin/songs/%s' % id)
 
 
-@app.route(basedir + 'admin/songs/<int:id>/delete', methods=['POST'])
+@app.route(basedir + 'admin/songs/<int:id>/remove', methods=['POST'])
 @limiter.limit("1 per day")
 @admin_required(level=100)
-def route_admin_songs_id_delete(id):
+def route_admin_songs_id_remove(id):
     song = db.songs.find_one({'id': id})
     if not song:
         return abort(404)
 
     db.songs.delete_one({'id': id})
-    flash('Song deleted.')
+    try:
+        app.cache.delete_memoized(route_api_songs)
+    except Exception:
+        pass
+    flash('Song removed.')
     return redirect(basedir + 'admin/songs')
 
 
@@ -1262,6 +1675,10 @@ def send_assets(ref):
 def send_songs(ref):
     return cache_wrap(flask.send_from_directory(str(SONGS_DIR), ref), 604800)
 
+@app.route(basedir + "notice_uploads/<path:ref>")
+def send_notice_uploads(ref):
+    return cache_wrap(flask.send_from_directory(str(NOTICE_UPLOADS_DIR), ref), 604800)
+
 @app.route(basedir + "manifest.json")
 def send_manifest():
     return cache_wrap(flask.send_from_directory("public", "manifest.json"), 3600)
@@ -1359,9 +1776,9 @@ def upload_file():
 
     return flask.jsonify({'success': True})
 
-@app.route("/api/delete", methods=["POST"])
-def delete():
-    return flask.jsonify({ "success": False, "reason": "Deletion is disabled" }), 403
+@app.route("/api/remove", methods=["POST"])
+def remove():
+    return flask.jsonify({ "success": False, "reason": "Remove is disabled" }), 403
 
 if __name__ == '__main__':
     import argparse

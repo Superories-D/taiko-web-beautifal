@@ -8,6 +8,57 @@
 {% for cat, message in get_flashed_messages(with_categories=true) %}
 <div class="message{% if cat %} message-{{cat}}{% endif %}">{{ message }}</div>
 {% endfor %}
+<div class="admin-song-stats">
+    <h2>Play statistics</h2>
+    <div class="admin-stats-grid admin-stats-grid-compact">
+        <div class="admin-stat-card">
+            <span>Total</span>
+            <strong>{{ song_stats.total }}</strong>
+        </div>
+        <div class="admin-stat-card">
+            <span>Last hour</span>
+            <strong>{{ song_stats.periods.hour }}</strong>
+        </div>
+        <div class="admin-stat-card">
+            <span>Today</span>
+            <strong>{{ song_stats.periods.day }}</strong>
+        </div>
+        <div class="admin-stat-card">
+            <span>This week</span>
+            <strong>{{ song_stats.periods.week }}</strong>
+        </div>
+        <div class="admin-stat-card">
+            <span>This month</span>
+            <strong>{{ song_stats.periods.month }}</strong>
+        </div>
+    </div>
+    {% if song_stats.recent_records %}
+    <div class="admin-table-wrap">
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>Played at</th>
+                    <th>Difficulty</th>
+                    <th>Score</th>
+                    <th>User</th>
+                    <th>Auto</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in song_stats.recent_records %}
+                <tr>
+                    <td>{{ record.played_at }}</td>
+                    <td>{{ record.difficulty }}</td>
+                    <td>{{ record.score }}</td>
+                    <td>{{ record.username or 'Guest' }}</td>
+                    <td>{% if record.is_auto %}Yes{% else %}No{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
 <div class="song-form">
     <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -141,9 +192,9 @@
         <button type="submit" class="save-song">Save</button>
     </form>
     {% if admin.user_level >= 100 %}
-    <form class="delete-song" method="post" action="/admin/songs/{{song.id}}/delete" onsubmit="return confirm('Are you sure you wish to delete this song?');">
+    <form class="remove-song" method="post" action="{{config.basedir}}admin/songs/{{song.id}}/remove" onsubmit="return confirm('Are you sure you wish to remove this song?');">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit">Delete song</button>
+        <button type="submit">Remove song</button>
     </form>
     {% endif %}
 </div>

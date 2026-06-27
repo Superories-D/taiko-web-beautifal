@@ -1,0 +1,60 @@
+{% extends 'admin.html' %}
+{% block content %}
+<h1>Messages</h1>
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div class="message{% if category == 'error' %} message-error{% endif %}">{{ message }}</div>
+{% endfor %}
+
+<div class="song-form">
+    <form method="post" enctype="multipart/form-data">
+        <div class="form-field">
+            <label for="title">Title</label>
+            <input type="text" id="title" name="title" maxlength="120">
+
+            <label for="body">Text</label>
+            <textarea id="body" name="body" maxlength="5000" rows="8"></textarea>
+
+            <label for="image_url">Image URL</label>
+            <input type="url" id="image_url" name="image_url" placeholder="https://example.com/image.png">
+
+            <label for="image_file">Upload image</label>
+            <input type="file" id="image_file" name="image_file" accept="image/png,image/jpeg,image/gif,image/webp">
+
+            <label class="checkbox">
+                <input type="checkbox" name="active" checked>
+                Active
+            </label>
+        </div>
+
+        <button type="submit" class="save-song message-save">Publish</button>
+    </form>
+</div>
+
+<h2>Published Messages</h2>
+{% if messages %}
+    {% for item in messages %}
+    <div class="admin-message">
+        <div class="admin-message-meta">
+            <strong>{{ item.title or '(No title)' }}</strong>
+            <span>{% if item.active %}Active{% else %}Hidden{% endif %}</span>
+            <span>{{ item.created_at }}</span>
+            <span>{{ item.created_by }}</span>
+        </div>
+        {% if item.image_url %}
+        <img class="admin-message-image" src="{{ item.image_url }}" alt="">
+        {% endif %}
+        {% if item.body %}
+        <div class="admin-message-body">{{ item.body }}</div>
+        {% endif %}
+        <form method="post" action="{{config.basedir}}admin/messages/{{ item._id }}/toggle" class="admin-message-action">
+            <button type="submit">{% if item.active %}Hide{% else %}Show{% endif %}</button>
+        </form>
+        <form method="post" action="{{config.basedir}}admin/messages/{{ item._id }}/remove" class="admin-message-action">
+            <button type="submit">Remove</button>
+        </form>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="admin-message empty-message">No messages yet.</div>
+{% endif %}
+{% endblock %}

@@ -12,12 +12,14 @@ services:
       TAIKO_WEB_REDIS_HOST: redis
       REDIS_URI: redis://redis:6379/0
       TAIKO_WEB_SONGS_DIR: /data/songs
+      TAIKO_WEB_NOTICE_UPLOADS_DIR: /data/notice_uploads
     ports:
       - "80:80"
     restart: unless-stopped
     volumes:
       - ./config.py:/app/config.py:ro
       - ${TAIKO_WEB_DATA_DIR:-/srv/taiko-web-data}/songs:/data/songs
+      - ${TAIKO_WEB_DATA_DIR:-/srv/taiko-web-data}/notice_uploads:/data/notice_uploads
 
   mongo:
     container_name: taiko-web-mongo

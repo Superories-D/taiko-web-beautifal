@@ -1070,6 +1070,41 @@ class Loader{
 		sessionStorage.clear()
 		location.href = gameConfig.basedir || "/"
 	}
+	getVisitorId(){
+		try{
+			var id = localStorage.getItem("taiko_visitor_id")
+			if(id && /^[a-f0-9]{32}$/.test(id)){
+				return id
+			}
+			var bytes = new Uint8Array(16)
+			if(window.crypto && window.crypto.getRandomValues){
+				window.crypto.getRandomValues(bytes)
+			}else{
+				for(var i = 0; i < bytes.length; i++){
+					bytes[i] = Math.floor(Math.random() * 256)
+				}
+			}
+			id = Array.from(bytes).map(byte => byte.toString(16).padStart(2, "0")).join("")
+			localStorage.setItem("taiko_visitor_id", id)
+			return id
+		}catch(e){
+			return ""
+		}
+	}
+	recordVisit(){
+		try{
+			fetch("api/visits/record", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json"
+				},
+				body: JSON.stringify({
+					visitor_id: this.getVisitorId()
+				}),
+				keepalive: true
+			}).catch(() => {})
+		}catch(e){}
+	}
 	run(){
 		this.promises = []
 		this.currentStage = "boot-minimal"
@@ -1086,6 +1121,7 @@ class Loader{
 		this.startDownloadSpeedMeter()
 		
 		this.queryString = gameConfig._version.commit_short ? "?" + gameConfig._version.commit_short : ""
+		this.recordVisit()
 		
 		if(gameConfig.custom_js){
 			this.addPromise(this.loadScript(gameConfig.custom_js), gameConfig.custom_js)

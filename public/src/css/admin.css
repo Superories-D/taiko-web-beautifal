@@ -103,6 +103,20 @@ main {
     width: 300px;
 }
 
+.form-field input[type="password"],
+.form-field input[type="url"],
+.form-field input[type="file"],
+.form-field textarea {
+    box-sizing: border-box;
+    width: min(100%, 520px);
+}
+
+.form-field textarea {
+    display: block;
+    margin: 5px 0;
+    resize: vertical;
+}
+
 .form-field input[type="number"] {
     width: 50px;
 }
@@ -144,7 +158,7 @@ h1 .song-id {
     width: 120px;
 }
 
-.delete-song button {
+.remove-song button {
     float: right;
     margin-top: -25px;
     font-size: 12pt;
@@ -157,4 +171,148 @@ h1 .song-id {
     color: white;
     text-decoration: none;
     margin-top: 25px;
+}
+
+.admin-login-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.admin-login-main {
+    margin-left: 0;
+    width: min(520px, calc(100% - 32px));
+    height: auto;
+    padding: 32px 0;
+}
+
+.admin-login-box {
+    background: #ff5333;
+    color: #fff;
+    padding: 24px;
+}
+
+.admin-login-button,
+.message-save {
+    width: auto;
+    min-width: 120px;
+}
+
+.admin-message {
+    background: #ff5333;
+    color: white;
+    padding: 16px;
+    margin: 12px 0;
+}
+
+.admin-message-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.admin-message-image {
+    display: block;
+    max-width: min(100%, 520px);
+    max-height: 260px;
+    object-fit: contain;
+    margin: 10px 0;
+    background: #fff;
+}
+
+.admin-message-body {
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #555;
+    padding: 12px;
+    margin: 10px 0;
+}
+
+.admin-message-action {
+    display: inline-block;
+    margin-right: 8px;
+}
+
+.admin-message-action button {
+    font-size: 12pt;
+}
+
+.empty-message {
+    background: #555;
+}
+
+.admin-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin: 12px 0 24px;
+}
+
+.admin-stats-grid-compact {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+
+.admin-stat-card {
+    background: #ff5333;
+    color: #fff;
+    padding: 16px;
+}
+
+.admin-stat-card span {
+    display: block;
+    font-size: 12pt;
+    margin-bottom: 8px;
+}
+
+.admin-stat-card strong {
+    display: block;
+    font-size: 28pt;
+    line-height: 1;
+}
+
+.admin-note {
+    color: #5d2500;
+    font-weight: 700;
+}
+
+.admin-table-wrap {
+    overflow-x: auto;
+    margin: 12px 0 24px;
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #ff5333;
+    color: #fff;
+}
+
+.admin-table th,
+.admin-table td {
+    padding: 10px;
+    border: 2px solid #a01300;
+    text-align: left;
+    vertical-align: top;
+}
+
+.admin-table th {
+    background: #a01300;
+}
+
+.admin-table a {
+    color: #fff;
+    font-weight: 700;
+}
+
+.admin-table small {
+    display: block;
+    margin-top: 4px;
+    color: #ffe1d8;
+    word-break: break-all;
+}
+
+.admin-song-stats {
+    margin-bottom: 24px;
 }

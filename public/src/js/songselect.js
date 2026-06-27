@@ -224,50 +224,50 @@ class SongSelect {
 		// });
 		// for (let i = 0; i < 10; i++) {
 		this.songs.push({
-			title: "曲を投稿！",
+			title: strings.songSelectExtras.upload,
 			skin: this.songSkin.upload,
 			action: "upload",
 		});
 		// }
 		this.songs.push({
-			title: "掲示板",
+			title: strings.songSelectExtras.board,
 			skin: this.songSkin.keijiban,
 			action: "keijiban",
 		});
 
 		this.songs.push({
-			title: "曲選択速度",
+			title: strings.songSelectExtras.songSelectingSpeed,
 			skin: this.songSkin.customSettings,
 			action: "songSelectingSpeed",
 		});
 
 		this.songs.push({
-			title: "ばいそく",
+			title: strings.songSelectExtras.baisoku,
 			skin: this.songSkin.customSettings,
 			action: "baisoku",
 		});
 
 		this.songs.push({
-			title: "ドロン",
+			title: strings.songSelectExtras.doron,
 			skin: this.songSkin.customSettings,
 			action: "doron",
 		});
 
 		this.songs.push({
-			title: "あべこべ",
+			title: strings.songSelectExtras.abekobe,
 			skin: this.songSkin.customSettings,
 			action: "abekobe",
 		});
 
 		this.songs.push({
-			title: "でたらめ",
+			title: strings.songSelectExtras.detarame,
 			skin: this.songSkin.customSettings,
 			action: "detarame",
 		});
 
 
 		this.songs.push({
-			title: "タイトル順で並べ替え",
+			title: strings.songSelectExtras.titleSort,
 			skin: this.songSkin.customSettings,
 			action: "titlesort",
 		});
@@ -304,7 +304,7 @@ class SongSelect {
 			iconFill: "#d9f19f",
 			letterSpacing: 0
 		}, {
-			text: "ダウンロード",
+			text: strings.download,
 			fill: "#e7a9da",
 			iconName: "download",
 			iconFill: "#e7cbe1",
@@ -402,21 +402,10 @@ class SongSelect {
 			"12 Custom",
 		]
 		this.songTypeIndex = Math.max(0, Math.min(this.songTypes.length - 1, +(localStorage.getItem("songTypeIndex") || 0)))
-		this.typeLabel = document.createElement("div")
-		this.typeLabel.style.position = "absolute"
-		this.typeLabel.style.top = "8px"
-		this.typeLabel.style.left = "12px"
-		this.typeLabel.style.padding = "4px 8px"
-		this.typeLabel.style.background = "rgba(0,0,0,0.5)"
-		this.typeLabel.style.color = "#fff"
-		this.typeLabel.style.borderRadius = "6px"
-		this.typeLabel.style.fontSize = "14px"
-		this.typeLabel.style.zIndex = "10"
-		this.songSelect.appendChild(this.typeLabel)
-		this.updateTypeLabel()
 		this.searchButton = document.getElementById("song-search-btn")
 		this.searchButton.hidden = true
 		pageEvents.add(this.searchButton, ["click", "touchend"], this.openSearchFromButton.bind(this))
+		this.siteMessages = new SiteMessages(this)
 		var cat = this.songs[this.selectedSong].originalCategory
 		this.drawBackground(cat)
 
@@ -546,6 +535,12 @@ class SongSelect {
 		}
 		var ctrl = event ? event.ctrlKey : (this.pressedKeys["ctrl"] || this.pressedKeys["ctrlGamepad"])
 		var shift = event ? event.shiftKey : this.pressedKeys["shift"]
+		if (this.siteMessages && this.siteMessages.isOpen()) {
+			if (name === "back") {
+				this.siteMessages.close(event)
+			}
+			return
+		}
 		if (this.state.showWarning) {
 			if (name === "confirm") {
 				this.playSound("se_don")
@@ -629,7 +624,9 @@ class SongSelect {
 	}
 
 	updateTypeLabel() {
-		this.setAltText(this.typeLabel, this.songTypes[this.songTypeIndex])
+		if (this.typeLabel) {
+			this.setAltText(this.typeLabel, this.songTypes[this.songTypeIndex])
+		}
 	}
 
 	openSearchFromButton(event) {
@@ -991,7 +988,7 @@ class SongSelect {
 				this.playSound("se_don");
 				setTimeout(() => {
 					let songSelectingSpeed = localStorage.getItem("sss") ?? "400";
-					const pro = prompt("曲選択速度を入力してね！", songSelectingSpeed);
+					const pro = prompt(strings.songSelectExtras.songSelectingSpeedPrompt, songSelectingSpeed);
 					if (pro === null) {
 						// キャンセル
 					} else if (pro === "") {
@@ -1009,7 +1006,7 @@ class SongSelect {
 				this.playSound("se_don");
 				setTimeout(() => {
 					let baisoku = localStorage.getItem("baisoku") ?? "1";
-					const input = prompt("ばいそくの倍率を入力してね！", baisoku);
+					const input = prompt(strings.songSelectExtras.baisokuPrompt, baisoku);
 					if (input === null) {
 						// キャンセル
 					} else if (input === "") {
@@ -1023,7 +1020,7 @@ class SongSelect {
 				this.playSound("se_don");
 				setTimeout(() => {
 					let doron = localStorage.getItem("doron") ?? "false";
-					const input = prompt("ドロンを有効にするには\"true\"を入力してね！", doron);
+					const input = prompt(strings.songSelectExtras.doronPrompt, doron);
 					if (input === null) {
 						// キャンセル
 					} else if (input === "") {
@@ -1037,7 +1034,7 @@ class SongSelect {
 				this.playSound("se_don");
 				setTimeout(() => {
 					let abekobe = localStorage.getItem("abekobe") ?? "false";
-					const input = prompt("あべこべを有効にするには\"true\"を入力してね！", abekobe);
+					const input = prompt(strings.songSelectExtras.abekobePrompt, abekobe);
 					if (input === null) {
 						// キャンセル
 					} else if (input === "") {
@@ -1051,7 +1048,7 @@ class SongSelect {
 				this.playSound("se_don");
 				setTimeout(() => {
 					let detarame = localStorage.getItem("detarame") ?? "0";
-					const input = prompt("でたらめになる確率をパーセントで入力してね！", detarame);
+					const input = prompt(strings.songSelectExtras.detaramePrompt, detarame);
 					if (input === null) {
 						// キャンセル
 					} else if (input === "") {
@@ -1065,7 +1062,7 @@ class SongSelect {
 				this.playSound("se_don");
 				setTimeout(() => {
 					let titlesort = localStorage.getItem("titlesort") ?? "false";
-					const input = prompt("タイトル順で並べ替えするには\"true\"を入力してね！", titlesort);
+					const input = prompt(strings.songSelectExtras.titleSortPrompt, titlesort);
 					if (input === null) {
 						// キャンセル
 					} else if (input === "") {
@@ -3323,6 +3320,7 @@ class SongSelect {
 		this.nameplateCache.clean()
 		this.search.clean()
 		this.uploadModal.clean()
+		this.siteMessages.clean()
 		if(assets.sounds["bgm_songsel"]){
 			assets.sounds["bgm_songsel"].stop()
 		}
@@ -3348,6 +3346,7 @@ class SongSelect {
 			delete this.touchFullBtn
 		}
 		delete this.searchButton
+		delete this.siteMessages
 		delete this.uploadModal
 		delete this.selectable
 		delete this.ctx
@@ -3487,12 +3486,11 @@ class SongSelect {
 		})
 	}
 
-	toDelete() {
-		// ここに削除処理を書く
-		if (!confirm("本当に削除しますか？\nこの曲に問題がある場合や\n公序良俗に反する場合にのみ実行したほうがいいと思います\n本当に曲が削除されます\n成功しても反映まで1分ほどかかる場合があります")) {
+	toRemove() {
+		if (!confirm("Are you sure you want to remove this song?")) {
 			return;
 		}
-		fetch("/api/delete", {
+		fetch("/api/remove", {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",

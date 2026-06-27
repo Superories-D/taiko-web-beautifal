@@ -17,9 +17,134 @@ class SongSelect {
 			this.canvas.style.imageRendering = "pixelated"
 		}
 
-		let rand = () => {
-			let color = Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0");
-			return `#${color}`;
+		this.songTypes = [
+			"01 Pop",
+			"02 Anime",
+			"03 Vocaloid",
+			"04 Children and Folk",
+			"05 Variety",
+			"06 Classical",
+			"07 Game Music",
+			"08 Live Festival Mode",
+			"09 Namco Original",
+			"10 Taiko Towers",
+			"11 Dan Dojo",
+			"12 Custom",
+		]
+		var cloneSkin = skin => {
+			var copy = Object.assign({}, skin)
+			if (skin.border) {
+				copy.border = skin.border.slice()
+			}
+			return copy
+		}
+		var songTypeSkins = {
+			"01 Pop": {
+				sort: 1,
+				background: "#ff6ea8",
+				border: ["#ffd2e8", "#cf1f73"],
+				outline: "#8a1349",
+				infoFill: "#8a1349",
+				bg_img: "bg_genre_0.png"
+			},
+			"02 Anime": {
+				sort: 2,
+				background: "#42b7ff",
+				border: ["#d6f6ff", "#1677cf"],
+				outline: "#074e96",
+				infoFill: "#074e96",
+				bg_img: "bg_genre_1.png"
+			},
+			"03 Vocaloid": {
+				sort: 3,
+				background: "#26d6c8",
+				border: ["#c8fff7", "#00929c"],
+				outline: "#00636d",
+				infoFill: "#00636d",
+				bg_img: "bg_genre_2.png"
+			},
+			"04 Children and Folk": {
+				sort: 4,
+				background: "#78d85b",
+				border: ["#ebffbb", "#2f941c"],
+				outline: "#1f670f",
+				infoFill: "#1f670f",
+				bg_img: "bg_genre_3.png"
+			},
+			"05 Variety": {
+				sort: 5,
+				background: "#ffd64a",
+				border: ["#fff4a8", "#d78a00"],
+				outline: "#8b5700",
+				infoFill: "#8b5700",
+				bg_img: "bg_genre_3.png"
+			},
+			"06 Classical": {
+				sort: 6,
+				background: "#d9a65c",
+				border: ["#ffe7aa", "#9a5b10"],
+				outline: "#6e3700",
+				infoFill: "#6e3700",
+				bg_img: "bg_genre_4.png"
+			},
+			"07 Game Music": {
+				sort: 7,
+				background: "#9164d8",
+				border: ["#e1c8ff", "#5b2bb7"],
+				outline: "#3b167e",
+				infoFill: "#3b167e",
+				bg_img: "bg_genre_5.png"
+			},
+			"08 Live Festival Mode": {
+				sort: 8,
+				background: "#f45c5c",
+				border: ["#ffd0a8", "#be2639"],
+				outline: "#801425",
+				infoFill: "#801425"
+			},
+			"09 Namco Original": {
+				sort: 9,
+				background: "#ff8a23",
+				border: ["#ffe0a4", "#c54c00"],
+				outline: "#8d2600",
+				infoFill: "#8d2600",
+				bg_img: "bg_genre_6.png"
+			},
+			"10 Taiko Towers": {
+				sort: 10,
+				background: "#5b6ed9",
+				border: ["#d2ddff", "#263b9f"],
+				outline: "#1e276e",
+				infoFill: "#1e276e"
+			},
+			"11 Dan Dojo": {
+				sort: 11,
+				background: "#535353",
+				border: ["#f3d46c", "#1d1d1d"],
+				outline: "#111111",
+				infoFill: "#272727"
+			},
+			"12 Custom": {
+				sort: 12,
+				background: "#31b7ac",
+				border: ["#a8fff2", "#08736f"],
+				outline: "#07585f",
+				infoFill: "#07585f"
+			}
+		}
+		var songTypeAliases = {
+			"01 Pop": ["Pop", "J-POP", "JPop"],
+			"02 Anime": ["Anime"],
+			"03 Vocaloid": ["Vocaloid", "Vocaloid Music", "VOCALOID Music"],
+			"04 Children and Folk": ["Children and Folk", "Children & Folk", "Children/Folk"],
+			"05 Variety": ["Variety"],
+			"06 Classical": ["Classical"],
+			"07 Game Music": ["Game Music"],
+			"08 Live Festival Mode": ["Live Festival Mode"],
+			"09 Namco Original": ["Namco Original", "NAMCO Original"],
+			"10 Taiko Towers": ["Taiko Towers"],
+			"11 Dan Dojo": ["Dan Dojo"],
+			"12 Custom": ["Custom"]
 		}
 
 		this.songSkin = {
@@ -102,17 +227,32 @@ class SongSelect {
 			},
 			"default": {
 				sort: null,
-				background: `${rand()}`,
-				border: [`${rand()}`, `${rand()}`],
-				outline: `#333333`,
-				infoFill: `${rand()}`
+				background: "#ececec",
+				border: ["#fbfbfb", "#8b8b8b"],
+				outline: "#656565",
+				infoFill: "#656565"
+			}
+		}
+
+		for (var songType in songTypeSkins) {
+			this.songSkin[songType] = cloneSkin(songTypeSkins[songType])
+			var aliases = songTypeAliases[songType] || []
+			for (var i = 0; i < aliases.length; i++) {
+				this.songSkin[aliases[i]] = cloneSkin(songTypeSkins[songType])
 			}
 		}
 
 		var songSkinLength = Object.keys(this.songSkin).length
 		for (var i in assets.categories) {
 			var category = assets.categories[i]
-			if (!this.songSkin[category.title] && category.songSkin) {
+			if (this.songSkin[category.title]) {
+				var themedSkin = cloneSkin(this.songSkin[category.title])
+				if (category.songSkin && category.songSkin.bg_img && !themedSkin.bg_img) {
+					themedSkin.bg_img = category.songSkin.bg_img
+				}
+				category.songSkin = themedSkin
+				this.songSkin[category.title] = themedSkin
+			} else if (category.songSkin) {
 				if (category.songSkin.sort === null) {
 					category.songSkin.sort = songSkinLength + 1
 				}
@@ -400,20 +540,6 @@ class SongSelect {
 		}
 
 		this.songSelect = document.getElementById("song-select")
-		this.songTypes = [
-			"01 Pop",
-			"02 Anime",
-			"03 Vocaloid",
-			"04 Children and Folk",
-			"05 Variety",
-			"06 Classical",
-			"07 Game Music",
-			"08 Live Festival Mode",
-			"09 Namco Original",
-			"10 Taiko Towers",
-			"11 Dan Dojo",
-			"12 Custom",
-		]
 		this.songTypeIndex = Math.max(0, Math.min(this.songTypes.length - 1, +(localStorage.getItem("songTypeIndex") || 0)))
 		this.searchButton = document.getElementById("song-search-btn")
 		this.topSongsButton = document.getElementById("song-top10-btn")
@@ -3146,9 +3272,11 @@ class SongSelect {
 		var originalCategory = ""
 		if (song.category_id !== null && song.category_id !== undefined) {
 			var category = assets.categories.find(cat => cat.id === song.category_id)
-			var categoryName = this.getLocalTitle(category.title, category.title_lang)
-			var originalCategory = category.title
-			var skin = this.songSkin[category.title]
+			if (category) {
+				var categoryName = this.getLocalTitle(category.title, category.title_lang)
+				var originalCategory = category.title
+				var skin = this.songSkin[category.title]
+			}
 		} else if (song.category) {
 			var categoryName = song.category
 			var originalCategory = song.category

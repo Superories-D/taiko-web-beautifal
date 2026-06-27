@@ -75,10 +75,10 @@
 	background-size: contain;
 	background-repeat: no-repeat;
 }
-#song-search-btn{
+#song-search-btn,
+#song-top10-btn{
 	display: none;
 	position: absolute;
-	right: max(14vmin, 132px);
 	bottom: max(2vmin, 14px);
 	width: clamp(46px, 7.2vmin, 68px);
 	height: clamp(46px, 7.2vmin, 68px);
@@ -96,17 +96,43 @@
 	touch-action: manipulation;
 	transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.12s ease;
 }
-#song-search-btn[hidden]{
+#song-search-btn{
+	right: max(14vmin, 132px);
+}
+#song-top10-btn{
+	right: max(23vmin, 212px);
+	display: none;
+	background-image: none;
+	font-family: "Arial Black", "Arial", sans-serif;
+	font-size: clamp(11px, 1.8vmin, 16px);
+	font-weight: 900;
+	line-height: 1;
+	color: #2b1400;
+	text-align: center;
+	letter-spacing: 0;
+}
+#song-top10-btn span{
+	display: block;
+	transform: rotate(-6deg);
+	text-shadow: 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+#song-search-btn[hidden],
+#song-top10-btn[hidden]{
 	display: none !important;
 }
 #song-search-btn:hover,
-#song-search-btn:focus-visible{
+#song-search-btn:focus-visible,
+#song-top10-btn:hover,
+#song-top10-btn:focus-visible{
 	background-color: rgba(255, 249, 35, 0.35);
 	opacity: 1;
 	transform: scale(1.05);
 	outline: none;
 }
 #song-select.search-button-visible #song-search-btn{
+	display: block;
+}
+#song-select.top10-button-visible #song-top10-btn{
 	display: block;
 }
 #site-message-button{

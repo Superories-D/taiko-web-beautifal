@@ -311,6 +311,85 @@ var translations = {
 			ko: "공지 이미지"
 		}
 	},
+	topSongs: {
+		title: {
+			ja: "Top10曲",
+			en: "Top 10 Songs",
+			cn: "10Top歌曲",
+			tw: "10Top歌曲",
+			ko: "Top 10 곡"
+		},
+		subtitle: {
+			ja: "プレイ回数ランキング",
+			en: "Most played songs",
+			cn: "游玩次数排行榜",
+			tw: "遊玩次數排行榜",
+			ko: "플레이 횟수 랭킹"
+		},
+		close: {
+			ja: "閉じる",
+			en: "Close",
+			cn: "关闭",
+			tw: "關閉",
+			ko: "닫기"
+		},
+		loading: {
+			ja: "読み込み中...",
+			en: "Loading...",
+			cn: "加载中...",
+			tw: "載入中...",
+			ko: "불러오는 중..."
+		},
+		loadingSong: {
+			ja: "曲を読み込み中...",
+			en: "Loading song...",
+			cn: "正在加载歌曲...",
+			tw: "正在載入歌曲...",
+			ko: "곡을 불러오는 중..."
+		},
+		empty: {
+			ja: "まだプレイデータがありません。",
+			en: "No play data yet.",
+			cn: "暂无游玩数据。",
+			tw: "暫無遊玩資料。",
+			ko: "아직 플레이 데이터가 없습니다."
+		},
+		loadError: {
+			ja: "ランキングを読み込めませんでした。",
+			en: "Could not load top songs.",
+			cn: "无法加载排行榜。",
+			tw: "無法載入排行榜。",
+			ko: "랭킹을 불러오지 못했습니다."
+		},
+		loadSongError: {
+			ja: "この曲を開けませんでした。",
+			en: "Could not open this song.",
+			cn: "无法打开这首歌。",
+			tw: "無法開啟這首歌。",
+			ko: "이 곡을 열 수 없습니다."
+		},
+		rank: {
+			ja: "順位",
+			en: "Rank",
+			cn: "排行",
+			tw: "排行",
+			ko: "순위"
+		},
+		songName: {
+			ja: "曲名",
+			en: "Song",
+			cn: "名称",
+			tw: "名稱",
+			ko: "곡명"
+		},
+		plays: {
+			ja: "プレイ回数",
+			en: "plays",
+			cn: "游玩次数",
+			tw: "遊玩次數",
+			ko: "플레이"
+		}
+	},
 	none: {
 		ja: "なし",
 		en: "None",

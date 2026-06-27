@@ -221,6 +221,7 @@ db.site_message_reads.create_index('message_id')
 VISIT_RETENTION_DAYS = 400
 VISIT_RETENTION_SECONDS = VISIT_RETENTION_DAYS * 24 * 60 * 60
 VISIT_ENTERED_AT_INDEX = 'entered_at_1'
+PUBLIC_TOP_SONGS_CACHE_SECONDS = 30
 
 
 def ensure_visit_record_indexes():
@@ -394,6 +395,65 @@ def get_song_heat_rows(limit=30):
             'total': item.get('play_count', 0),
             'periods': song_period_counts(song_hash, periods)
         })
+
+    return rows
+
+
+def get_public_top_songs(limit=10):
+    try:
+        limit = max(1, min(int(limit), 50))
+    except (TypeError, ValueError):
+        limit = 10
+
+    songs = list(db.songs.find(
+        {'enabled': True},
+        {
+            '_id': False,
+            'id': True,
+            'hash': True,
+            'title': True,
+            'title_lang': True,
+            'subtitle': True,
+            'subtitle_lang': True,
+            'category_id': True,
+            'song_type': True
+        }
+    ))
+    songs_by_hash = {song.get('hash'): song for song in songs if song.get('hash')}
+    songs_by_id = {str(song.get('id')): song for song in songs if song.get('id') is not None}
+
+    rows = []
+    grouped = db.play_records.aggregate([
+        {'$match': {'song_hash': {'$nin': [None, '']}}},
+        {'$group': {
+            '_id': '$song_hash',
+            'play_count': {'$sum': 1},
+            'last_played_at': {'$max': '$played_at'}
+        }},
+        {'$sort': {'play_count': -1, 'last_played_at': -1}},
+        {'$limit': limit * 5}
+    ])
+
+    for item in grouped:
+        song_hash = item.get('_id')
+        song = songs_by_hash.get(song_hash) or songs_by_id.get(str(song_hash))
+        if not song:
+            continue
+
+        rows.append({
+            'rank': len(rows) + 1,
+            'song_id': song.get('id'),
+            'song_hash': song.get('hash') or song_hash,
+            'title': song.get('title') or '',
+            'title_lang': song.get('title_lang') or {},
+            'subtitle': song.get('subtitle') or '',
+            'subtitle_lang': song.get('subtitle_lang') or {},
+            'category_id': song.get('category_id'),
+            'song_type': song.get('song_type') or '',
+            'play_count': item.get('play_count', 0)
+        })
+        if len(rows) >= limit:
+            break
 
     return rows
 
@@ -1213,7 +1273,7 @@ def route_api_preview():
 
 
 @app.route(basedir + 'api/songs')
-@app.cache.cached(timeout=15)
+@app.cache.cached(timeout=15, query_string=True)
 def route_api_songs():
     type_q = flask.request.args.get('type')
     query = {'enabled': True}
@@ -1246,6 +1306,18 @@ def route_api_songs():
         del song['skin_id']
 
     return cache_wrap(flask.jsonify(songs), 60)
+
+
+@app.route(basedir + 'api/songs/top10')
+@app.cache.cached(timeout=PUBLIC_TOP_SONGS_CACHE_SECONDS, query_string=True)
+def route_api_songs_top10():
+    songs = get_public_top_songs(request.args.get('limit', 10))
+    return cache_wrap(jsonify({
+        'status': 'ok',
+        'songs': songs,
+        'cache_seconds': PUBLIC_TOP_SONGS_CACHE_SECONDS
+    }), PUBLIC_TOP_SONGS_CACHE_SECONDS)
+
 
 @app.route(basedir + 'api/categories')
 @app.cache.cached(timeout=15)

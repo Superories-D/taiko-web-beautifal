@@ -45,6 +45,12 @@ class SongSelect {
 				border: ["#FF9FB7", "#BE1432"],
 				outline: "#A50B15"
 			},
+			"topSongs": {
+				sort: 0,
+				background: "#39a8ff",
+				border: ["#bfeeff", "#1261c7"],
+				outline: "#063f92"
+			},
 			"tutorial": {
 				sort: 0,
 				background: "#29e8aa",
@@ -162,6 +168,13 @@ class SongSelect {
 				title: strings.search.search,
 				skin: this.songSkin.search,
 				action: "search",
+				category: strings.random,
+				p2Enabled: true
+			})
+			this.songs.push({
+				title: strings.topSongs.title,
+				skin: this.songSkin.topSongs,
+				action: "topSongs",
 				category: strings.random,
 				p2Enabled: true
 			})
@@ -403,9 +416,13 @@ class SongSelect {
 		]
 		this.songTypeIndex = Math.max(0, Math.min(this.songTypes.length - 1, +(localStorage.getItem("songTypeIndex") || 0)))
 		this.searchButton = document.getElementById("song-search-btn")
+		this.topSongsButton = document.getElementById("song-top10-btn")
 		this.searchButton.hidden = true
+		this.topSongsButton.hidden = true
 		pageEvents.add(this.searchButton, ["click", "touchend"], this.openSearchFromButton.bind(this))
+		pageEvents.add(this.topSongsButton, ["click", "touchend"], this.openTopSongsFromButton.bind(this))
 		this.siteMessages = new SiteMessages(this)
+		this.topSongs = new TopSongs(this)
 		var cat = this.songs[this.selectedSong].originalCategory
 		this.drawBackground(cat)
 
@@ -549,6 +566,8 @@ class SongSelect {
 			}
 		} else if (this.uploadModal.opened) {
 			this.uploadModal.keyPress(pressed, name, event, repeat, ctrl)
+		} else if (this.topSongs.opened) {
+			this.topSongs.keyPress(pressed, name, event, repeat, ctrl)
 		} else if (this.search.opened) {
 			this.search.keyPress(pressed, name, event, repeat, ctrl)
 		} else if (this.state.screen === "song") {
@@ -632,18 +651,32 @@ class SongSelect {
 	openSearchFromButton(event) {
 		event.preventDefault()
 		event.stopPropagation()
-		if (this.state.screen === "song" && !this.search.opened) {
+		if (this.state.screen === "song" && !this.search.opened && !this.topSongs.opened) {
 			this.search.display(true)
 		}
 	}
 
+	openTopSongsFromButton(event) {
+		event.preventDefault()
+		event.stopPropagation()
+		if (this.state.screen === "song" && !this.search.opened && !this.topSongs.opened) {
+			this.topSongs.display(true)
+		}
+	}
+
 	updateSearchButtonVisibility() {
-		if (!this.songSelect || !this.searchButton) {
+		if (!this.songSelect || !this.searchButton || !this.topSongsButton) {
 			return
 		}
-		var visible = this.state.screen === "song" && !this.search.opened && !this.uploadModal.opened
+		var visible = this.state.screen === "song" &&
+			!this.search.opened &&
+			!this.topSongs.opened &&
+			!this.uploadModal.opened &&
+			!(this.siteMessages && this.siteMessages.isOpen())
 		this.searchButton.hidden = !visible
+		this.topSongsButton.hidden = !visible
 		this.songSelect.classList.toggle("search-button-visible", visible)
+		this.songSelect.classList.toggle("top10-button-visible", visible)
 	}
 
 	changeType(delta) {
@@ -653,7 +686,7 @@ class SongSelect {
 		var type = encodeURIComponent(this.songTypes[this.songTypeIndex])
 		loader.ajax("api/songs?type=" + type).then(resp => {
 			var songs = JSON.parse(resp)
-			assets.songsDefault = songs
+			assets.songsDefault = prepareRemoteSongFiles(songs)
 			assets.songs = assets.songsDefault
 			new SongSelect(false, false, this.touchEnabled)
 		}).catch(() => { })
@@ -756,7 +789,7 @@ class SongSelect {
 			if (408 < mouse.x && mouse.x < 872 && 470 < mouse.y && mouse.y < 550) {
 				moveTo = "showWarning"
 			}
-		} else if (this.state.screen === "song" && !this.search.opened) {
+		} else if (this.state.screen === "song" && !this.search.opened && !this.topSongs.opened) {
 			if (20 < mouse.y && mouse.y < 90 && 410 < mouse.x && mouse.x < 880 && (mouse.x < 540 || mouse.x > 750)) {
 				moveTo = mouse.x < 640 ? "categoryPrev" : "categoryNext"
 			} else if (!p2.session && 60 < mouse.x && mouse.x < 332 && 640 < mouse.y && mouse.y < 706 && gameConfig.accounts) {
@@ -922,6 +955,7 @@ class SongSelect {
 			}
 		} else if (this.state.locked === 0 || fromP2) {
 			this.search.remove()
+			this.topSongs.remove()
 			if (currentSong.courses) {
 				if (currentSong.unloaded) {
 					return
@@ -960,6 +994,8 @@ class SongSelect {
 				pageEvents.send("song-select-random")
 			} else if (currentSong.action === "search") {
 				this.search.display(true)
+			} else if (currentSong.action === "topSongs") {
+				this.topSongs.display(true)
 			} else if (currentSong.action === "tutorial") {
 				this.toTutorial()
 			} else if (currentSong.action === "about") {
@@ -1387,6 +1423,7 @@ class SongSelect {
 		var selectedWidth = this.songAsset.width
 
 		this.search.redraw()
+		this.topSongs.redraw()
 		this.uploadModal.redraw()
 		this.updateSearchButtonVisibility()
 
@@ -3319,6 +3356,7 @@ class SongSelect {
 		this.currentSongCache.clean()
 		this.nameplateCache.clean()
 		this.search.clean()
+		this.topSongs.clean()
 		this.uploadModal.clean()
 		this.siteMessages.clean()
 		if(assets.sounds["bgm_songsel"]){
@@ -3340,12 +3378,15 @@ class SongSelect {
 		pageEvents.remove(loader.screen, ["mousemove", "mouseleave", "mousedown", "touchstart"])
 		pageEvents.remove(this.canvas, ["touchend", "wheel"])
 		pageEvents.remove(this.searchButton, ["click", "touchend"])
+		pageEvents.remove(this.topSongsButton, ["click", "touchend"])
 		pageEvents.remove(p2, "message")
 		if (this.touchEnabled && fullScreenSupported) {
 			pageEvents.remove(this.touchFullBtn, "click")
 			delete this.touchFullBtn
 		}
 		delete this.searchButton
+		delete this.topSongsButton
+		delete this.topSongs
 		delete this.siteMessages
 		delete this.uploadModal
 		delete this.selectable

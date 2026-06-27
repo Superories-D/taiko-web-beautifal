@@ -8,7 +8,11 @@
 <div class="message">{{ message }}</div>
 {% endfor %}
 {% for song in songs %}
+    {% if song.id is not none %}
     <a href="{{config.basedir}}admin/songs/{{ song.id }}" class="song-link">
+    {% else %}
+    <div class="song-link">
+    {% endif %}
         <div class="song">
             {% if song.title_lang.en and song.title_lang.en != song.title %}
                 <p><span class="song-id">{{ song.id }}.</span>
@@ -20,6 +24,10 @@
                 {{ song.title }}</p>
             {% endif %}
         </div>
+    {% if song.id is not none %}
     </a>
+    {% else %}
+    </div>
+    {% endif %}
 {% endfor %}
 {% endblock %}

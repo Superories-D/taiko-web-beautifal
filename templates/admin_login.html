@@ -16,6 +16,7 @@
                 <div class="message{% if category == 'error' %} message-error{% endif %}">{{ message }}</div>
                 {% endfor %}
                 <form method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="form-field">
                         <label for="username">Username</label>
                         <input type="text" id="username" name="username" value="{{username}}" required autofocus>

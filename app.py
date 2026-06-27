@@ -60,10 +60,18 @@ def take_config(name, required=False):
     else:
         return None
 
+
+def env_flag(name, default=True):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in ('0', 'false', 'no', 'off', '')
+
+
 app = Flask(__name__)
-FEATURE_ADMIN = False
-FEATURE_SITE_MESSAGES = False
-FEATURE_TOP_SONGS = False
+FEATURE_ADMIN = env_flag('TAIKO_WEB_FEATURE_ADMIN', True)
+FEATURE_SITE_MESSAGES = env_flag('TAIKO_WEB_FEATURE_SITE_MESSAGES', True)
+FEATURE_TOP_SONGS = env_flag('TAIKO_WEB_FEATURE_TOP_SONGS', True)
 SONG_TYPES = [
     "01 Pop",
     "02 Anime",
@@ -205,6 +213,7 @@ else:
     app.cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache'})
 sess = Session()
 sess.init_app(app)
+app.jinja_env.globals.setdefault('csrf_token', generate_csrf)
 #csrf = CSRFProtect(app)
 
 db = client[take_config('MONGO', required=True)['database']]
@@ -641,7 +650,7 @@ def admin_required(level):
                 return abort(403)
             
             user = db.users.find_one({'username': session.get('username')})
-            if not user or user.get('user_level', 0) < level:
+            if not user or get_user_level(user) < level:
                 return abort(403)
 
             return f(*args, **kwargs)
@@ -656,9 +665,16 @@ def handle_csrf_error(e):
 
 @app.before_request
 def before_request_func():
-    if session.get('session_id'):
-        if not db.users.find_one({'session_id': session.get('session_id')}):
+    username = session.get('username')
+    session_id = session.get('session_id')
+    if session_id:
+        query = {'session_id': session_id}
+        if username:
+            query['username'] = username
+        if not db.users.find_one(query, {'_id': True}):
             session.clear()
+    elif username and not db.users.find_one({'username': username}, {'_id': True}):
+        session.clear()
 
 
 def get_config(credentials=False):
@@ -682,14 +698,14 @@ def get_config(credentials=False):
         if not config_out[name].startswith("/") and not config_out[name].startswith("http://") and not config_out[name].startswith("https://"):
             config_out[name] = basedir + config_out[name]
     if credentials:
-        google_credentials = take_config('GOOGLE_CREDENTIALS')
-        min_level = google_credentials['min_level'] or 0
+        google_credentials = take_config('GOOGLE_CREDENTIALS') or {}
+        min_level = google_credentials.get('min_level') or 0
         if not session.get('username'):
             user_level = 0
         else:
             user = db.users.find_one({'username': session.get('username')})
-            user_level = user['user_level']
-        if user_level >= min_level:
+            user_level = get_user_level(user)
+        if google_credentials and user_level >= min_level:
             config_out['google_credentials'] = google_credentials
         else:
             config_out['google_credentials'] = {
@@ -763,10 +779,86 @@ def render_index_page(lang=SEO_DEFAULT_LANG):
     return render_template('index.html', version=version, config=get_config(), seo=get_seo_meta(lang))
 
 
+def get_user_level(user):
+    if not user:
+        return 0
+    try:
+        return int(user.get('user_level') or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def get_user_display_name(user, fallback=None):
+    if not user:
+        return fallback or ''
+    return user.get('display_name') or user.get('username') or fallback or ''
+
+
+def ensure_user_session_id(user):
+    session_id = user.get('session_id') if user else None
+    if session_id:
+        return session_id
+    session_id = os.urandom(24).hex()
+    if user and user.get('_id'):
+        db.users.update_one({'_id': user['_id']}, {'$set': {'session_id': session_id}})
+    return session_id
+
+
 def get_db_don(user):
-    don_body_fill = user['don_body_fill'] if 'don_body_fill' in user else get_default_don('body_fill')
-    don_face_fill = user['don_face_fill'] if 'don_face_fill' in user else get_default_don('face_fill')
+    default = get_default_don()
+    if not user:
+        return default
+    stored_don = user.get('don') if isinstance(user.get('don'), dict) else {}
+    don_body_fill = user.get('don_body_fill') or stored_don.get('body_fill') or default['body_fill']
+    don_face_fill = user.get('don_face_fill') or stored_don.get('face_fill') or default['face_fill']
     return {'body_fill': don_body_fill, 'face_fill': don_face_fill}
+
+
+ADMIN_COURSES = ['easy', 'normal', 'hard', 'oni', 'ura']
+
+
+def form_int(name, default=None):
+    value = request.form.get(name)
+    if value in (None, ''):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def form_float(name, default=None):
+    value = request.form.get(name)
+    if value in (None, ''):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def normalize_admin_song(song):
+    song = dict(song or {})
+    song['title_lang'] = song.get('title_lang') if isinstance(song.get('title_lang'), dict) else {}
+    song['subtitle_lang'] = song.get('subtitle_lang') if isinstance(song.get('subtitle_lang'), dict) else {}
+    courses = song.get('courses') if isinstance(song.get('courses'), dict) else {}
+    song['courses'] = {
+        course: courses.get(course) if isinstance(courses.get(course), dict) else {}
+        for course in ADMIN_COURSES
+    }
+    song.setdefault('enabled', False)
+    song.setdefault('title', 'Untitled')
+    song.setdefault('subtitle', '')
+    song.setdefault('category_id', None)
+    song.setdefault('skin_id', None)
+    song.setdefault('maker_id', None)
+    song.setdefault('music_type', 'mp3')
+    song.setdefault('type', 'tja')
+    song.setdefault('offset', 0)
+    song.setdefault('preview', 0)
+    song.setdefault('volume', 1)
+    song.setdefault('hash', '')
+    return song
 
 def get_default_don(part=None):
     if part == None:
@@ -845,7 +937,7 @@ def route_api_board_posts_create():
         'message': message,
         'created_at': datetime.utcnow(),
         'username': session.get('username'),
-        'user_display_name': user.get('display_name') if user else None,
+        'user_display_name': get_user_display_name(user) if user else None,
         'ip_hash': hashlib.sha256(get_remote_address().encode('utf-8')).hexdigest()
     }
     result = db.board_posts.insert_one(post)
@@ -962,12 +1054,10 @@ def route_secret_admin_login():
             password_ok = False
         if (
             user and
-            user.get('user_level', 0) >= 50 and
+            get_user_level(user) >= 50 and
             password_ok
         ):
-            session_id = user.get('session_id') or os.urandom(24).hex()
-            if not user.get('session_id'):
-                db.users.update_one({'_id': user['_id']}, {'$set': {'session_id': session_id}})
+            session_id = ensure_user_session_id(user)
             session.clear()
             session['session_id'] = session_id
             session['username'] = user.get('username')
@@ -1074,7 +1164,10 @@ def route_admin_messages_toggle(message_id):
 @app.route(basedir + 'admin/songs')
 @admin_required(level=50)
 def route_admin_songs():
-    songs = sorted(list(db.songs.find({})), key=lambda x: x['id'])
+    songs = sorted(
+        [normalize_admin_song(song) for song in db.songs.find({})],
+        key=lambda song: (song.get('id') is None, song.get('id') or 0, song.get('title') or '')
+    )
     categories = db.categories.find({})
     user = db.users.find_one({'username': session['username']})
     return render_template('admin_songs.html', songs=songs, admin=user, categories=list(categories), config=get_config())
@@ -1086,6 +1179,7 @@ def route_admin_songs_id(id):
     song = db.songs.find_one({'id': id})
     if not song:
         return abort(404)
+    song = normalize_admin_song(song)
 
     categories = list(db.categories.find({}))
     song_skins = list(db.song_skins.find({}))
@@ -1120,21 +1214,22 @@ def route_admin_songs_new_post():
         output['title_lang'][lang] = request.form.get('title_%s' % lang) or None
         output['subtitle_lang'][lang] = request.form.get('subtitle_%s' % lang) or None
 
-    for course in ['easy', 'normal', 'hard', 'oni', 'ura']:
-        if request.form.get('course_%s' % course):
-            output['courses'][course] = {'stars': int(request.form.get('course_%s' % course)),
+    for course in ADMIN_COURSES:
+        stars = form_int('course_%s' % course)
+        if stars is not None:
+            output['courses'][course] = {'stars': stars,
                                          'branch': True if request.form.get('branch_%s' % course) else False}
         else:
             output['courses'][course] = None
     
-    output['category_id'] = int(request.form.get('category_id')) or None
+    output['category_id'] = form_int('category_id') or None
     output['type'] = request.form.get('type')
     output['music_type'] = request.form.get('music_type')
-    output['offset'] = float(request.form.get('offset')) or None
-    output['skin_id'] = int(request.form.get('skin_id')) or None
-    output['preview'] = float(request.form.get('preview')) or None
-    output['volume'] = float(request.form.get('volume')) or None
-    output['maker_id'] = int(request.form.get('maker_id')) or None
+    output['offset'] = form_float('offset', 0)
+    output['skin_id'] = form_int('skin_id') or None
+    output['preview'] = form_float('preview', 0)
+    output['volume'] = form_float('volume', 1.0)
+    output['maker_id'] = form_int('maker_id') or None
     output['lyrics'] = True if request.form.get('lyrics') else False
     output['hash'] = request.form.get('hash')
     
@@ -1169,7 +1264,7 @@ def route_admin_songs_id_post(id):
         return abort(404)
 
     user = db.users.find_one({'username': session['username']})
-    user_level = user['user_level']
+    user_level = get_user_level(user)
 
     output = {'title_lang': {}, 'subtitle_lang': {}, 'courses': {}}
     if user_level >= 100:
@@ -1181,21 +1276,22 @@ def route_admin_songs_id_post(id):
         output['title_lang'][lang] = request.form.get('title_%s' % lang) or None
         output['subtitle_lang'][lang] = request.form.get('subtitle_%s' % lang) or None
 
-    for course in ['easy', 'normal', 'hard', 'oni', 'ura']:
-        if request.form.get('course_%s' % course):
-            output['courses'][course] = {'stars': int(request.form.get('course_%s' % course)),
+    for course in ADMIN_COURSES:
+        stars = form_int('course_%s' % course)
+        if stars is not None:
+            output['courses'][course] = {'stars': stars,
                                          'branch': True if request.form.get('branch_%s' % course) else False}
         else:
             output['courses'][course] = None
     
-    output['category_id'] = int(request.form.get('category_id')) or None
+    output['category_id'] = form_int('category_id') or None
     output['type'] = request.form.get('type')
     output['music_type'] = request.form.get('music_type')
-    output['offset'] = float(request.form.get('offset')) or None
-    output['skin_id'] = int(request.form.get('skin_id')) or None
-    output['preview'] = float(request.form.get('preview')) or None
-    output['volume'] = float(request.form.get('volume')) or None
-    output['maker_id'] = int(request.form.get('maker_id')) or None
+    output['offset'] = form_float('offset', 0)
+    output['skin_id'] = form_int('skin_id') or None
+    output['preview'] = form_float('preview', 0)
+    output['volume'] = form_float('volume', 1.0)
+    output['maker_id'] = form_int('maker_id') or None
     output['lyrics'] = True if request.form.get('lyrics') else False
     output['hash'] = request.form.get('hash')
     
@@ -1235,7 +1331,7 @@ def route_admin_songs_id_remove(id):
 @admin_required(level=50)
 def route_admin_users():
     user = db.users.find_one({'username': session.get('username')})
-    max_level = user['user_level'] - 1
+    max_level = max(0, get_user_level(user) - 1)
     return render_template('admin_users.html', config=get_config(), max_level=max_level, username='', level='')
 
 
@@ -1244,21 +1340,20 @@ def route_admin_users():
 def route_admin_users_post():
     admin_name = session.get('username')
     admin = db.users.find_one({'username': admin_name})
-    max_level = admin['user_level'] - 1
+    max_level = max(0, get_user_level(admin) - 1)
     
-    username = request.form.get('username')
-    try:
-        level = int(request.form.get('level')) or 0
-    except ValueError:
-        level = 0
+    username = (request.form.get('username') or '').strip()
+    level = form_int('level', 0) or 0
     
-    user = db.users.find_one({'username_lower': username.lower()})
-    if not user:
+    user = db.users.find_one({'username_lower': username.lower()}) if username else None
+    if not username:
+        flash('Error: Username is required.')
+    elif not user:
         flash('Error: User was not found.')
-    elif admin['username'] == user['username']:
+    elif admin.get('username') == user.get('username'):
         flash('Error: You cannot modify your own level.')
     else:
-        user_level = user['user_level']
+        user_level = get_user_level(user)
         if level < 0 or level > max_level:
             flash('Error: Invalid level.')
         elif user_level > max_level:
@@ -1417,16 +1512,26 @@ def route_api_login():
         return api_error('invalid_username_password')
 
     password = data.get('password', '').encode('utf-8')
-    if not bcrypt.checkpw(password, result['password']):
+    try:
+        password_ok = bcrypt.checkpw(password, result.get('password', b''))
+    except (TypeError, ValueError):
+        password_ok = False
+    if not password_ok:
         return api_error('invalid_username_password')
     
     don = get_db_don(result)
+    session_id = ensure_user_session_id(result)
     
-    session['session_id'] = result['session_id']
+    session['session_id'] = session_id
     session['username'] = result['username']
     session.permanent = True if data.get('remember') else False
 
-    return jsonify({'status': 'ok', 'username': result['username'], 'display_name': result['display_name'], 'don': don})
+    return jsonify({
+        'status': 'ok',
+        'username': result['username'],
+        'display_name': get_user_display_name(result, result['username']),
+        'don': don
+    })
 
 
 @app.route(basedir + 'api/logout', methods=['POST'])
@@ -1559,14 +1664,25 @@ def route_api_scores_get():
 
     scores = []
     for score in db.scores.find({'username': username}):
+        if 'hash' not in score or 'score' not in score:
+            continue
         scores.append({
             'hash': score['hash'],
             'score': score['score']
         })
 
     user = db.users.find_one({'username': username})
+    if not user:
+        session.clear()
+        return api_error('not_logged_in')
     don = get_db_don(user)
-    return jsonify({'status': 'ok', 'scores': scores, 'username': user['username'], 'display_name': user['display_name'], 'don': don})
+    return jsonify({
+        'status': 'ok',
+        'scores': scores,
+        'username': user.get('username') or username,
+        'display_name': get_user_display_name(user, username),
+        'don': don
+    })
 
 
 @app.route(basedir + 'api/playcount/record', methods=['POST'])

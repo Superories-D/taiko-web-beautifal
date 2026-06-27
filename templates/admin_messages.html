@@ -7,6 +7,7 @@
 
 <div class="song-form">
     <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-field">
             <label for="title">Title</label>
             <input type="text" id="title" name="title" maxlength="120">
@@ -47,9 +48,11 @@
         <div class="admin-message-body">{{ item.body }}</div>
         {% endif %}
         <form method="post" action="{{config.basedir}}admin/messages/{{ item._id }}/toggle" class="admin-message-action">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit">{% if item.active %}Hide{% else %}Show{% endif %}</button>
         </form>
         <form method="post" action="{{config.basedir}}admin/messages/{{ item._id }}/remove" class="admin-message-action">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit">Remove</button>
         </form>
     </div>

@@ -232,6 +232,7 @@ db.scores.create_index('username')
 db.play_records.create_index('song_hash')
 db.play_records.create_index('played_at')
 db.play_records.create_index([('song_hash', 1), ('played_at', -1)])
+db.play_records.create_index([('played_at', -1), ('song_hash', 1)])
 db.song_play_counts.create_index([('play_count', -1), ('last_played_at', -1)])
 db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('score_value', -1)])
 db.leaderboard.create_index('username')
@@ -243,6 +244,10 @@ VISIT_RETENTION_DAYS = 400
 VISIT_RETENTION_SECONDS = VISIT_RETENTION_DAYS * 24 * 60 * 60
 VISIT_ENTERED_AT_INDEX = 'entered_at_1'
 PUBLIC_TOP_SONGS_CACHE_SECONDS = 30
+PUBLIC_SONGS_CACHE_SECONDS = 15
+PUBLIC_SONGS_CACHE_VERSION_KEY = 'public_songs_cache_version'
+PUBLIC_SONGS_CACHE_BOOT_VERSION = str(time.time_ns())
+ADMIN_STATS_MAX_TIME_MS = max(500, env_int('TAIKO_WEB_ADMIN_STATS_MAX_TIME_MS', 2000))
 TOP_SONGS_CACHE_KEY = 'public_top_songs'
 TOP_SONGS_REFRESH_LOCK_KEY = 'public_top_songs_refresh_lock'
 TOP_SONGS_BACKFILL_KEY = 'song_play_counts_backfilled'
@@ -375,10 +380,13 @@ def song_display_title(song):
 def song_period_counts(song_hash, periods):
     counts = {}
     for name, start in periods.items():
-        counts[name] = db.play_records.count_documents({
-            'song_hash': song_hash,
-            'played_at': {'$gte': start}
-        })
+        try:
+            counts[name] = db.play_records.count_documents({
+                'song_hash': song_hash,
+                'played_at': {'$gte': start}
+            }, maxTimeMS=ADMIN_STATS_MAX_TIME_MS)
+        except PyMongoError:
+            counts[name] = None
     return counts
 
 
@@ -681,21 +689,62 @@ def record_song_play_count(song_hash, played_at):
         pass
 
 
+def get_public_songs_cache_version():
+    return app.cache.get(PUBLIC_SONGS_CACHE_VERSION_KEY) or PUBLIC_SONGS_CACHE_BOOT_VERSION
+
+
+def invalidate_public_songs_cache():
+    app.cache.set(PUBLIC_SONGS_CACHE_VERSION_KEY, str(time.time_ns()), timeout=0)
+
+
+def mark_top_songs_cache_stale():
+    cache_doc = get_top_songs_cache_doc()
+    if not cache_doc:
+        return
+    stale_at = datetime.utcnow() - timedelta(days=TOP_SONGS_CACHE_DAYS + 1)
+    db.top_song_cache.update_one(
+        {'_id': TOP_SONGS_CACHE_KEY},
+        {'$set': {
+            'updated_at': stale_at,
+            'status': 'stale'
+        }}
+    )
+
+
+def invalidate_song_derived_caches():
+    invalidate_public_songs_cache()
+    mark_top_songs_cache_stale()
+
+
 def total_period_counts(collection, datetime_field, periods):
     counts = {}
     for name, start in periods.items():
-        counts[name] = collection.count_documents({
-            datetime_field: {'$gte': start}
-        })
+        try:
+            counts[name] = collection.count_documents({
+                datetime_field: {'$gte': start}
+            }, maxTimeMS=ADMIN_STATS_MAX_TIME_MS)
+        except PyMongoError:
+            counts[name] = None
     return counts
 
 
 def unique_visit_counts(periods):
     counts = {}
     for name, start in periods.items():
-        counts[name] = len(db.visit_records.distinct('visitor_key', {
-            'entered_at': {'$gte': start}
-        }))
+        try:
+            pipeline = [
+                {'$match': {'entered_at': {'$gte': start}}},
+                {'$group': {'_id': '$visitor_key'}},
+                {'$count': 'count'}
+            ]
+            result = list(db.visit_records.aggregate(
+                pipeline,
+                maxTimeMS=ADMIN_STATS_MAX_TIME_MS,
+                allowDiskUse=False
+            ))
+            counts[name] = result[0]['count'] if result else 0
+        except PyMongoError:
+            counts[name] = None
     return counts
 
 
@@ -1489,10 +1538,6 @@ def route_admin_top_songs_refresh():
         requested_by=session.get('username'),
         allow_backfill=True
     )
-    try:
-        app.cache.delete_memoized(route_api_songs_top10)
-    except Exception:
-        pass
 
     status = result.get('status')
     if status == 'updated':
@@ -1688,6 +1733,7 @@ def route_admin_songs_new_post():
         flash('Song created.')
     
     db.seq.update_one({'name': 'songs'}, {'$set': {'value': seq_new}}, upsert=True)
+    invalidate_song_derived_caches()
     
     return redirect(basedir + 'admin/songs/%s' % str(seq_new))
 
@@ -1742,6 +1788,7 @@ def route_admin_songs_id_post(id):
     db.songs.update_one({'id': id}, {'$set': output})
     if not hash_error:
         flash('Changes saved.')
+    invalidate_song_derived_caches()
     
     return redirect(basedir + 'admin/songs/%s' % id)
 
@@ -1755,10 +1802,7 @@ def route_admin_songs_id_remove(id):
         return abort(404)
 
     db.songs.delete_one({'id': id})
-    try:
-        app.cache.delete_memoized(route_api_songs)
-    except Exception:
-        pass
+    invalidate_song_derived_caches()
     flash('Song removed.')
     return redirect(basedir + 'admin/songs')
 
@@ -1827,7 +1871,6 @@ def route_api_preview():
 
 
 @app.route(basedir + 'api/songs')
-@app.cache.cached(timeout=15, query_string=True)
 def route_api_songs():
     type_q = flask.request.args.get('type')
     query = {'enabled': True}
@@ -1835,7 +1878,34 @@ def route_api_songs():
         if type_q not in SONG_TYPES:
             return abort(400)
         query['song_type'] = type_q
+
+    cache_key = 'api_songs:{}:{}'.format(type_q or 'all', get_public_songs_cache_version())
+    cached_songs = app.cache.get(cache_key)
+    if cached_songs is not None:
+        return cache_wrap(flask.jsonify(cached_songs), 60)
+
     raw_songs = list(db.songs.find(query, {'_id': False, 'enabled': False}))
+    categories = list(db.categories.find({}, {'_id': False}))
+    makers = list(db.makers.find({}, {'_id': False}))
+    song_skins = list(db.song_skins.find({}, {'_id': False}))
+
+    def build_id_map(items):
+        output = {}
+        for item in items:
+            item_id = item.get('id')
+            if item_id is None:
+                continue
+            output[item_id] = item
+            output[str(item_id)] = item
+            int_id = safe_int_value(item_id)
+            if int_id is not None:
+                output[int_id] = item
+        return output
+
+    categories_by_id = build_id_map(categories)
+    makers_by_id = build_id_map(makers)
+    song_skins_by_id = build_id_map(song_skins)
+
     songs = []
     for raw_song in raw_songs:
         song = normalize_public_song(raw_song)
@@ -1846,14 +1916,14 @@ def route_api_songs():
             if maker_id == 0:
                 song['maker'] = 0
             else:
-                song['maker'] = db.makers.find_one({'id': maker_id}, {'_id': False})
+                song['maker'] = makers_by_id.get(maker_id) or makers_by_id.get(safe_int_value(maker_id)) or makers_by_id.get(str(maker_id))
         else:
             song['maker'] = None
         song.pop('maker_id', None)
 
         category_id = song.get('category_id')
         if category_id:
-            category = db.categories.find_one({'id': category_id})
+            category = categories_by_id.get(category_id) or categories_by_id.get(safe_int_value(category_id)) or categories_by_id.get(str(category_id))
             song['category'] = category.get('title') if category else None
         else:
             song['category'] = None
@@ -1861,18 +1931,23 @@ def route_api_songs():
 
         skin_id = song.get('skin_id')
         if skin_id:
-            song['song_skin'] = db.song_skins.find_one({'id': skin_id}, {'_id': False, 'id': False})
+            song_skin = song_skins_by_id.get(skin_id) or song_skins_by_id.get(safe_int_value(skin_id)) or song_skins_by_id.get(str(skin_id))
+            song['song_skin'] = {
+                key: value
+                for key, value in song_skin.items()
+                if key != 'id'
+            } if song_skin else None
         else:
             song['song_skin'] = None
         song.pop('skin_id', None)
 
         songs.append(song)
 
+    app.cache.set(cache_key, songs, timeout=PUBLIC_SONGS_CACHE_SECONDS)
     return cache_wrap(flask.jsonify(songs), 60)
 
 
 @app.route(basedir + 'api/songs/top10')
-@app.cache.cached(timeout=PUBLIC_TOP_SONGS_CACHE_SECONDS, query_string=True)
 def route_api_songs_top10():
     if not FEATURE_TOP_SONGS:
         return abort(404)
@@ -2414,16 +2489,12 @@ def upload_file():
         db_entry['song_type'] = song_type
 
         # mongoDBにデータをぶち込む（重複IDは部分更新で上書きし、_id を不変に保つ）
-        coll = client['taiko']["songs"]
+        coll = db.songs
         try:
             coll.insert_one(db_entry)
         except DuplicateKeyError:
             coll.update_one({"id": db_entry["id"]}, {"$set": db_entry}, upsert=True)
-        # キャッシュ削除（/api/songs）
-        try:
-            app.cache.delete_memoized(route_api_songs)
-        except Exception:
-            pass
+        invalidate_song_derived_caches()
 
         SONGS_DIR.mkdir(parents=True, exist_ok=True)
         target_dir = SONGS_DIR / generated_id

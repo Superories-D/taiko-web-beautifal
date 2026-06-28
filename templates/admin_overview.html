@@ -1,5 +1,8 @@
 {% extends 'admin.html' %}
 {% block content %}
+{% macro metric(value) -%}
+{{ value if value is not none else '--' }}
+{%- endmacro %}
 <div class="admin-page-header">
     <div>
         <h1>Overview</h1>
@@ -70,19 +73,19 @@
 <div class="admin-stats-grid admin-stats-grid-compact">
     <div class="admin-stat-card">
         <span>Last hour</span>
-        <strong>{{ stats.play_counts.hour }}</strong>
+        <strong>{{ metric(stats.play_counts.hour) }}</strong>
     </div>
     <div class="admin-stat-card">
         <span>Today</span>
-        <strong>{{ stats.play_counts.day }}</strong>
+        <strong>{{ metric(stats.play_counts.day) }}</strong>
     </div>
     <div class="admin-stat-card">
         <span>This week</span>
-        <strong>{{ stats.play_counts.week }}</strong>
+        <strong>{{ metric(stats.play_counts.week) }}</strong>
     </div>
     <div class="admin-stat-card">
         <span>This month</span>
-        <strong>{{ stats.play_counts.month }}</strong>
+        <strong>{{ metric(stats.play_counts.month) }}</strong>
     </div>
 </div>
 
@@ -91,15 +94,15 @@
 <div class="admin-stats-grid admin-stats-grid-compact">
     <div class="admin-stat-card">
         <span>Today</span>
-        <strong>{{ stats.visit_counts.day }}</strong>
+        <strong>{{ metric(stats.visit_counts.day) }}</strong>
     </div>
     <div class="admin-stat-card">
         <span>This week</span>
-        <strong>{{ stats.visit_counts.week }}</strong>
+        <strong>{{ metric(stats.visit_counts.week) }}</strong>
     </div>
     <div class="admin-stat-card">
         <span>This month</span>
-        <strong>{{ stats.visit_counts.month }}</strong>
+        <strong>{{ metric(stats.visit_counts.month) }}</strong>
     </div>
 </div>
 
@@ -130,11 +133,11 @@
                     {% endif %}
                     <small>{{ row.song_hash }}</small>
                 </td>
-                <td>{{ row.total }}</td>
-                <td>{{ row.periods.hour }}</td>
-                <td>{{ row.periods.day }}</td>
-                <td>{{ row.periods.week }}</td>
-                <td>{{ row.periods.month }}</td>
+                <td>{{ metric(row.total) }}</td>
+                <td>{{ metric(row.periods.hour) }}</td>
+                <td>{{ metric(row.periods.day) }}</td>
+                <td>{{ metric(row.periods.week) }}</td>
+                <td>{{ metric(row.periods.month) }}</td>
             </tr>
             {% endfor %}
         </tbody>

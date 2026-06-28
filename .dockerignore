@@ -1,8 +1,18 @@
 /.git
 /__pycache__
+**/__pycache__
+/.venv
+/venv
+/env
+/flask_session
 /taiko-editor/.venv
 /taiko-editor/build
 /taiko-editor/dist
 /taiko-editor/__pycache__
 
 /public/songs
+/public/notice_uploads
+*.pyc
+*.pyo
+*.log
+debug-*.png

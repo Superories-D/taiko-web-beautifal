@@ -3,6 +3,7 @@
 import base64
 import bcrypt
 import hashlib
+import ipaddress
 try:
     import config
 except ModuleNotFoundError:
@@ -12,6 +13,7 @@ import math
 import re
 import requests
 import schema
+import secrets
 import os
 import time
 import uuid
@@ -74,6 +76,44 @@ def env_int(name, default):
         return default
 
 
+def load_or_create_secret_key():
+    configured_key = os.environ.get('TAIKO_WEB_SECRET_KEY') or take_config('SECRET_KEY')
+    if (
+        isinstance(configured_key, str) and
+        configured_key != 'change-me' and
+        len(configured_key) >= 32
+    ):
+        return configured_key
+
+    secret_path = path_from_env(
+        'TAIKO_WEB_SECRET_KEY_FILE',
+        APP_ROOT / '.taiko-secret-key'
+    )
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        pass
+    else:
+        with os.fdopen(fd, 'w', encoding='ascii') as secret_file:
+            secret_file.write(secrets.token_hex(32))
+            secret_file.flush()
+            os.fsync(secret_file.fileno())
+
+    for _ in range(50):
+        try:
+            secret_key = secret_path.read_text(encoding='ascii').strip()
+        except OSError:
+            time.sleep(0.02)
+            continue
+        if len(secret_key) >= 32:
+            return secret_key
+        time.sleep(0.02)
+    raise RuntimeError(
+        'Set TAIKO_WEB_SECRET_KEY to at least 32 characters'
+    )
+
+
 app = Flask(__name__)
 FEATURE_ADMIN = env_flag('TAIKO_WEB_FEATURE_ADMIN', True)
 FEATURE_SITE_MESSAGES = env_flag('TAIKO_WEB_FEATURE_SITE_MESSAGES', True)
@@ -134,8 +174,35 @@ limiter_storage_uri = os.environ.get("REDIS_URI") or (
     "memory://"
 )
 
+# Only these reverse proxies may supply the client IP used for rate limiting.
+CLOUDFLARE_PROXY_NETWORKS = tuple(
+    ipaddress.ip_network(network)
+    for network in (
+        '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22',
+        '103.31.4.0/22', '141.101.64.0/18', '108.162.192.0/18',
+        '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22',
+        '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+        '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+        '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32',
+        '2405:b500::/32', '2405:8100::/32', '2a06:98c0::/29',
+        '2c0f:f248::/32'
+    )
+)
+
+
 def get_remote_address() -> str:
-    return flask.request.headers.get("CF-Connecting-IP") or flask.request.remote_addr or "127.0.0.1"
+    remote_address = flask.request.remote_addr or '127.0.0.1'
+    connecting_address = flask.request.headers.get('CF-Connecting-IP')
+    if not connecting_address:
+        return remote_address
+    try:
+        remote_ip = ipaddress.ip_address(remote_address)
+        connecting_ip = ipaddress.ip_address(connecting_address)
+    except ValueError:
+        return remote_address
+    if any(remote_ip in network for network in CLOUDFLARE_PROXY_NETWORKS):
+        return str(connecting_ip)
+    return remote_address
 
 limiter = Limiter(
     get_remote_address,
@@ -208,7 +275,7 @@ SEO_LANG_ALIASES = {
     'zh-hant': 'tw',
 }
 
-app.secret_key = take_config('SECRET_KEY') or 'change-me'
+app.secret_key = load_or_create_secret_key()
 if redis_available:
     app.config['SESSION_TYPE'] = 'redis'
     app.config['SESSION_REDIS'] = redis_client
@@ -227,6 +294,7 @@ db = client[take_config('MONGO', required=True)['database']]
 db.users.create_index('username', unique=True)
 db.songs.create_index('id', unique=True)
 db.songs.create_index('hash')
+db.songs.create_index('title')
 db.songs.create_index('song_type')
 db.scores.create_index('username')
 db.scores.create_index([('username', 1), ('hash', 1)])
@@ -253,11 +321,13 @@ ADMIN_STATS_MAX_TIME_MS = max(500, env_int('TAIKO_WEB_ADMIN_STATS_MAX_TIME_MS', 
 TOP_SONGS_CACHE_KEY = 'public_top_songs'
 TOP_SONGS_REFRESH_LOCK_KEY = 'public_top_songs_refresh_lock'
 TOP_SONGS_BACKFILL_KEY = 'song_play_counts_backfilled'
+TOP_SONGS_CACHE_SCHEMA_VERSION = 2
 TOP_SONGS_CACHE_DAYS = max(1, env_int('TAIKO_WEB_TOP_SONGS_CACHE_DAYS', 1))
 TOP_SONGS_CACHE_MAX_ROWS = max(10, min(env_int('TAIKO_WEB_TOP_SONGS_CACHE_ROWS', 50), 200))
 TOP_SONGS_REFRESH_LOCK_SECONDS = max(60, env_int('TAIKO_WEB_TOP_SONGS_REFRESH_LOCK_SECONDS', 900))
 TOP_SONGS_SORT_MAX_TIME_MS = max(1000, env_int('TAIKO_WEB_TOP_SONGS_SORT_MAX_TIME_MS', 2000))
 TOP_SONGS_BACKFILL_MAX_TIME_MS = max(1000, env_int('TAIKO_WEB_TOP_SONGS_BACKFILL_MAX_TIME_MS', 5000))
+REMOTE_REQUEST_TIMEOUT = (3.05, 15)
 
 
 def ensure_visit_record_indexes():
@@ -443,6 +513,8 @@ def song_period_counts(song_hash, periods):
 def top_songs_cache_stale(cache_doc, now=None):
     if not cache_doc:
         return True
+    if cache_doc.get('schema_version') != TOP_SONGS_CACHE_SCHEMA_VERSION:
+        return True
     rows = cache_doc.get('rows')
     updated_at = cache_doc.get('updated_at')
     if not isinstance(rows, list) or not updated_at:
@@ -560,6 +632,48 @@ def get_top_song_count_docs(limit, multiplier=1):
     return list(cursor)
 
 
+def build_song_identity_maps(songs):
+    songs_by_hash = {}
+    songs_by_id = {}
+    songs_by_title = {}
+    for song in songs:
+        song_hash = song.get('hash')
+        song_id = song.get('id')
+        title = song.get('title')
+        if song_hash not in (None, ''):
+            songs_by_hash.setdefault(str(song_hash), song)
+        if song_id not in (None, ''):
+            songs_by_id.setdefault(str(song_id), song)
+        if title not in (None, ''):
+            songs_by_title.setdefault(str(title), song)
+    return songs_by_hash, songs_by_id, songs_by_title
+
+
+def resolve_song_identity(song_hash, identity_maps):
+    key = str(song_hash)
+    songs_by_hash, songs_by_id, songs_by_title = identity_maps
+    return (
+        songs_by_hash.get(key) or
+        songs_by_id.get(key) or
+        songs_by_title.get(key)
+    )
+
+
+def find_enabled_song_by_identity(song_hash):
+    song_ids = [song_hash]
+    numeric_id = safe_int_value(song_hash)
+    if numeric_id is not None:
+        song_ids.append(numeric_id)
+    return db.songs.find_one({
+        'enabled': True,
+        '$or': [
+            {'hash': song_hash},
+            {'id': {'$in': song_ids}},
+            {'title': song_hash}
+        ]
+    }, {'_id': True})
+
+
 def build_public_top_songs_cache_rows(limit=TOP_SONGS_CACHE_MAX_ROWS):
     count_docs = get_top_song_count_docs(limit, multiplier=20)
     song_hashes = [item.get('song_hash') for item in count_docs if item.get('song_hash')]
@@ -578,7 +692,8 @@ def build_public_top_songs_cache_rows(limit=TOP_SONGS_CACHE_MAX_ROWS):
             'enabled': True,
             '$or': [
                 {'hash': {'$in': song_hashes}},
-                {'id': {'$in': list(song_ids)}}
+                {'id': {'$in': list(song_ids)}},
+                {'title': {'$in': song_hashes}}
             ]
         },
         {
@@ -593,13 +708,12 @@ def build_public_top_songs_cache_rows(limit=TOP_SONGS_CACHE_MAX_ROWS):
             'song_type': True
         }
     ))
-    songs_by_hash = {song.get('hash'): song for song in songs if song.get('hash')}
-    songs_by_id = {str(song.get('id')): song for song in songs if song.get('id') is not None}
+    identity_maps = build_song_identity_maps(songs)
 
     rows = []
     for item in count_docs:
         song_hash = item.get('song_hash')
-        song = songs_by_hash.get(song_hash) or songs_by_id.get(str(song_hash))
+        song = resolve_song_identity(song_hash, identity_maps)
         if not song:
             continue
 
@@ -641,22 +755,26 @@ def refresh_top_songs_cache(force=False, requested_by=None, allow_backfill=True)
             backfill_status = backfill_song_play_counts_if_needed()
         elif not song_play_counts_backfill_done():
             if play_records_exist():
-                now = datetime.utcnow()
-                rows = cache_doc.get('rows') if isinstance(cache_doc.get('rows'), list) else []
-                db.top_song_cache.update_one(
-                    {'_id': TOP_SONGS_CACHE_KEY},
-                    {'$set': {
-                        'rows': rows,
-                        'updated_at': now,
-                        'expires_at': now + timedelta(days=TOP_SONGS_CACHE_DAYS),
-                        'status': 'needs_backfill',
-                        'last_backfill_status': 'needed',
-                        'requested_by': requested_by or 'auto'
-                    }},
-                    upsert=True
-                )
-                return {'status': 'needs_backfill', 'rows_count': len(cache_doc.get('rows') or [])}
-            mark_song_play_counts_backfilled('empty')
+                if song_play_counts_empty():
+                    now = datetime.utcnow()
+                    rows = cache_doc.get('rows') if isinstance(cache_doc.get('rows'), list) else []
+                    db.top_song_cache.update_one(
+                        {'_id': TOP_SONGS_CACHE_KEY},
+                        {'$set': {
+                            'rows': rows,
+                            'updated_at': now,
+                            'expires_at': now + timedelta(days=TOP_SONGS_CACHE_DAYS),
+                            'status': 'needs_backfill',
+                            'schema_version': TOP_SONGS_CACHE_SCHEMA_VERSION,
+                            'last_backfill_status': 'needed',
+                            'requested_by': requested_by or 'auto'
+                        }},
+                        upsert=True
+                    )
+                    return {'status': 'needs_backfill', 'rows_count': len(cache_doc.get('rows') or [])}
+                backfill_status = 'partial'
+            else:
+                mark_song_play_counts_backfilled('empty')
 
         rows = build_public_top_songs_cache_rows(TOP_SONGS_CACHE_MAX_ROWS)
         now = datetime.utcnow()
@@ -668,6 +786,7 @@ def refresh_top_songs_cache(force=False, requested_by=None, allow_backfill=True)
                 'updated_at': now,
                 'expires_at': now + timedelta(days=TOP_SONGS_CACHE_DAYS),
                 'status': 'ready',
+                'schema_version': TOP_SONGS_CACHE_SCHEMA_VERSION,
                 'last_error': None,
                 'last_error_at': None,
                 'last_refresh_ms': refresh_ms,
@@ -727,7 +846,7 @@ def record_song_play_count(song_hash, played_at):
     if not song_hash:
         return
     try:
-        db.song_play_counts.update_one(
+        result = db.song_play_counts.update_one(
             {'_id': song_hash},
             {
                 '$set': {'song_hash': song_hash, 'last_played_at': played_at},
@@ -735,6 +854,8 @@ def record_song_play_count(song_hash, played_at):
             },
             upsert=True
         )
+        if result.upserted_id is not None:
+            mark_top_songs_cache_stale()
     except PyMongoError:
         pass
 
@@ -832,17 +953,17 @@ def get_song_heat_rows(limit=30):
     songs = list(db.songs.find({
         '$or': [
             {'hash': {'$in': song_hashes}},
-            {'id': {'$in': list(song_ids)}}
+            {'id': {'$in': list(song_ids)}},
+            {'title': {'$in': song_hashes}}
         ]
     })) if song_hashes else []
-    songs_by_hash = {song.get('hash'): song for song in songs if song.get('hash')}
-    songs_by_id = {str(song.get('id')): song for song in songs if song.get('id') is not None}
+    identity_maps = build_song_identity_maps(songs)
     period_counts = song_period_counts_many(song_hashes, periods)
     rows = []
 
     for item in count_docs:
         song_hash = item.get('song_hash')
-        song = songs_by_hash.get(song_hash) or songs_by_id.get(str(song_hash))
+        song = resolve_song_identity(song_hash, identity_maps)
         rows.append({
             'song': song,
             'song_id': song.get('id') if song else None,
@@ -1019,7 +1140,7 @@ def api_error(message):
 
 
 def generate_hash(id, form):
-    md5 = hashlib.md5()
+    md5 = hashlib.md5(usedforsecurity=False)
     if form.get('type') == 'tja':
         urls = ['%s%s/main.tja' % (take_config('SONGS_BASEURL', required=True), id)]
     else:
@@ -1030,7 +1151,10 @@ def generate_hash(id, form):
 
     for url in urls:
         if url.startswith("http://") or url.startswith("https://"):
-            resp = requests.get(url)
+            try:
+                resp = requests.get(url, timeout=REMOTE_REQUEST_TIMEOUT)
+            except requests.RequestException as exc:
+                raise HashException('Unable to load chart data') from exc
             if resp.status_code != 200:
                 raise HashException('Invalid response from %s (status code %s)' % (resp.url, resp.status_code))
             md5.update(resp.content)
@@ -2379,7 +2503,9 @@ def route_api_playcount_record():
     username = session.get('username') if session.get('username') else None
     played_at = datetime.utcnow()
     song_hash = data.get('hash')
-    
+    if not find_enabled_song_by_identity(song_hash):
+        return abort(400)
+
     db.play_records.insert_one({
         'song_hash': song_hash,
         'difficulty': data.get('difficulty'),
@@ -2461,6 +2587,8 @@ def route_api_leaderboard_submit():
         return abort(400)
     score_value = int(raw_score)
     if score_value != raw_score:
+        return abort(400)
+    if not find_enabled_song_by_identity(song_hash):
         return abort(400)
 
     if not display_name or not display_name.strip():
@@ -2578,7 +2706,11 @@ error_pages = take_config('ERROR_PAGES') or {}
 
 def create_error_page(code, url):
     if url.startswith("http://") or url.startswith("https://"):
-        resp = requests.get(url)
+        try:
+            resp = requests.get(url, timeout=REMOTE_REQUEST_TIMEOUT)
+        except requests.RequestException:
+            app.logger.warning('Unable to load remote error page for status %s', code)
+            return
         if resp.status_code == 200:
             app.register_error_handler(code, lambda e: (resp.content, code))
     else:

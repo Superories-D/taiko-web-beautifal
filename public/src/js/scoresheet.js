@@ -957,9 +957,20 @@ class Scoresheet {
 				this.resultsObj.points,
 				this.controller.autoPlayEnabled
 			)
-			// Submit to leaderboard (only if not auto-play)
+			var weeklyChallengeActive = typeof WeeklyChallenge !== "undefined" && WeeklyChallenge.isActiveController(this.controller)
 			if (!this.controller.autoPlayEnabled) {
-				this.submitToLeaderboard(hash, difficulty, this.resultsObj.points)
+				if (weeklyChallengeActive) {
+					WeeklyChallenge.submitResult(this.controller, {
+						points: this.resultsObj.points,
+						good: this.resultsObj.good,
+						ok: this.resultsObj.ok,
+						bad: this.resultsObj.bad,
+						maxCombo: this.resultsObj.maxCombo,
+						drumroll: this.resultsObj.drumroll
+					})
+				} else {
+					this.submitToLeaderboard(hash, difficulty, this.resultsObj.points)
+				}
 			}
 		}
 		this.scoreSaved = true

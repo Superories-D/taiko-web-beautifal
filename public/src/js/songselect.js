@@ -4,6 +4,9 @@ class SongSelect {
 	}
 	init(fromTutorial, fadeIn, touchEnabled, songId, showWarning) {
 		this.touchEnabled = touchEnabled
+		if (typeof WeeklyChallenge !== "undefined") {
+			WeeklyChallenge.clearRun()
+		}
 
 		loader.changePage("songselect", false)
 		this.canvas = document.getElementById("song-sel-canvas")
@@ -176,6 +179,12 @@ class SongSelect {
 				border: ["#bfeeff", "#1261c7"],
 				outline: "#063f92"
 			},
+			"weeklyChallenge": {
+				sort: 0,
+				background: "#ffd84a",
+				border: ["#fff7a8", "#c66b1d"],
+				outline: "#9e1935"
+			},
 			"tutorial": {
 				sort: 0,
 				background: "#29e8aa",
@@ -266,6 +275,7 @@ class SongSelect {
 		this.songFont = strings.songFont || songTitleFont
 
 		this.search = new Search(this)
+		this.weeklyChallenge = new WeeklyChallenge(this)
 		this.uploadModal = new UploadModal(this)
 		this.features = gameConfig.features || {}
 		this.siteMessagesEnabled = !!this.features.site_messages
@@ -549,9 +559,12 @@ class SongSelect {
 		this.songTypeIndex = Math.max(0, Math.min(this.songTypes.length - 1, +(localStorage.getItem("songTypeIndex") || 0)))
 		this.searchButton = document.getElementById("song-search-btn")
 		this.topSongsButton = document.getElementById("song-top10-btn")
+		this.weeklyChallengeButton = document.getElementById("weekly-challenge-btn")
 		this.searchButton.hidden = true
 		this.topSongsButton.hidden = true
+		this.weeklyChallengeButton.hidden = true
 		pageEvents.add(this.searchButton, ["click", "touchend"], this.openSearchFromButton.bind(this))
+		pageEvents.add(this.weeklyChallengeButton, ["click", "touchend"], this.openWeeklyChallengeFromButton.bind(this))
 		if (this.topSongsEnabled) {
 			pageEvents.add(this.topSongsButton, ["click", "touchend"], this.openTopSongsFromButton.bind(this))
 			this.topSongs = new TopSongs(this)
@@ -716,6 +729,8 @@ class SongSelect {
 			this.uploadModal.keyPress(pressed, name, event, repeat, ctrl)
 		} else if (this.topSongs && this.topSongs.opened) {
 			this.topSongs.keyPress(pressed, name, event, repeat, ctrl)
+		} else if (this.weeklyChallenge.opened) {
+			this.weeklyChallenge.keyPress(pressed, name, event, repeat, ctrl)
 		} else if (this.search.opened) {
 			this.search.keyPress(pressed, name, event, repeat, ctrl)
 		} else if (this.state.screen === "song") {
@@ -799,7 +814,7 @@ class SongSelect {
 	openSearchFromButton(event) {
 		event.preventDefault()
 		event.stopPropagation()
-		if (this.state.screen === "song" && !this.search.opened && !(this.topSongs && this.topSongs.opened)) {
+		if (this.state.screen === "song" && !this.search.opened && !(this.topSongs && this.topSongs.opened) && !this.weeklyChallenge.opened) {
 			this.search.display(true)
 		}
 	}
@@ -807,24 +822,36 @@ class SongSelect {
 	openTopSongsFromButton(event) {
 		event.preventDefault()
 		event.stopPropagation()
-		if (this.topSongs && this.state.screen === "song" && !this.search.opened && !this.topSongs.opened) {
+		if (this.topSongs && this.state.screen === "song" && !this.search.opened && !this.topSongs.opened && !this.weeklyChallenge.opened) {
 			this.topSongs.display(true)
 		}
 	}
 
+	openWeeklyChallengeFromButton(event) {
+		event.preventDefault()
+		event.stopPropagation()
+		if (this.state.screen === "song" && !this.search.opened && !(this.topSongs && this.topSongs.opened) && !this.weeklyChallenge.opened && account.loggedIn) {
+			this.weeklyChallenge.display(true)
+		}
+	}
+
 	updateSearchButtonVisibility() {
-		if (!this.songSelect || !this.searchButton || !this.topSongsButton) {
+		if (!this.songSelect || !this.searchButton || !this.topSongsButton || !this.weeklyChallengeButton) {
 			return
 		}
 		var visible = this.state.screen === "song" &&
 			!this.search.opened &&
 			!(this.topSongs && this.topSongs.opened) &&
+			!this.weeklyChallenge.opened &&
 			!this.uploadModal.opened &&
 			!(this.siteMessages && this.siteMessages.isOpen())
+		var challengeVisible = visible && account.loggedIn
 		this.searchButton.hidden = !visible
 		this.topSongsButton.hidden = !visible || !this.topSongsEnabled
+		this.weeklyChallengeButton.hidden = !challengeVisible
 		this.songSelect.classList.toggle("search-button-visible", visible)
 		this.songSelect.classList.toggle("top10-button-visible", visible && this.topSongsEnabled)
+		this.songSelect.classList.toggle("weekly-challenge-visible", challengeVisible)
 	}
 
 	changeType(delta) {
@@ -1121,6 +1148,7 @@ class SongSelect {
 			if (this.topSongs) {
 				this.topSongs.remove()
 			}
+			this.weeklyChallenge.remove()
 			if (currentSong.courses) {
 				if (currentSong.unloaded) {
 					return
@@ -1355,6 +1383,32 @@ class SongSelect {
 			"lyrics": selectedSong.lyrics,
 			"video": selectedSong.video,
 		}, autoplay, multiplayer, touch)
+	}
+	startWeeklyChallenge(challenge, song) {
+		var touchEnabled = this.touchEnabled
+		var diff = "oni"
+		this.playBgm(false)
+		this.playSound("se_don", 0)
+		WeeklyChallenge.markRun(challenge, song)
+		this.clean()
+		new LoadSong({
+			"title": this.getLocalTitle(song.title, song.title_lang),
+			"originalTitle": song.title,
+			"folder": song.id,
+			"difficulty": diff,
+			"category": song.category,
+			"category_id": song.category_id,
+			"type": song.type,
+			"offset": song.offset,
+			"songSkin": song.song_skin || song.songSkin || {},
+			"stars": song.courses[diff].stars,
+			"hash": challenge.song_hash || song.hash || song.title,
+			"lyrics": song.lyrics,
+			"video": song.video,
+			"weeklyChallenge": {
+				"challenge_id": challenge.challenge_id
+			}
+		}, false, false, touchEnabled)
 	}
 	toOptions(moveBy) {
 		if (!p2.session) {
@@ -1591,6 +1645,7 @@ class SongSelect {
 		if (this.topSongs) {
 			this.topSongs.redraw()
 		}
+		this.weeklyChallenge.redraw()
 		this.uploadModal.redraw()
 		this.updateSearchButtonVisibility()
 
@@ -3536,6 +3591,7 @@ class SongSelect {
 		if (this.topSongs) {
 			this.topSongs.clean()
 		}
+		this.weeklyChallenge.clean()
 		this.uploadModal.clean()
 		if (this.siteMessages) {
 			this.siteMessages.clean()
@@ -3562,6 +3618,7 @@ class SongSelect {
 		if (this.topSongsEnabled) {
 			pageEvents.remove(this.topSongsButton, ["click", "touchend"])
 		}
+		pageEvents.remove(this.weeklyChallengeButton, ["click", "touchend"])
 		pageEvents.remove(p2, "message")
 		if (this.touchEnabled && fullScreenSupported) {
 			pageEvents.remove(this.touchFullBtn, "click")
@@ -3570,6 +3627,8 @@ class SongSelect {
 		delete this.searchButton
 		delete this.topSongsButton
 		delete this.topSongs
+		delete this.weeklyChallengeButton
+		delete this.weeklyChallenge
 		delete this.siteMessages
 		delete this.uploadModal
 		delete this.selectable

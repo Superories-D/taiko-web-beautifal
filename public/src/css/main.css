@@ -76,7 +76,8 @@
 	background-repeat: no-repeat;
 }
 #song-search-btn,
-#song-top10-btn{
+#song-top10-btn,
+#weekly-challenge-btn{
 	display: none;
 	position: absolute;
 	bottom: max(2vmin, 14px);
@@ -111,19 +112,25 @@
 	text-align: center;
 	letter-spacing: 0;
 }
+#weekly-challenge-btn{
+	right: max(32vmin, 292px);
+}
 #song-top10-btn span{
 	display: block;
 	transform: rotate(-6deg);
 	text-shadow: 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 #song-search-btn[hidden],
-#song-top10-btn[hidden]{
+#song-top10-btn[hidden],
+#weekly-challenge-btn[hidden]{
 	display: none !important;
 }
 #song-search-btn:hover,
 #song-search-btn:focus-visible,
 #song-top10-btn:hover,
-#song-top10-btn:focus-visible{
+#song-top10-btn:focus-visible,
+#weekly-challenge-btn:hover,
+#weekly-challenge-btn:focus-visible{
 	background-color: rgba(255, 249, 35, 0.35);
 	opacity: 1;
 	transform: scale(1.05);
@@ -133,6 +140,9 @@
 	display: block;
 }
 #song-select.top10-button-visible #song-top10-btn{
+	display: block;
+}
+#song-select.weekly-challenge-visible #weekly-challenge-btn{
 	display: block;
 }
 #site-message-button{

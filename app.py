@@ -309,6 +309,12 @@ db.leaderboard.create_index('username')
 db.site_messages.create_index([('active', 1), ('created_at', -1)])
 db.site_message_reads.create_index([('username', 1), ('message_id', 1)], unique=True)
 db.site_message_reads.create_index('message_id')
+db.weekly_challenges.create_index('challenge_id', unique=True)
+db.weekly_challenges.create_index('date_key', unique=True)
+db.weekly_challenges.create_index('week_key')
+db.weekly_challenge_scores.create_index([('week_key', 1), ('username', 1)], unique=True)
+db.weekly_challenge_scores.create_index([('week_key', 1), ('score_value', -1), ('updated_at', 1)])
+db.weekly_challenge_scores.create_index('week_start')
 
 VISIT_RETENTION_DAYS = 400
 VISIT_RETENTION_SECONDS = VISIT_RETENTION_DAYS * 24 * 60 * 60
@@ -2425,6 +2431,7 @@ def route_api_account_remove():
         return api_error('verify_password_invalid')
 
     db.scores.delete_many({'username': session.get('username')})
+    db.weekly_challenge_scores.delete_many({'username': session.get('username')})
     db.users.delete_one({'username': session.get('username')})
 
     session.clear()
@@ -2673,6 +2680,234 @@ def route_api_leaderboard_get():
         'status': 'ok',
         'leaderboard': result,
         'month': current_month
+    })
+
+
+def week_start_for(now=None):
+    now = now or datetime.utcnow()
+    return (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def week_key_for(now=None):
+    iso = (now or datetime.utcnow()).isocalendar()
+    return '{}-W{:02d}'.format(iso[0], iso[1])
+
+
+def weekly_challenge_cleanup(now=None):
+    now = now or datetime.utcnow()
+    keep_from = week_start_for(now) - timedelta(weeks=1)
+    db.weekly_challenge_scores.delete_many({'week_start': {'$lt': keep_from}})
+    db.weekly_challenges.delete_many({'week_start': {'$lt': keep_from}})
+
+
+def current_weekly_challenge(now=None):
+    now = now or datetime.utcnow()
+    weekly_challenge_cleanup(now)
+    date_key = now.strftime('%Y-%m-%d')
+    challenge = db.weekly_challenges.find_one({'date_key': date_key})
+    if challenge:
+        return challenge
+
+    candidates = list(db.songs.find({
+        'enabled': True,
+        'courses.oni': {'$exists': True, '$ne': None}
+    }).sort('id', 1))
+    if not candidates:
+        return None
+
+    seed = hashlib.sha256(('weekly-challenge:' + date_key).encode('utf-8')).digest()
+    song = candidates[int.from_bytes(seed[:8], 'big') % len(candidates)]
+    doc = {
+        'challenge_id': date_key,
+        'date_key': date_key,
+        'week_key': week_key_for(now),
+        'week_start': week_start_for(now),
+        'song_id': song['id'],
+        'song_hash': song.get('hash') or song.get('title') or str(song['id']),
+        'difficulty': 'oni',
+        'created_at': now
+    }
+    try:
+        db.weekly_challenges.update_one(
+            {'date_key': date_key},
+            {'$setOnInsert': doc},
+            upsert=True
+        )
+    except DuplicateKeyError:
+        pass
+    return db.weekly_challenges.find_one({'date_key': date_key})
+
+
+def serialize_challenge(challenge):
+    return {
+        'challenge_id': challenge.get('challenge_id'),
+        'date_key': challenge.get('date_key'),
+        'week_key': challenge.get('week_key'),
+        'song_id': challenge.get('song_id'),
+        'song_hash': challenge.get('song_hash'),
+        'difficulty': challenge.get('difficulty', 'oni')
+    }
+
+
+def challenge_board(week_key):
+    scores = db.weekly_challenge_scores.find({'week_key': week_key}).sort([
+        ('score_value', -1),
+        ('updated_at', 1)
+    ]).limit(100)
+    result = []
+    for i, score in enumerate(scores):
+        result.append({
+            'rank': i + 1,
+            'display_name': score.get('display_name', score.get('username', 'Anonymous')),
+            'score_value': score.get('score_value', 0),
+            'good': score.get('good', 0),
+            'ok': score.get('ok', 0),
+            'bad': score.get('bad', 0),
+            'max_combo': score.get('max_combo', 0),
+            'drumroll': score.get('drumroll', 0)
+        })
+    return result
+
+
+@app.route(basedir + 'api/weekly-challenge/current')
+@login_required
+def route_api_weekly_challenge_current():
+    challenge = current_weekly_challenge()
+    if not challenge:
+        return api_error('no_oni_songs')
+
+    song = db.songs.find_one({'id': challenge.get('song_id')})
+    if not song:
+        return api_error('challenge_song_missing')
+
+    return jsonify({
+        'status': 'ok',
+        'challenge': serialize_challenge(challenge),
+        'song': serialize_song(song)
+    })
+
+
+@app.route(basedir + 'api/weekly-challenge/leaderboards')
+@login_required
+def route_api_weekly_challenge_leaderboards():
+    now = datetime.utcnow()
+    challenge = current_weekly_challenge(now)
+    if not challenge:
+        return api_error('no_oni_songs')
+
+    previous_week = week_start_for(now) - timedelta(weeks=1)
+    previous_challenge = db.weekly_challenges.find_one(
+        {'week_key': week_key_for(previous_week)},
+        sort=[('date_key', -1)]
+    )
+
+    def challenge_payload(item):
+        if not item:
+            return None
+        song = db.songs.find_one({'id': item.get('song_id')})
+        payload = serialize_challenge(item)
+        payload['song'] = serialize_song(song) if song else None
+        payload['leaderboard'] = challenge_board(item.get('week_key'))
+        return payload
+
+    return jsonify({
+        'status': 'ok',
+        'current': challenge_payload(challenge),
+        'previous': challenge_payload(previous_challenge)
+    })
+
+
+def int_score_field(data, key):
+    try:
+        return max(0, int(data.get(key, 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+@app.route(basedir + 'api/weekly-challenge/submit', methods=['POST'])
+@login_required
+def route_api_weekly_challenge_submit():
+    data = request.get_json()
+    if not schema.validate(data, schema.weekly_challenge_submit):
+        return abort(400)
+
+    challenge = current_weekly_challenge()
+    if not challenge:
+        return api_error('no_oni_songs')
+
+    challenge_id = data.get('challenge_id')
+    song_hash = data.get('song_hash') or data.get('hash')
+    difficulty = data.get('difficulty')
+    if (
+        challenge_id != challenge.get('challenge_id') or
+        song_hash != challenge.get('song_hash') or
+        difficulty != challenge.get('difficulty')
+    ):
+        return api_error('challenge_not_active')
+
+    username = session.get('username')
+    user = db.users.find_one({'username': username})
+    if not user:
+        return api_error('not_logged_in')
+
+    score_value = int_score_field(data, 'score')
+    now = datetime.utcnow()
+    existing = db.weekly_challenge_scores.find_one({
+        'week_key': challenge.get('week_key'),
+        'username': username
+    })
+    if not existing or score_value > existing.get('score_value', 0):
+        db.weekly_challenge_scores.update_one({
+            'week_key': challenge.get('week_key'),
+            'username': username
+        }, {
+            '$set': {
+                'challenge_id': challenge_id,
+                'display_name': user.get('display_name') or username,
+                'score_value': score_value,
+                'good': int_score_field(data, 'good'),
+                'ok': int_score_field(data, 'ok'),
+                'bad': int_score_field(data, 'bad'),
+                'max_combo': int_score_field(data, 'max_combo'),
+                'drumroll': int_score_field(data, 'drumroll'),
+                'song_id': challenge.get('song_id'),
+                'song_hash': challenge.get('song_hash'),
+                'difficulty': challenge.get('difficulty'),
+                'updated_at': now
+            },
+            '$setOnInsert': {
+                'week_key': challenge.get('week_key'),
+                'week_start': challenge.get('week_start'),
+            }
+        }, upsert=True)
+
+    overflow = list(db.weekly_challenge_scores.find({
+        'week_key': challenge.get('week_key')
+    }).sort([
+        ('score_value', -1),
+        ('updated_at', 1)
+    ]).skip(100))
+    if overflow:
+        db.weekly_challenge_scores.delete_many({'_id': {'$in': [score['_id'] for score in overflow]}})
+
+    score_doc = db.weekly_challenge_scores.find_one({
+        'week_key': challenge.get('week_key'),
+        'username': username
+    })
+    rank = None
+    in_top_100 = False
+    if score_doc:
+        higher_count = db.weekly_challenge_scores.count_documents({
+            'week_key': challenge.get('week_key'),
+            'score_value': {'$gt': score_doc.get('score_value', 0)}
+        })
+        rank = higher_count + 1
+        in_top_100 = rank <= 100
+
+    return jsonify({
+        'status': 'ok',
+        'rank': rank,
+        'in_top_100': in_top_100
     })
 
 

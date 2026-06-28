@@ -1,5 +1,8 @@
 {% extends 'admin.html' %}
 {% block content %}
+{% macro metric(value) -%}
+{{ value if value is not none else '--' }}
+{%- endmacro %}
 {% if song.title_lang.en and song.title_lang.en != song.title %}
     <h1>{{ song.title_lang.en }} <small>({{ song.title }})</small> <small class="song-id">(ID: {{ song.id }})</small></h1>
 {% else %}
@@ -13,23 +16,23 @@
     <div class="admin-stats-grid admin-stats-grid-compact">
         <div class="admin-stat-card">
             <span>Total</span>
-            <strong>{{ song_stats.total }}</strong>
+            <strong>{{ metric(song_stats.total) }}</strong>
         </div>
         <div class="admin-stat-card">
             <span>Last hour</span>
-            <strong>{{ song_stats.periods.hour }}</strong>
+            <strong>{{ metric(song_stats.periods.hour) }}</strong>
         </div>
         <div class="admin-stat-card">
             <span>Today</span>
-            <strong>{{ song_stats.periods.day }}</strong>
+            <strong>{{ metric(song_stats.periods.day) }}</strong>
         </div>
         <div class="admin-stat-card">
             <span>This week</span>
-            <strong>{{ song_stats.periods.week }}</strong>
+            <strong>{{ metric(song_stats.periods.week) }}</strong>
         </div>
         <div class="admin-stat-card">
             <span>This month</span>
-            <strong>{{ song_stats.periods.month }}</strong>
+            <strong>{{ metric(song_stats.periods.month) }}</strong>
         </div>
     </div>
     {% if song_stats.recent_records %}

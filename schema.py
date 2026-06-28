@@ -66,17 +66,22 @@ scores_save = {
     'properties': {
         'scores': {
             'type': 'array',
+            'maxItems': 10000,
             'items': {'$ref': '#/definitions/score'}
         },
         'is_import': {'type': 'boolean'}
     },
+    'required': ['scores'],
+    'additionalProperties': False,
     'definitions': {
         'score': {
             'type': 'object',
             'properties': {
-                'hash': {'type': 'string'},
-                'score': {'type': 'string'}
-            }
+                'hash': {'type': 'string', 'minLength': 1, 'maxLength': 500},
+                'score': {'type': 'string', 'maxLength': 100000}
+            },
+            'required': ['hash', 'score'],
+            'additionalProperties': False
         }
     }
 }
@@ -85,12 +90,13 @@ playcount_record = {
     '$schema': 'http://json-schema.org/schema#',
     'type': 'object',
     'properties': {
-        'hash': {'type': 'string'},
-        'difficulty': {'type': 'string'},
-        'score': {'type': 'number'},
+        'hash': {'type': 'string', 'minLength': 1, 'maxLength': 500},
+        'difficulty': {'type': 'string', 'minLength': 1, 'maxLength': 32},
+        'score': {'type': 'number', 'minimum': 0, 'maximum': 1000000000},
         'is_auto': {'type': 'boolean'}
     },
-    'required': ['hash', 'difficulty', 'score', 'is_auto']
+    'required': ['hash', 'difficulty', 'score', 'is_auto'],
+    'additionalProperties': False
 }
 
 visit_record = {

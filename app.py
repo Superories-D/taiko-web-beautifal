@@ -8,6 +8,7 @@ try:
 except ModuleNotFoundError:
     raise FileNotFoundError('No such file or directory: \'config.py\'. Copy the example config file config.example.py to config.py')
 import json
+import math
 import re
 import requests
 import schema
@@ -16,9 +17,6 @@ import time
 import uuid
 from datetime import datetime, timedelta
 
-# -- カスタム --
-import traceback
-import pprint
 import pathlib
 import shutil
 from flask_limiter import Limiter
@@ -35,9 +33,10 @@ from flask_session import Session
 from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError
 from ffmpy import FFmpeg
 from bson import ObjectId
-from pymongo import MongoClient
+from pymongo import MongoClient, UpdateOne
 from pymongo.errors import DuplicateKeyError, PyMongoError
 from redis import Redis
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 
@@ -136,7 +135,7 @@ limiter_storage_uri = os.environ.get("REDIS_URI") or (
 )
 
 def get_remote_address() -> str:
-    return flask.request.headers.get("CF-Connecting-IP") or flask.request.headers.get("X-Forwarded-For") or flask.request.remote_addr or "127.0.0.1"
+    return flask.request.headers.get("CF-Connecting-IP") or flask.request.remote_addr or "127.0.0.1"
 
 limiter = Limiter(
     get_remote_address,
@@ -221,7 +220,8 @@ else:
 sess = Session()
 sess.init_app(app)
 app.jinja_env.globals.setdefault('csrf_token', generate_csrf)
-#csrf = CSRFProtect(app)
+app.config['WTF_CSRF_CHECK_DEFAULT'] = False
+csrf = CSRFProtect(app)
 
 db = client[take_config('MONGO', required=True)['database']]
 db.users.create_index('username', unique=True)
@@ -229,12 +229,14 @@ db.songs.create_index('id', unique=True)
 db.songs.create_index('hash')
 db.songs.create_index('song_type')
 db.scores.create_index('username')
+db.scores.create_index([('username', 1), ('hash', 1)])
 db.play_records.create_index('song_hash')
 db.play_records.create_index('played_at')
 db.play_records.create_index([('song_hash', 1), ('played_at', -1)])
 db.play_records.create_index([('played_at', -1), ('song_hash', 1)])
 db.song_play_counts.create_index([('play_count', -1), ('last_played_at', -1)])
 db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('score_value', -1)])
+db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('month', 1), ('score_value', -1)])
 db.leaderboard.create_index('username')
 db.site_messages.create_index([('active', 1), ('created_at', -1)])
 db.site_message_reads.create_index([('username', 1), ('message_id', 1)], unique=True)
@@ -284,6 +286,19 @@ SITE_MESSAGE_MAX_IMAGE_BYTES = 5 * 1024 * 1024
 SITE_MESSAGE_MAX_TITLE_LENGTH = 120
 SITE_MESSAGE_MAX_BODY_LENGTH = 5000
 SITE_MESSAGE_MAX_IMAGE_URL_LENGTH = 1000
+UPLOAD_TJA_MAX_BYTES = max(64 * 1024, min(env_int('TAIKO_WEB_UPLOAD_TJA_MAX_BYTES', 2 * 1024 * 1024), 10 * 1024 * 1024))
+UPLOAD_MUSIC_MAX_BYTES = max(1024 * 1024, min(env_int('TAIKO_WEB_UPLOAD_MUSIC_MAX_BYTES', 32 * 1024 * 1024), 128 * 1024 * 1024))
+UPLOAD_ALLOWED_MUSIC_TYPES = {'ogg', 'mp3'}
+UPLOAD_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = (
+    UPLOAD_TJA_MAX_BYTES +
+    UPLOAD_MUSIC_MAX_BYTES +
+    UPLOAD_MULTIPART_OVERHEAD_BYTES
+)
+
+
+class UploadValidationError(ValueError):
+    pass
 
 
 def object_id_or_404(value):
@@ -377,17 +392,52 @@ def song_display_title(song):
     return title_lang.get('en') or song.get('title') or 'Untitled'
 
 
-def song_period_counts(song_hash, periods):
-    counts = {}
+def song_period_counts_many(song_hashes, periods):
+    song_hashes = list(dict.fromkeys(
+        song_hash for song_hash in song_hashes if song_hash
+    ))
+    if not song_hashes:
+        return {}
+
+    empty_counts = {name: 0 for name in periods}
+    output = {
+        song_hash: dict(empty_counts)
+        for song_hash in song_hashes
+    }
+    group = {'_id': '$song_hash'}
     for name, start in periods.items():
-        try:
-            counts[name] = db.play_records.count_documents({
-                'song_hash': song_hash,
-                'played_at': {'$gte': start}
-            }, maxTimeMS=ADMIN_STATS_MAX_TIME_MS)
-        except PyMongoError:
-            counts[name] = None
-    return counts
+        group[name] = {
+            '$sum': {
+                '$cond': [{'$gte': ['$played_at', start]}, 1, 0]
+            }
+        }
+
+    try:
+        rows = db.play_records.aggregate([
+            {'$match': {
+                'song_hash': {'$in': song_hashes},
+                'played_at': {'$gte': min(periods.values())}
+            }},
+            {'$group': group}
+        ], maxTimeMS=ADMIN_STATS_MAX_TIME_MS, allowDiskUse=False)
+        for row in rows:
+            output[row['_id']] = {
+                name: row.get(name, 0)
+                for name in periods
+            }
+    except PyMongoError:
+        return {
+            song_hash: {name: None for name in periods}
+            for song_hash in song_hashes
+        }
+    return output
+
+
+def song_period_counts(song_hash, periods):
+    return song_period_counts_many([song_hash], periods).get(
+        song_hash,
+        {name: 0 for name in periods}
+    )
 
 
 def top_songs_cache_stale(cache_doc, now=None):
@@ -712,51 +762,85 @@ def mark_top_songs_cache_stale():
 
 
 def invalidate_song_derived_caches():
-    invalidate_public_songs_cache()
-    mark_top_songs_cache_stale()
+    try:
+        invalidate_public_songs_cache()
+    except Exception:
+        app.logger.exception('Failed to invalidate the public song cache')
+    try:
+        mark_top_songs_cache_stale()
+    except Exception:
+        app.logger.exception('Failed to mark the Top10 cache stale')
 
 
 def total_period_counts(collection, datetime_field, periods):
-    counts = {}
+    group = {'_id': None}
     for name, start in periods.items():
-        try:
-            counts[name] = collection.count_documents({
-                datetime_field: {'$gte': start}
-            }, maxTimeMS=ADMIN_STATS_MAX_TIME_MS)
-        except PyMongoError:
-            counts[name] = None
-    return counts
+        group[name] = {
+            '$sum': {
+                '$cond': [{'$gte': ['${}'.format(datetime_field), start]}, 1, 0]
+            }
+        }
+    try:
+        rows = list(collection.aggregate([
+            {'$match': {datetime_field: {'$gte': min(periods.values())}}},
+            {'$group': group}
+        ], maxTimeMS=ADMIN_STATS_MAX_TIME_MS, allowDiskUse=False))
+        row = rows[0] if rows else {}
+        return {name: row.get(name, 0) for name in periods}
+    except PyMongoError:
+        return {name: None for name in periods}
 
 
 def unique_visit_counts(periods):
-    counts = {}
+    totals = {'_id': None}
     for name, start in periods.items():
-        try:
-            pipeline = [
-                {'$match': {'entered_at': {'$gte': start}}},
-                {'$group': {'_id': '$visitor_key'}},
-                {'$count': 'count'}
-            ]
-            result = list(db.visit_records.aggregate(
-                pipeline,
-                maxTimeMS=ADMIN_STATS_MAX_TIME_MS,
-                allowDiskUse=False
-            ))
-            counts[name] = result[0]['count'] if result else 0
-        except PyMongoError:
-            counts[name] = None
-    return counts
+        totals[name] = {
+            '$sum': {
+                '$cond': [{'$gte': ['$last_entered_at', start]}, 1, 0]
+            }
+        }
+    try:
+        rows = list(db.visit_records.aggregate([
+            {'$match': {'entered_at': {'$gte': min(periods.values())}}},
+            {'$group': {
+                '_id': '$visitor_key',
+                'last_entered_at': {'$max': '$entered_at'}
+            }},
+            {'$group': totals}
+        ], maxTimeMS=ADMIN_STATS_MAX_TIME_MS, allowDiskUse=False))
+        row = rows[0] if rows else {}
+        return {name: row.get(name, 0) for name in periods}
+    except PyMongoError:
+        return {name: None for name in periods}
 
 
 def get_song_heat_rows(limit=30):
     limit = max(1, min(int(limit), 100))
     periods = utc_period_starts()
-    songs = list(db.songs.find({}))
+    count_docs = get_top_song_count_docs(limit)
+    song_hashes = [
+        item.get('song_hash')
+        for item in count_docs
+        if item.get('song_hash')
+    ]
+    song_ids = set(song_hashes)
+    song_ids.update(
+        song_id
+        for song_id in (safe_int_value(song_hash) for song_hash in song_hashes)
+        if song_id is not None
+    )
+    songs = list(db.songs.find({
+        '$or': [
+            {'hash': {'$in': song_hashes}},
+            {'id': {'$in': list(song_ids)}}
+        ]
+    })) if song_hashes else []
     songs_by_hash = {song.get('hash'): song for song in songs if song.get('hash')}
     songs_by_id = {str(song.get('id')): song for song in songs if song.get('id') is not None}
+    period_counts = song_period_counts_many(song_hashes, periods)
     rows = []
 
-    for item in get_top_song_count_docs(limit):
+    for item in count_docs:
         song_hash = item.get('song_hash')
         song = songs_by_hash.get(song_hash) or songs_by_id.get(str(song_hash))
         rows.append({
@@ -765,7 +849,10 @@ def get_song_heat_rows(limit=30):
             'song_hash': song_hash,
             'title': song_display_title(song),
             'total': item.get('play_count', 0),
-            'periods': song_period_counts(song_hash, periods)
+            'periods': period_counts.get(
+                song_hash,
+                {name: 0 for name in periods}
+            )
         })
 
     return rows
@@ -805,13 +892,27 @@ def get_admin_overview_stats():
 def get_admin_song_stats(song):
     periods = utc_period_starts()
     song_hash = song.get('hash') or str(song.get('id'))
+    try:
+        total = db.play_records.count_documents(
+            {'song_hash': song_hash},
+            maxTimeMS=ADMIN_STATS_MAX_TIME_MS
+        )
+    except PyMongoError:
+        total = None
+    try:
+        recent_records = list(
+            db.play_records.find({'song_hash': song_hash})
+            .sort('played_at', -1)
+            .limit(25)
+            .max_time_ms(ADMIN_STATS_MAX_TIME_MS)
+        )
+    except PyMongoError:
+        recent_records = []
     return {
         'song_hash': song_hash,
-        'total': db.play_records.count_documents({'song_hash': song_hash}),
+        'total': total,
         'periods': song_period_counts(song_hash, periods),
-        'recent_records': list(db.play_records.find(
-            {'song_hash': song_hash}
-        ).sort('played_at', -1).limit(25))
+        'recent_records': recent_records
     }
 
 BOARD_RETENTION_DAYS = 30
@@ -974,11 +1075,32 @@ def admin_required(level):
 
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):
-    return api_error('invalid_csrf')
+    return api_error('invalid_csrf'), 400
+
+
+@app.errorhandler(413)
+def handle_request_too_large(e):
+    if request.path.endswith('/api/upload'):
+        return jsonify({'success': False, 'error': 'upload_too_large'}), 413
+    return e
+
+
+@app.errorhandler(429)
+def handle_rate_limit(e):
+    if '/api/' in request.path:
+        return jsonify({'success': False, 'error': 'rate_limited'}), 429
+    return e
 
 
 @app.before_request
 def before_request_func():
+    endpoint = request.endpoint or ''
+    if (
+        request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and
+        (endpoint == 'route_secret_admin_login' or endpoint.startswith('route_admin_'))
+    ):
+        csrf.protect()
+
     username = session.get('username')
     session_id = session.get('session_id')
     if session_id:
@@ -1145,6 +1267,23 @@ def safe_int_value(value, default=None):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def route_song_id(value):
+    value = str(value)
+    return int(value) if re.fullmatch(r'\d+', value) else value
+
+
+def is_public_song_id(value):
+    value = str(value or '')
+    return bool(
+        re.fullmatch(r'[0-9]{1,9}', value) or
+        re.fullmatch(r'[a-f0-9]{64}-[a-f0-9]{64}', value)
+    )
+
+
+def find_song_by_route_id(value):
+    return db.songs.find_one({'id': route_song_id(value)})
 
 
 def safe_float_value(value, default=None):
@@ -1407,6 +1546,7 @@ def route_csrftoken():
 
 
 @app.route(basedir + 'api/visits/record', methods=['POST'])
+@limiter.limit("30 per hour")
 def route_api_visits_record():
     data = request.get_json(silent=True) or {}
     if not schema.validate(data, schema.visit_record):
@@ -1487,6 +1627,7 @@ def get_current_admin(min_level=50):
 
 
 @app.route(basedir + '1128admin1128', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", methods=["POST"])
 def route_secret_admin_login():
     if not FEATURE_ADMIN:
         return abort(404)
@@ -1656,10 +1797,10 @@ def route_admin_songs():
         songs=songs, song_groups=song_groups, admin=user, categories=categories, config=get_config())
 
 
-@app.route(basedir + 'admin/songs/<int:id>')
+@app.route(basedir + 'admin/songs/<song_id>')
 @admin_required(level=50)
-def route_admin_songs_id(id):
-    song = db.songs.find_one({'id': id})
+def route_admin_songs_id(song_id):
+    song = find_song_by_route_id(song_id)
     if not song:
         return abort(404)
     song = normalize_admin_song(song)
@@ -1738,12 +1879,13 @@ def route_admin_songs_new_post():
     return redirect(basedir + 'admin/songs/%s' % str(seq_new))
 
 
-@app.route(basedir + 'admin/songs/<int:id>', methods=['POST'])
+@app.route(basedir + 'admin/songs/<song_id>', methods=['POST'])
 @admin_required(level=50)
-def route_admin_songs_id_post(id):
-    song = db.songs.find_one({'id': id})
+def route_admin_songs_id_post(song_id):
+    song = find_song_by_route_id(song_id)
     if not song:
         return abort(404)
+    song_id = song.get('id')
 
     user = db.users.find_one({'username': session['username']})
     user_level = get_user_level(user)
@@ -1780,28 +1922,36 @@ def route_admin_songs_id_post(id):
     hash_error = False
     if request.form.get('gen_hash'):
         try:
-            output['hash'] = generate_hash(id, request.form)
+            output['hash'] = generate_hash(song_id, request.form)
         except HashException as e:
             hash_error = True
             flash('An error occurred: %s' % str(e), 'error')
     
-    db.songs.update_one({'id': id}, {'$set': output})
+    db.songs.update_one({'id': song_id}, {'$set': output})
     if not hash_error:
         flash('Changes saved.')
     invalidate_song_derived_caches()
     
-    return redirect(basedir + 'admin/songs/%s' % id)
+    return redirect(basedir + 'admin/songs/%s' % song_id)
 
 
-@app.route(basedir + 'admin/songs/<int:id>/remove', methods=['POST'])
-@limiter.limit("1 per day")
+@app.route(basedir + 'admin/songs/<song_id>/remove', methods=['POST'])
+@limiter.limit("30 per minute")
 @admin_required(level=100)
-def route_admin_songs_id_remove(id):
-    song = db.songs.find_one({'id': id})
+def route_admin_songs_id_remove(song_id):
+    song = find_song_by_route_id(song_id)
     if not song:
         return abort(404)
 
-    db.songs.delete_one({'id': id})
+    stored_song_id = song.get('id')
+    db.songs.delete_one({'id': stored_song_id})
+    if is_public_song_id(stored_song_id) and not str(stored_song_id).isdigit():
+        try:
+            song_path = song_storage_child(str(stored_song_id))
+            if song_path.exists() or song_path.is_symlink():
+                remove_song_storage_entry(song_path)
+        except Exception:
+            app.logger.exception('Failed to remove files for song %s', stored_song_id)
     invalidate_song_derived_caches()
     flash('Song removed.')
     return redirect(basedir + 'admin/songs')
@@ -1850,11 +2000,11 @@ def route_admin_users_post():
 @app.cache.cached(timeout=15, query_string=True)
 def route_api_preview():
     song_id = request.args.get('id', None)
-    if not song_id or not re.match('^[0-9]{1,9}$', song_id):
+    if not is_public_song_id(song_id):
         abort(400)
 
-    song_id = int(song_id)
-    song = db.songs.find_one({'id': song_id})
+    song_id = route_song_id(song_id)
+    song = db.songs.find_one({'id': song_id, 'enabled': True})
     if not song:
         abort(400)
     song = normalize_public_song(song)
@@ -1975,6 +2125,7 @@ def route_api_config():
 
 
 @app.route(basedir + 'api/register', methods=['POST'])
+@limiter.limit("5 per hour")
 def route_api_register():
     data = request.get_json()
     if not schema.validate(data, schema.register):
@@ -2016,6 +2167,7 @@ def route_api_register():
 
 
 @app.route(basedir + 'api/login', methods=['POST'])
+@limiter.limit("20 per minute")
 def route_api_login():
     data = request.get_json()
     if not schema.validate(data, schema.login):
@@ -2101,6 +2253,7 @@ def route_api_account_don():
 
 
 @app.route(basedir + 'api/account/password', methods=['POST'])
+@limiter.limit("5 per hour")
 @login_required
 def route_api_account_password():
     data = request.get_json()
@@ -2155,6 +2308,7 @@ def route_api_account_remove():
 
 
 @app.route(basedir + 'api/scores/save', methods=['POST'])
+@limiter.limit("30 per minute")
 @login_required
 def route_api_scores_save():
     data = request.get_json()
@@ -2165,14 +2319,24 @@ def route_api_scores_save():
     if data.get('is_import'):
         db.scores.delete_many({'username': username})
 
-    scores = data.get('scores', [])
-    for score in scores:
-        db.scores.update_one({'username': username, 'hash': score['hash']},
-        {'$set': {
-            'username': username,
-            'hash': score['hash'],
-            'score': score['score']
-        }}, upsert=True)
+    scores_by_hash = {
+        score['hash']: score['score']
+        for score in data.get('scores', [])
+    }
+    operations = [
+        UpdateOne(
+            {'username': username, 'hash': song_hash},
+            {'$set': {
+                'username': username,
+                'hash': song_hash,
+                'score': score
+            }},
+            upsert=True
+        )
+        for song_hash, score in scores_by_hash.items()
+    ]
+    if operations:
+        db.scores.bulk_write(operations, ordered=False)
 
     return jsonify({'status': 'ok'})
 
@@ -2206,6 +2370,7 @@ def route_api_scores_get():
 
 
 @app.route(basedir + 'api/playcount/record', methods=['POST'])
+@limiter.limit("120 per hour")
 def route_api_playcount_record():
     data = request.get_json()
     if not schema.validate(data, schema.playcount_record):
@@ -2229,26 +2394,44 @@ def route_api_playcount_record():
 
 
 @app.route(basedir + 'api/playcount/get')
+@limiter.limit("120 per minute")
 def route_api_playcount_get():
     song_hash = request.args.get('hash', None)
-    if not song_hash:
+    if not song_hash or len(song_hash) > 500:
         return abort(400)
 
-    # Get total play count for this song
-    play_count = db.play_records.count_documents({'song_hash': song_hash})
+    count_doc = db.song_play_counts.find_one(
+        {'_id': song_hash},
+        {'_id': False, 'play_count': True}
+    )
+    if count_doc:
+        play_count = count_doc.get('play_count', 0)
+    else:
+        try:
+            play_count = db.play_records.count_documents(
+                {'song_hash': song_hash},
+                maxTimeMS=ADMIN_STATS_MAX_TIME_MS
+            )
+        except PyMongoError:
+            play_count = 0
 
-    # Get weekly high score (non-auto mode only)
-    # Calculate the start of current week (Monday 00:00:00 UTC)
     today = datetime.utcnow()
     start_of_week = today - timedelta(days=today.weekday(), hours=today.hour, minutes=today.minute, seconds=today.second, microseconds=today.microsecond)
-    
-    weekly_records = list(db.play_records.find({
-        'song_hash': song_hash,
-        'is_auto': False,
-        'played_at': {'$gte': start_of_week}
-    }).sort('score', -1).limit(1))
-
-    weekly_high_score = weekly_records[0]['score'] if weekly_records else None
+    try:
+        weekly_rows = list(db.play_records.aggregate([
+            {'$match': {
+                'song_hash': song_hash,
+                'is_auto': False,
+                'played_at': {'$gte': start_of_week}
+            }},
+            {'$group': {
+                '_id': None,
+                'score': {'$max': '$score'}
+            }}
+        ], maxTimeMS=ADMIN_STATS_MAX_TIME_MS, allowDiskUse=False))
+        weekly_high_score = weekly_rows[0].get('score') if weekly_rows else None
+    except PyMongoError:
+        weekly_high_score = None
 
     return jsonify({
         'status': 'ok',
@@ -2258,55 +2441,63 @@ def route_api_playcount_get():
 
 
 @app.route(basedir + 'api/leaderboard/submit', methods=['POST'])
+@limiter.limit("30 per hour")
 def route_api_leaderboard_submit():
-    data = request.get_json()
-    if not data:
-        return abort(400)
-    
+    data = request.get_json(silent=True) or {}
     song_hash = data.get('hash')
     difficulty = data.get('difficulty')
-    score_value = data.get('score', 0)
     display_name = data.get('display_name', 'Anonymous')
-    
-    if not song_hash or not difficulty:
+    raw_score = data.get('score')
+
+    if not isinstance(song_hash, str) or not 1 <= len(song_hash) <= 500:
         return abort(400)
-    
+    if not isinstance(difficulty, str) or not 1 <= len(difficulty) <= 32:
+        return abort(400)
+    if not isinstance(display_name, str) or len(display_name) > 100:
+        return abort(400)
+    if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
+        return abort(400)
+    if not math.isfinite(raw_score) or raw_score < 0 or raw_score > 1000000000:
+        return abort(400)
+    score_value = int(raw_score)
+    if score_value != raw_score:
+        return abort(400)
+
     if not display_name or not display_name.strip():
         display_name = 'Anonymous'
-    
-    # Get current month for monthly reset
+
     current_month = datetime.utcnow().strftime('%Y-%m')
-    
-    # Insert new score (allow duplicate names)
-    result = db.leaderboard.insert_one({
+    db.leaderboard.insert_one({
         'song_hash': song_hash,
         'difficulty': difficulty,
-        'display_name': display_name.strip()[:20],  # Limit name length
+        'display_name': display_name.strip()[:20],
         'score_value': score_value,
         'month': current_month,
         'created_at': datetime.utcnow()
     })
-    
-    # Calculate rank
+
     higher_count = db.leaderboard.count_documents({
         'song_hash': song_hash,
         'difficulty': difficulty,
         'month': current_month,
         'score_value': {'$gt': score_value}
-    })
+    }, maxTimeMS=ADMIN_STATS_MAX_TIME_MS)
     rank = higher_count + 1
-    
-    # Keep only top 100 per song/difficulty/month
-    all_scores = list(db.leaderboard.find({
+
+    stale_scores = list(db.leaderboard.find({
         'song_hash': song_hash,
         'difficulty': difficulty,
         'month': current_month
-    }).sort('score_value', -1).skip(100))
-    
-    if all_scores:
-        ids_to_delete = [s['_id'] for s in all_scores]
+    }, {'_id': True})
+        .sort('score_value', -1)
+        .skip(100)
+        .limit(1000)
+        .max_time_ms(ADMIN_STATS_MAX_TIME_MS))
+
+    if stale_scores:
+        ids_to_delete = [score['_id'] for score in stale_scores]
         db.leaderboard.delete_many({'_id': {'$in': ids_to_delete}})
-    
+
     return jsonify({
         'status': 'ok',
         'rank': rank,
@@ -2315,26 +2506,32 @@ def route_api_leaderboard_submit():
 
 
 @app.route(basedir + 'api/leaderboard/get')
+@limiter.limit("120 per minute")
 def route_api_leaderboard_get():
     song_hash = request.args.get('hash')
     difficulty = request.args.get('difficulty')
-    
-    if not song_hash:
+
+    if not song_hash or len(song_hash) > 500:
         return abort(400)
-    
-    # Get current month for monthly leaderboard
+    if difficulty and len(difficulty) > 32:
+        return abort(400)
+
     current_month = datetime.utcnow().strftime('%Y-%m')
-    
+
     query = {
         'song_hash': song_hash,
         'month': current_month
     }
     if difficulty:
         query['difficulty'] = difficulty
-    
-    # Get top 100 scores
-    scores = list(db.leaderboard.find(query).sort('score_value', -1).limit(100))
-    
+
+    scores = list(
+        db.leaderboard.find(query)
+        .sort('score_value', -1)
+        .limit(100)
+        .max_time_ms(ADMIN_STATS_MAX_TIME_MS)
+    )
+
     result = []
     for i, score in enumerate(scores):
         result.append({
@@ -2421,94 +2618,255 @@ def send_notice_uploads(ref):
 def send_manifest():
     return cache_wrap(flask.send_from_directory("public", "manifest.json"), 3600)
 
+
+def read_limited_upload(upload, limit, error_code):
+    data = upload.stream.read(limit + 1)
+    if not data:
+        raise UploadValidationError('empty_file')
+    if len(data) > limit:
+        raise UploadValidationError(error_code)
+    return data
+
+
+def decode_uploaded_tja(data):
+    for encoding in ('utf-8-sig', 'cp932', 'shift_jis', 'euc-jp', 'iso-2022-jp'):
+        try:
+            return data.decode(encoding).replace('\r', '')
+        except UnicodeDecodeError:
+            continue
+    raise UploadValidationError('invalid_tja_encoding')
+
+
+def uploaded_music_type(filename):
+    suffix = pathlib.Path((filename or '').replace('\\', '/')).suffix.lower().lstrip('.')
+    if suffix not in UPLOAD_ALLOWED_MUSIC_TYPES:
+        raise UploadValidationError('unsupported_music_type')
+    return suffix
+
+
+def music_signature_matches(data, music_type):
+    if music_type == 'ogg':
+        return data.startswith(b'OggS')
+    if music_type == 'mp3':
+        if data.startswith(b'ID3'):
+            return True
+        scan = data[:4096]
+        return any(
+            scan[index] == 0xff and scan[index + 1] & 0xe0 == 0xe0
+            for index in range(max(0, len(scan) - 1))
+        )
+    return False
+
+
+def validate_uploaded_tja(tja, tja_text, music_type):
+    if not tja.title or len(tja.title) > 500:
+        raise UploadValidationError('invalid_tja_title')
+    if not any(tja.courses.values()):
+        raise UploadValidationError('missing_tja_courses')
+
+    normalized_lines = [line.strip().upper() for line in tja_text.splitlines()]
+    if not any(line.startswith('#START') for line in normalized_lines):
+        raise UploadValidationError('missing_tja_start')
+    if not any(line.startswith('#END') for line in normalized_lines):
+        raise UploadValidationError('missing_tja_end')
+
+    wave_type = pathlib.Path((tja.wave or '').replace('\\', '/')).suffix.lower().lstrip('.')
+    if wave_type and wave_type != music_type:
+        raise UploadValidationError('music_type_mismatch')
+
+
+def song_storage_child(name):
+    if not re.fullmatch(r'[A-Za-z0-9._-]+', name or ''):
+        raise ValueError('invalid song storage name')
+    root = SONGS_DIR.resolve()
+    child = root / name
+    if child.parent.resolve() != root:
+        raise ValueError('song storage path escaped its root')
+    return child
+
+
+def remove_song_storage_entry(path):
+    root = SONGS_DIR.resolve()
+    path = pathlib.Path(path)
+    if path.parent.resolve() != root:
+        raise ValueError('refusing to remove a path outside the song storage root')
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def fsync_directory(path):
+    try:
+        directory_fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(directory_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(directory_fd)
+
+
+def write_durable_file(path, data):
+    with path.open('xb') as output:
+        output.write(data)
+        output.flush()
+        os.fsync(output.fileno())
+
+
+def install_uploaded_song_files(song_id, music_type, tja_data, music_data):
+    if not re.fullmatch(r'[a-f0-9]{64}-[a-f0-9]{64}', song_id):
+        raise ValueError('invalid uploaded song id')
+
+    SONGS_DIR.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex
+    target = song_storage_child(song_id)
+    staged = song_storage_child('.upload-{}'.format(token))
+    backup = song_storage_child('.backup-{}'.format(token))
+    state = {'target': target, 'backup': None, 'installed': False}
+
+    try:
+        staged.mkdir()
+        write_durable_file(staged / 'main.tja', tja_data)
+        write_durable_file(staged / 'main.{}'.format(music_type), music_data)
+        if target.exists() or target.is_symlink():
+            target.replace(backup)
+            state['backup'] = backup
+        staged.replace(target)
+        state['installed'] = True
+        fsync_directory(SONGS_DIR.resolve())
+        return state
+    except Exception:
+        if staged.exists() or staged.is_symlink():
+            remove_song_storage_entry(staged)
+        if state['backup'] and (state['backup'].exists() or state['backup'].is_symlink()):
+            if target.exists() or target.is_symlink():
+                remove_song_storage_entry(target)
+            state['backup'].replace(target)
+        raise
+
+
+def rollback_uploaded_song_files(state):
+    target = state['target']
+    backup = state.get('backup')
+    if state.get('installed') and (target.exists() or target.is_symlink()):
+        remove_song_storage_entry(target)
+    if backup and (backup.exists() or backup.is_symlink()):
+        backup.replace(target)
+    fsync_directory(SONGS_DIR.resolve())
+
+
+def finalize_uploaded_song_files(state):
+    backup = state.get('backup')
+    if backup and (backup.exists() or backup.is_symlink()):
+        remove_song_storage_entry(backup)
+        fsync_directory(SONGS_DIR.resolve())
+
+
+def process_song_upload():
+    try:
+        if 'file_tja' not in request.files or 'file_music' not in request.files:
+            raise UploadValidationError('missing_files')
+
+        file_tja = request.files['file_tja']
+        file_music = request.files['file_music']
+        if not file_tja.filename or not file_music.filename:
+            raise UploadValidationError('empty_filename')
+        if pathlib.Path(file_tja.filename.replace('\\', '/')).suffix.lower() != '.tja':
+            raise UploadValidationError('unsupported_chart_type')
+
+        raw_tja_data = read_limited_upload(
+            file_tja,
+            UPLOAD_TJA_MAX_BYTES,
+            'tja_too_large'
+        )
+        music_data = read_limited_upload(
+            file_music,
+            UPLOAD_MUSIC_MAX_BYTES,
+            'music_too_large'
+        )
+        music_type = uploaded_music_type(file_music.filename)
+        if not music_signature_matches(music_data, music_type):
+            raise UploadValidationError('invalid_music_file')
+
+        tja_text = decode_uploaded_tja(raw_tja_data)
+        if '\x00' in tja_text:
+            raise UploadValidationError('invalid_tja_content')
+        tja = tjaf.Tja(tja_text)
+        validate_uploaded_tja(tja, tja_text, music_type)
+
+        song_type = request.form.get('song_type')
+        if song_type != CUSTOM_CATEGORY['title']:
+            raise UploadValidationError('invalid_song_type')
+
+        tja_data = tja_text.encode('utf-8')
+        tja_hash = hashlib.sha256(tja_data).hexdigest()
+        music_hash = hashlib.sha256(music_data).hexdigest()
+        generated_id = '{}-{}'.format(tja_hash, music_hash)
+
+        db_entry = tja.to_mongo(generated_id, time.time_ns())
+        db_entry.update({
+            'enabled': True,
+            'hash': generated_id,
+            'music_type': music_type,
+            'song_type': song_type,
+            'uploaded_at': datetime.utcnow(),
+            'upload_source': 'web_upload'
+        })
+
+        file_state = install_uploaded_song_files(
+            generated_id,
+            music_type,
+            tja_data,
+            music_data
+        )
+        try:
+            result = db.songs.update_one(
+                {'id': generated_id},
+                {'$setOnInsert': db_entry},
+                upsert=True
+            )
+        except Exception:
+            rollback_uploaded_song_files(file_state)
+            raise
+
+        try:
+            finalize_uploaded_song_files(file_state)
+        except Exception:
+            app.logger.exception('Failed to remove an upload backup for %s', generated_id)
+
+        created = result.upserted_id is not None
+        if created:
+            try:
+                invalidate_song_derived_caches()
+            except Exception:
+                app.logger.exception('Failed to invalidate song caches after upload %s', generated_id)
+
+        return jsonify({
+            'success': True,
+            'id': generated_id,
+            'created': created
+        }), 201 if created else 200
+    except UploadValidationError as error:
+        return jsonify({'success': False, 'error': str(error)}), 400
+    except RequestEntityTooLarge:
+        raise
+    except Exception:
+        app.logger.exception('Song upload failed')
+        return jsonify({'success': False, 'error': 'upload_failed'}), 500
+
+
 @app.route("/upload/", defaults={"ref": "index.html"})
 @app.route("/upload/<path:ref>")
 def send_upload(ref):
     return cache_wrap(flask.send_from_directory("public/upload", ref), 3600)
 
 @app.route("/api/upload", methods=["POST"])
+@limiter.limit("5 per hour")
 def upload_file():
-    try:
-        # POSTリクエストにファイルの部分がない場合
-        if 'file_tja' not in flask.request.files or 'file_music' not in flask.request.files:
-            return flask.jsonify({'error': 'リクエストにファイルの部分がありません'})
-
-        file_tja = flask.request.files['file_tja']
-        file_music = flask.request.files['file_music']
-
-        # ファイルが選択されておらず空のファイルを受け取った場合
-        if file_tja.filename == '' or file_music.filename == '':
-            return flask.jsonify({'error': 'ファイルが選択されていません'})
-
-        # TJAファイルをテキストUTF-8/LFに変換
-        tja_data = file_tja.read()
-        # 尝试检测编码并转换为UTF-8
-        try:
-            # 首先尝试UTF-8解码
-            tja_text = tja_data.decode("utf-8")
-        except UnicodeDecodeError:
-            # 如果UTF-8失败，尝试其他常见编码
-            for encoding in ['shift_jis', 'euc-jp', 'iso-2022-jp', 'cp932']:
-                try:
-                    tja_text = tja_data.decode(encoding)
-                    break
-                except UnicodeDecodeError:
-                    continue
-            else:
-                # 如果所有编码都失败，使用错误处理
-                tja_text = tja_data.decode("utf-8", errors="replace")
-        
-        # 删除回车符（CR），只保留换行符（LF）
-        tja_text = tja_text.replace('\r', '')
-        print("TJAのサイズ:",len(tja_text))
-        # TJAファイルの内容を解析
-        tja = tjaf.Tja(tja_text)
-        # TJAファイルのハッシュ値を生成
-        msg = hashlib.sha256()
-        msg.update(tja_data)
-        tja_hash = msg.hexdigest()
-        print("TJA:",tja_hash)
-        # 音楽ファイルのハッシュ値を生成
-        music_data = file_music.read()
-        msg2 = hashlib.sha256()
-        msg2.update(music_data)
-        music_hash = msg2.hexdigest()
-        print("音楽:",music_hash)
-        # IDを生成
-        generated_id = f"{tja_hash}-{music_hash}"
-        # MongoDBのデータも作成
-        db_entry = tja.to_mongo(generated_id, time.time_ns())
-        # アップロード直後に有効化
-        db_entry['enabled'] = True
-        pprint.pprint(db_entry)
-
-        # 必要な歌曲类型
-        song_type = flask.request.form.get('song_type')
-        if not song_type or song_type not in SONG_TYPES:
-            return flask.jsonify({'error': 'invalid_song_type'})
-        db_entry['song_type'] = song_type
-
-        # mongoDBにデータをぶち込む（重複IDは部分更新で上書きし、_id を不変に保つ）
-        coll = db.songs
-        try:
-            coll.insert_one(db_entry)
-        except DuplicateKeyError:
-            coll.update_one({"id": db_entry["id"]}, {"$set": db_entry}, upsert=True)
-        invalidate_song_derived_caches()
-
-        SONGS_DIR.mkdir(parents=True, exist_ok=True)
-        target_dir = SONGS_DIR / generated_id
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        # TJAを保存
-        (target_dir / "main.tja").write_bytes(tja_data)
-        # 曲ファイルも保存
-        (target_dir / f"main.{db_entry['music_type']}").write_bytes(music_data)
-    except Exception as e:
-        error_str = ''.join(traceback.TracebackException.from_exception(e).format())
-        return flask.jsonify({'error': error_str})
-
-    return flask.jsonify({'success': True})
+    return process_song_upload()
 
 @app.route("/api/remove", methods=["POST"])
 def remove():

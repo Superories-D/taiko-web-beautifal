@@ -1,6 +1,51 @@
 {% extends 'admin.html' %}
 {% block content %}
-<h1>Overview</h1>
+<div class="admin-page-header">
+    <div>
+        <h1>Overview</h1>
+        <p class="admin-kicker">Live service health and play activity</p>
+    </div>
+    <form method="post" action="{{config.basedir}}admin/top-songs/refresh" class="admin-inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="side-button">Refresh Top10</button>
+    </form>
+</div>
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div class="message{% if category == 'error' %} message-error{% endif %}">{{ message }}</div>
+{% endfor %}
+
+{% set top_cache = stats.top_songs_cache %}
+<div class="admin-cache-card{% if top_cache.last_error %} has-error{% elif top_cache.stale or top_cache.needs_backfill %} is-stale{% endif %}">
+    <div>
+        <span>Top10 cache</span>
+        <strong>
+            {% if top_cache.refreshing %}
+            Refreshing
+            {% elif top_cache.needs_backfill %}
+            Needs backfill
+            {% elif top_cache.stale %}
+            Stale
+            {% else %}
+            Ready
+            {% endif %}
+        </strong>
+    </div>
+    <div>
+        <span>Rows</span>
+        <strong>{{ top_cache.rows_count }}</strong>
+    </div>
+    <div>
+        <span>Updated</span>
+        <strong>{{ top_cache.updated_at or 'Never' }}</strong>
+    </div>
+    <div>
+        <span>Last refresh</span>
+        <strong>{% if top_cache.last_refresh_ms is not none %}{{ top_cache.last_refresh_ms }} ms{% else %}--{% endif %}</strong>
+    </div>
+    {% if top_cache.last_error %}
+    <p>{{ top_cache.last_error }}</p>
+    {% endif %}
+</div>
 
 <div class="admin-stats-grid">
     <div class="admin-stat-card">

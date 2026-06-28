@@ -12,10 +12,11 @@
     <body>
         <header>
             <div class="nav">
-                <a href="{{config.basedir}}admin/overview">Overview</a>
-                <a href="{{config.basedir}}admin/messages">Messages</a>
-                <a href="{{config.basedir}}admin/songs">Songs</a>
-                <a href="{{config.basedir}}admin/users">Users</a>
+                <div class="admin-brand">Taiko Admin</div>
+                <a href="{{config.basedir}}admin/overview"{% if request.path.endswith('/admin/overview') %} class="active"{% endif %}>Overview</a>
+                <a href="{{config.basedir}}admin/messages"{% if '/admin/messages' in request.path %} class="active"{% endif %}>Messages</a>
+                <a href="{{config.basedir}}admin/songs"{% if '/admin/songs' in request.path %} class="active"{% endif %}>Songs</a>
+                <a href="{{config.basedir}}admin/users"{% if '/admin/users' in request.path %} class="active"{% endif %}>Users</a>
             </div>
         </header>
         

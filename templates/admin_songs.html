@@ -1,33 +1,59 @@
 {% extends 'admin.html' %}
 {% block content %}
-{% if admin.user_level >= 100 %}
-<a href="{{config.basedir}}admin/songs/new" class="side-button">New song</a>
-{% endif %}
-<h1>Songs</h1>
+<div class="admin-page-header">
+    <div>
+        <h1>Songs</h1>
+        <p class="admin-kicker">{{ songs|length }} songs across {{ song_groups|length }} categories</p>
+    </div>
+    {% if admin.user_level|default(0, true) >= 100 %}
+    <a href="{{config.basedir}}admin/songs/new" class="side-button">New song</a>
+    {% endif %}
+</div>
 {% for message in get_flashed_messages() %}
 <div class="message">{{ message }}</div>
 {% endfor %}
-{% for song in songs %}
-    {% if song.id is not none %}
-    <a href="{{config.basedir}}admin/songs/{{ song.id }}" class="song-link">
-    {% else %}
-    <div class="song-link">
-    {% endif %}
-        <div class="song">
-            {% if song.title_lang.en and song.title_lang.en != song.title %}
-                <p><span class="song-id">{{ song.id }}.</span>
-                {% if not song.enabled %}(Not enabled){% endif %}
-                {{ song.title_lang.en }} <small>({{ song.title }})</small></p>
+
+<div class="song-category-list">
+{% for group in song_groups %}
+    <section class="song-category-section">
+        <header class="song-category-header">
+            <div>
+                <h2>{{ group.title }}</h2>
+                <span>{{ group.songs|length }} songs</span>
+            </div>
+            <strong>{{ group.enabled_count }} enabled</strong>
+        </header>
+
+        <div class="song-list">
+        {% for song in group.songs %}
+            {% set song_title = song.title_lang.en if song.title_lang.en and song.title_lang.en != song.title else song.title %}
+            {% if song.id is not none %}
+            <a href="{{config.basedir}}admin/songs/{{ song.id }}" class="song-row{% if not song.enabled %} is-disabled{% endif %}">
             {% else %}
-                <p><span class="song-id">{{ song.id }}.</span>
-                {% if not song.enabled %}(Not enabled){% endif %}
-                {{ song.title }}</p>
+            <div class="song-row is-disabled">
             {% endif %}
+                <span class="song-row-id">#{{ song.id or '?' }}</span>
+                <span class="song-row-main">
+                    <strong>{{ song_title }}</strong>
+                    {% if song.title_lang.en and song.title_lang.en != song.title %}
+                    <small>{{ song.title }}</small>
+                    {% elif song.subtitle %}
+                    <small>{{ song.subtitle }}</small>
+                    {% endif %}
+                </span>
+                <span class="song-row-meta">
+                    {% if song.enabled %}Enabled{% else %}Hidden{% endif %}
+                </span>
+            {% if song.id is not none %}
+            </a>
+            {% else %}
+            </div>
+            {% endif %}
+        {% endfor %}
         </div>
-    {% if song.id is not none %}
-    </a>
-    {% else %}
-    </div>
-    {% endif %}
+    </section>
+{% else %}
+    <div class="admin-message empty-message">No songs yet.</div>
 {% endfor %}
+</div>
 {% endblock %}

@@ -36,7 +36,7 @@ from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError
 from ffmpy import FFmpeg
 from bson import ObjectId
 from pymongo import MongoClient
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 from redis import Redis
 from werkzeug.utils import secure_filename
 
@@ -66,6 +66,13 @@ def env_flag(name, default=True):
     if value is None:
         return default
     return value.strip().lower() not in ('0', 'false', 'no', 'off', '')
+
+
+def env_int(name, default):
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
 
 
 app = Flask(__name__)
@@ -219,11 +226,13 @@ app.jinja_env.globals.setdefault('csrf_token', generate_csrf)
 db = client[take_config('MONGO', required=True)['database']]
 db.users.create_index('username', unique=True)
 db.songs.create_index('id', unique=True)
+db.songs.create_index('hash')
 db.songs.create_index('song_type')
 db.scores.create_index('username')
 db.play_records.create_index('song_hash')
 db.play_records.create_index('played_at')
 db.play_records.create_index([('song_hash', 1), ('played_at', -1)])
+db.song_play_counts.create_index([('play_count', -1), ('last_played_at', -1)])
 db.leaderboard.create_index([('song_hash', 1), ('difficulty', 1), ('score_value', -1)])
 db.leaderboard.create_index('username')
 db.site_messages.create_index([('active', 1), ('created_at', -1)])
@@ -234,6 +243,14 @@ VISIT_RETENTION_DAYS = 400
 VISIT_RETENTION_SECONDS = VISIT_RETENTION_DAYS * 24 * 60 * 60
 VISIT_ENTERED_AT_INDEX = 'entered_at_1'
 PUBLIC_TOP_SONGS_CACHE_SECONDS = 30
+TOP_SONGS_CACHE_KEY = 'public_top_songs'
+TOP_SONGS_REFRESH_LOCK_KEY = 'public_top_songs_refresh_lock'
+TOP_SONGS_BACKFILL_KEY = 'song_play_counts_backfilled'
+TOP_SONGS_CACHE_DAYS = max(1, env_int('TAIKO_WEB_TOP_SONGS_CACHE_DAYS', 1))
+TOP_SONGS_CACHE_MAX_ROWS = max(10, min(env_int('TAIKO_WEB_TOP_SONGS_CACHE_ROWS', 50), 200))
+TOP_SONGS_REFRESH_LOCK_SECONDS = max(60, env_int('TAIKO_WEB_TOP_SONGS_REFRESH_LOCK_SECONDS', 900))
+TOP_SONGS_SORT_MAX_TIME_MS = max(1000, env_int('TAIKO_WEB_TOP_SONGS_SORT_MAX_TIME_MS', 2000))
+TOP_SONGS_BACKFILL_MAX_TIME_MS = max(1000, env_int('TAIKO_WEB_TOP_SONGS_BACKFILL_MAX_TIME_MS', 5000))
 
 
 def ensure_visit_record_indexes():
@@ -365,6 +382,305 @@ def song_period_counts(song_hash, periods):
     return counts
 
 
+def top_songs_cache_stale(cache_doc, now=None):
+    if not cache_doc:
+        return True
+    rows = cache_doc.get('rows')
+    updated_at = cache_doc.get('updated_at')
+    if not isinstance(rows, list) or not updated_at:
+        return True
+    now = now or datetime.utcnow()
+    return updated_at <= now - timedelta(days=TOP_SONGS_CACHE_DAYS)
+
+
+def get_top_songs_cache_doc():
+    return db.top_song_cache.find_one({'_id': TOP_SONGS_CACHE_KEY}) or {}
+
+
+def acquire_top_songs_refresh_lock():
+    now = datetime.utcnow()
+    token = uuid.uuid4().hex
+    lock_until = now + timedelta(seconds=TOP_SONGS_REFRESH_LOCK_SECONDS)
+    try:
+        result = db.top_song_cache.update_one(
+            {
+                '_id': TOP_SONGS_REFRESH_LOCK_KEY,
+                '$or': [
+                    {'locked_until': {'$lte': now}},
+                    {'locked_until': {'$exists': False}}
+                ]
+            },
+            {'$set': {
+                'token': token,
+                'started_at': now,
+                'locked_until': lock_until
+            }},
+            upsert=True
+        )
+        if result.upserted_id or result.modified_count:
+            return token
+    except DuplicateKeyError:
+        return None
+    return None
+
+
+def release_top_songs_refresh_lock(token):
+    if token:
+        db.top_song_cache.delete_one({
+            '_id': TOP_SONGS_REFRESH_LOCK_KEY,
+            'token': token
+        })
+
+
+def top_songs_refreshing(now=None):
+    now = now or datetime.utcnow()
+    lock = db.top_song_cache.find_one({'_id': TOP_SONGS_REFRESH_LOCK_KEY}) or {}
+    return bool(lock.get('locked_until') and lock.get('locked_until') > now)
+
+
+def song_play_counts_empty():
+    return not db.song_play_counts.find_one({}, {'_id': True})
+
+
+def play_records_exist():
+    return bool(db.play_records.find_one({}, {'_id': True}))
+
+
+def song_play_counts_backfill_done():
+    return bool(db.top_song_cache.find_one({'_id': TOP_SONGS_BACKFILL_KEY}, {'_id': True}))
+
+
+def mark_song_play_counts_backfilled(status):
+    db.top_song_cache.update_one(
+        {'_id': TOP_SONGS_BACKFILL_KEY},
+        {'$set': {
+            'status': status,
+            'updated_at': datetime.utcnow()
+        }},
+        upsert=True
+    )
+
+
+def backfill_song_play_counts_if_needed():
+    if song_play_counts_backfill_done():
+        return 'ready'
+    if not play_records_exist():
+        mark_song_play_counts_backfilled('empty')
+        return 'empty'
+
+    list(db.play_records.aggregate([
+        {'$match': {'song_hash': {'$nin': [None, '']}}},
+        {'$group': {
+            '_id': '$song_hash',
+            'song_hash': {'$first': '$song_hash'},
+            'play_count': {'$sum': 1},
+            'last_played_at': {'$max': '$played_at'}
+        }},
+        {'$merge': {
+            'into': 'song_play_counts',
+            'on': '_id',
+            'whenMatched': 'replace',
+            'whenNotMatched': 'insert'
+        }}
+    ], allowDiskUse=True, maxTimeMS=TOP_SONGS_BACKFILL_MAX_TIME_MS))
+    mark_song_play_counts_backfilled('backfilled')
+    return 'backfilled'
+
+
+def get_top_song_count_docs(limit, multiplier=1):
+    limit = max(1, min(int(limit), 200))
+    cursor = db.song_play_counts.find(
+        {'song_hash': {'$nin': [None, '']}},
+        {'_id': False, 'song_hash': True, 'play_count': True, 'last_played_at': True}
+    ).sort([
+        ('play_count', -1),
+        ('last_played_at', -1)
+    ]).hint([
+        ('play_count', -1),
+        ('last_played_at', -1)
+    ]).limit(limit * max(1, multiplier)).max_time_ms(TOP_SONGS_SORT_MAX_TIME_MS)
+    return list(cursor)
+
+
+def build_public_top_songs_cache_rows(limit=TOP_SONGS_CACHE_MAX_ROWS):
+    count_docs = get_top_song_count_docs(limit, multiplier=20)
+    song_hashes = [item.get('song_hash') for item in count_docs if item.get('song_hash')]
+    song_ids = set()
+    for song_hash in song_hashes:
+        song_ids.add(song_hash)
+        song_id = safe_int_value(song_hash)
+        if song_id is not None:
+            song_ids.add(song_id)
+
+    if not song_hashes and not song_ids:
+        return []
+
+    songs = list(db.songs.find(
+        {
+            'enabled': True,
+            '$or': [
+                {'hash': {'$in': song_hashes}},
+                {'id': {'$in': list(song_ids)}}
+            ]
+        },
+        {
+            '_id': False,
+            'id': True,
+            'hash': True,
+            'title': True,
+            'title_lang': True,
+            'subtitle': True,
+            'subtitle_lang': True,
+            'category_id': True,
+            'song_type': True
+        }
+    ))
+    songs_by_hash = {song.get('hash'): song for song in songs if song.get('hash')}
+    songs_by_id = {str(song.get('id')): song for song in songs if song.get('id') is not None}
+
+    rows = []
+    for item in count_docs:
+        song_hash = item.get('song_hash')
+        song = songs_by_hash.get(song_hash) or songs_by_id.get(str(song_hash))
+        if not song:
+            continue
+
+        rows.append({
+            'rank': len(rows) + 1,
+            'song_id': song.get('id'),
+            'song_hash': song.get('hash') or song_hash,
+            'title': song.get('title') or '',
+            'title_lang': safe_lang_map(song.get('title_lang')),
+            'subtitle': song.get('subtitle') or '',
+            'subtitle_lang': safe_lang_map(song.get('subtitle_lang')),
+            'category_id': song.get('category_id'),
+            'song_type': song.get('song_type') or '',
+            'play_count': item.get('play_count', 0)
+        })
+        if len(rows) >= limit:
+            break
+
+    return rows
+
+
+def refresh_top_songs_cache(force=False, requested_by=None, allow_backfill=True):
+    cache_doc = get_top_songs_cache_doc()
+    if not force and not top_songs_cache_stale(cache_doc):
+        return {'status': 'fresh', 'rows_count': len(cache_doc.get('rows') or [])}
+
+    token = acquire_top_songs_refresh_lock()
+    if not token:
+        return {'status': 'busy', 'rows_count': len(cache_doc.get('rows') or [])}
+
+    started = time.monotonic()
+    try:
+        cache_doc = get_top_songs_cache_doc()
+        if not force and not top_songs_cache_stale(cache_doc):
+            return {'status': 'fresh', 'rows_count': len(cache_doc.get('rows') or [])}
+
+        backfill_status = 'skipped'
+        if allow_backfill:
+            backfill_status = backfill_song_play_counts_if_needed()
+        elif not song_play_counts_backfill_done():
+            if play_records_exist():
+                now = datetime.utcnow()
+                rows = cache_doc.get('rows') if isinstance(cache_doc.get('rows'), list) else []
+                db.top_song_cache.update_one(
+                    {'_id': TOP_SONGS_CACHE_KEY},
+                    {'$set': {
+                        'rows': rows,
+                        'updated_at': now,
+                        'expires_at': now + timedelta(days=TOP_SONGS_CACHE_DAYS),
+                        'status': 'needs_backfill',
+                        'last_backfill_status': 'needed',
+                        'requested_by': requested_by or 'auto'
+                    }},
+                    upsert=True
+                )
+                return {'status': 'needs_backfill', 'rows_count': len(cache_doc.get('rows') or [])}
+            mark_song_play_counts_backfilled('empty')
+
+        rows = build_public_top_songs_cache_rows(TOP_SONGS_CACHE_MAX_ROWS)
+        now = datetime.utcnow()
+        refresh_ms = int((time.monotonic() - started) * 1000)
+        db.top_song_cache.update_one(
+            {'_id': TOP_SONGS_CACHE_KEY},
+            {'$set': {
+                'rows': rows,
+                'updated_at': now,
+                'expires_at': now + timedelta(days=TOP_SONGS_CACHE_DAYS),
+                'status': 'ready',
+                'last_error': None,
+                'last_error_at': None,
+                'last_refresh_ms': refresh_ms,
+                'last_backfill_status': backfill_status,
+                'requested_by': requested_by or 'auto'
+            }},
+            upsert=True
+        )
+        return {
+            'status': 'updated',
+            'rows_count': len(rows),
+            'refresh_ms': refresh_ms,
+            'backfill_status': backfill_status
+        }
+    except PyMongoError as exc:
+        now = datetime.utcnow()
+        message = str(exc)[:240]
+        db.top_song_cache.update_one(
+            {'_id': TOP_SONGS_CACHE_KEY},
+            {'$set': {
+                'status': 'error',
+                'last_error': message,
+                'last_error_at': now,
+                'requested_by': requested_by or 'auto'
+            }},
+            upsert=True
+        )
+        return {'status': 'error', 'error': message, 'rows_count': len(cache_doc.get('rows') or [])}
+    finally:
+        release_top_songs_refresh_lock(token)
+
+
+def get_top_songs_cache_status():
+    cache_doc = get_top_songs_cache_doc()
+    rows = cache_doc.get('rows') if isinstance(cache_doc.get('rows'), list) else []
+    updated_at = cache_doc.get('updated_at')
+    needs_backfill = (
+        not song_play_counts_backfill_done() and
+        play_records_exist()
+    )
+    return {
+        'updated_at': updated_at,
+        'expires_at': cache_doc.get('expires_at'),
+        'rows_count': len(rows),
+        'stale': top_songs_cache_stale(cache_doc),
+        'refreshing': top_songs_refreshing(),
+        'needs_backfill': needs_backfill,
+        'status': cache_doc.get('status') or 'missing',
+        'last_error': cache_doc.get('last_error'),
+        'last_error_at': cache_doc.get('last_error_at'),
+        'last_refresh_ms': cache_doc.get('last_refresh_ms'),
+        'last_backfill_status': cache_doc.get('last_backfill_status')
+    }
+
+
+def record_song_play_count(song_hash, played_at):
+    if not song_hash:
+        return
+    try:
+        db.song_play_counts.update_one(
+            {'_id': song_hash},
+            {
+                '$set': {'song_hash': song_hash, 'last_played_at': played_at},
+                '$inc': {'play_count': 1}
+            },
+            upsert=True
+        )
+    except PyMongoError:
+        pass
+
+
 def total_period_counts(collection, datetime_field, periods):
     counts = {}
     for name, start in periods.items():
@@ -391,13 +707,8 @@ def get_song_heat_rows(limit=30):
     songs_by_id = {str(song.get('id')): song for song in songs if song.get('id') is not None}
     rows = []
 
-    grouped = db.play_records.aggregate([
-        {'$group': {'_id': '$song_hash', 'play_count': {'$sum': 1}}},
-        {'$sort': {'play_count': -1}},
-        {'$limit': limit}
-    ])
-    for item in grouped:
-        song_hash = item.get('_id')
+    for item in get_top_song_count_docs(limit):
+        song_hash = item.get('song_hash')
         song = songs_by_hash.get(song_hash) or songs_by_id.get(str(song_hash))
         rows.append({
             'song': song,
@@ -417,57 +728,10 @@ def get_public_top_songs(limit=10):
     except (TypeError, ValueError):
         limit = 10
 
-    songs = list(db.songs.find(
-        {'enabled': True},
-        {
-            '_id': False,
-            'id': True,
-            'hash': True,
-            'title': True,
-            'title_lang': True,
-            'subtitle': True,
-            'subtitle_lang': True,
-            'category_id': True,
-            'song_type': True
-        }
-    ))
-    songs_by_hash = {song.get('hash'): song for song in songs if song.get('hash')}
-    songs_by_id = {str(song.get('id')): song for song in songs if song.get('id') is not None}
-
-    rows = []
-    grouped = db.play_records.aggregate([
-        {'$match': {'song_hash': {'$nin': [None, '']}}},
-        {'$group': {
-            '_id': '$song_hash',
-            'play_count': {'$sum': 1},
-            'last_played_at': {'$max': '$played_at'}
-        }},
-        {'$sort': {'play_count': -1, 'last_played_at': -1}},
-        {'$limit': limit * 5}
-    ])
-
-    for item in grouped:
-        song_hash = item.get('_id')
-        song = songs_by_hash.get(song_hash) or songs_by_id.get(str(song_hash))
-        if not song:
-            continue
-
-        rows.append({
-            'rank': len(rows) + 1,
-            'song_id': song.get('id'),
-            'song_hash': song.get('hash') or song_hash,
-            'title': song.get('title') or '',
-            'title_lang': song.get('title_lang') or {},
-            'subtitle': song.get('subtitle') or '',
-            'subtitle_lang': song.get('subtitle_lang') or {},
-            'category_id': song.get('category_id'),
-            'song_type': song.get('song_type') or '',
-            'play_count': item.get('play_count', 0)
-        })
-        if len(rows) >= limit:
-            break
-
-    return rows
+    refresh_top_songs_cache(force=False, requested_by='auto', allow_backfill=False)
+    cache_doc = get_top_songs_cache_doc()
+    rows = cache_doc.get('rows') if isinstance(cache_doc.get('rows'), list) else []
+    return rows[:limit]
 
 
 def get_admin_overview_stats():
@@ -483,6 +747,7 @@ def get_admin_overview_stats():
             'week': periods['week'],
             'month': periods['month']
         }),
+        'top_songs_cache': get_top_songs_cache_status(),
         'heat_rows': get_song_heat_rows(20),
         'retention_days': VISIT_RETENTION_DAYS
     }
@@ -605,12 +870,12 @@ def api_error(message):
 
 def generate_hash(id, form):
     md5 = hashlib.md5()
-    if form['type'] == 'tja':
+    if form.get('type') == 'tja':
         urls = ['%s%s/main.tja' % (take_config('SONGS_BASEURL', required=True), id)]
     else:
         urls = []
         for diff in ['easy', 'normal', 'hard', 'oni', 'ura']:
-            if form['course_' + diff]:
+            if form.get('course_' + diff):
                 urls.append('%s%s/%s.osu' % (take_config('SONGS_BASEURL', required=True), id, diff))
 
     for url in urls:
@@ -794,6 +1059,13 @@ def get_user_display_name(user, fallback=None):
     return user.get('display_name') or user.get('username') or fallback or ''
 
 
+def check_user_password(user, password):
+    try:
+        return bool(user) and bcrypt.checkpw(password, user.get('password', b''))
+    except (TypeError, ValueError):
+        return False
+
+
 def ensure_user_session_id(user):
     session_id = user.get('session_id') if user else None
     if session_id:
@@ -817,8 +1089,7 @@ def get_db_don(user):
 ADMIN_COURSES = ['easy', 'normal', 'hard', 'oni', 'ura']
 
 
-def form_int(name, default=None):
-    value = request.form.get(name)
+def safe_int_value(value, default=None):
     if value in (None, ''):
         return default
     try:
@@ -827,8 +1098,7 @@ def form_int(name, default=None):
         return default
 
 
-def form_float(name, default=None):
-    value = request.form.get(name)
+def safe_float_value(value, default=None):
     if value in (None, ''):
         return default
     try:
@@ -837,13 +1107,40 @@ def form_float(name, default=None):
         return default
 
 
+def safe_lang_map(value):
+    return value if isinstance(value, dict) else {}
+
+
+def normalize_song_courses(courses):
+    courses = courses if isinstance(courses, dict) else {}
+    normalized = {}
+    for course in ADMIN_COURSES:
+        course_data = courses.get(course)
+        if isinstance(course_data, dict):
+            normalized[course] = {
+                'stars': safe_int_value(course_data.get('stars'), 0),
+                'branch': bool(course_data.get('branch'))
+            }
+        else:
+            normalized[course] = None
+    return normalized
+
+
+def form_int(name, default=None):
+    return safe_int_value(request.form.get(name), default)
+
+
+def form_float(name, default=None):
+    return safe_float_value(request.form.get(name), default)
+
+
 def normalize_admin_song(song):
     song = dict(song or {})
-    song['title_lang'] = song.get('title_lang') if isinstance(song.get('title_lang'), dict) else {}
-    song['subtitle_lang'] = song.get('subtitle_lang') if isinstance(song.get('subtitle_lang'), dict) else {}
-    courses = song.get('courses') if isinstance(song.get('courses'), dict) else {}
+    song['title_lang'] = safe_lang_map(song.get('title_lang'))
+    song['subtitle_lang'] = safe_lang_map(song.get('subtitle_lang'))
+    normalized_courses = normalize_song_courses(song.get('courses'))
     song['courses'] = {
-        course: courses.get(course) if isinstance(courses.get(course), dict) else {}
+        course: normalized_courses.get(course) or {}
         for course in ADMIN_COURSES
     }
     song.setdefault('enabled', False)
@@ -859,6 +1156,110 @@ def normalize_admin_song(song):
     song.setdefault('volume', 1)
     song.setdefault('hash', '')
     return song
+
+
+def normalize_public_song(song):
+    song = dict(song or {})
+    if song.get('id') is None:
+        return None
+
+    song['title'] = song.get('title') or 'Untitled'
+    song['subtitle'] = song.get('subtitle') or ''
+    song['title_lang'] = safe_lang_map(song.get('title_lang'))
+    song['subtitle_lang'] = safe_lang_map(song.get('subtitle_lang'))
+    song['courses'] = normalize_song_courses(song.get('courses'))
+    song['type'] = song.get('type') if song.get('type') in ('tja', 'osu') else 'tja'
+    song['music_type'] = song.get('music_type') or 'mp3'
+    song['preview'] = safe_float_value(song.get('preview'), 0)
+    song['volume'] = safe_float_value(song.get('volume'), 1.0)
+    song['lyrics'] = bool(song.get('lyrics'))
+    song['hash'] = song.get('hash') or song['title']
+    song.setdefault('song_type', '')
+    song.setdefault('order', song.get('id'))
+    return song
+
+
+def next_sequence_value(name):
+    seq = db.seq.find_one({'name': name})
+    if not seq:
+        return 1
+    return safe_int_value(seq.get('value'), 0) + 1
+
+
+def admin_category_title(category):
+    if not category:
+        return None
+    title_lang = safe_lang_map(category.get('title_lang'))
+    return title_lang.get('en') or category.get('title') or 'Untitled category'
+
+
+def build_admin_song_groups(songs, categories):
+    category_by_id = {}
+    for category in categories:
+        category_id = category.get('id')
+        if category_id is not None:
+            category_by_id[category_id] = category
+            category_by_id[safe_int_value(category_id)] = category
+    groups = {}
+
+    def ensure_group(key, title, sort_key):
+        if key not in groups:
+            groups[key] = {
+                'title': title,
+                'sort_key': sort_key,
+                'songs': [],
+                'enabled_count': 0
+            }
+        return groups[key]
+
+    for category in categories:
+        category_id = category.get('id')
+        if category_id is not None:
+            ensure_group(
+                ('category', category_id),
+                admin_category_title(category),
+                (0, safe_int_value(category_id, 999999), admin_category_title(category))
+            )
+
+    for song in songs:
+        category_id = song.get('category_id')
+        if category_id is not None:
+            category = category_by_id.get(category_id) or category_by_id.get(safe_int_value(category_id))
+            if category:
+                group = ensure_group(
+                    ('category', category_id),
+                    admin_category_title(category),
+                    (0, safe_int_value(category_id, 999999), admin_category_title(category))
+                )
+            else:
+                group = ensure_group(
+                    ('missing-category', category_id),
+                    'Missing category #{}'.format(category_id),
+                    (1, safe_int_value(category_id, 999999), '')
+                )
+        elif song.get('song_type'):
+            song_type = song.get('song_type')
+            group = ensure_group(
+                ('song-type', song_type),
+                song_type,
+                (2, song_type)
+            )
+        else:
+            group = ensure_group(
+                ('uncategorized', ''),
+                'Uncategorized',
+                (3, '')
+            )
+
+        group['songs'].append(song)
+        if song.get('enabled'):
+            group['enabled_count'] += 1
+
+    return [
+        group
+        for group in sorted(groups.values(), key=lambda item: item['sort_key'])
+        if group['songs']
+    ]
 
 def get_default_don(part=None):
     if part == None:
@@ -1048,10 +1449,7 @@ def route_secret_admin_login():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').encode('utf-8')
         user = db.users.find_one({'username_lower': username.lower()})
-        try:
-            password_ok = bool(user) and bcrypt.checkpw(password, user.get('password', b''))
-        except (TypeError, ValueError):
-            password_ok = False
+        password_ok = check_user_password(user, password)
         if (
             user and
             get_user_level(user) >= 50 and
@@ -1081,6 +1479,39 @@ def route_admin_overview():
     user = db.users.find_one({'username': session['username']})
     return render_template('admin_overview.html',
         stats=get_admin_overview_stats(), admin=user, config=get_config())
+
+
+@app.route(basedir + 'admin/top-songs/refresh', methods=['POST'])
+@admin_required(level=50)
+def route_admin_top_songs_refresh():
+    result = refresh_top_songs_cache(
+        force=True,
+        requested_by=session.get('username'),
+        allow_backfill=True
+    )
+    try:
+        app.cache.delete_memoized(route_api_songs_top10)
+    except Exception:
+        pass
+
+    status = result.get('status')
+    if status == 'updated':
+        flash(
+            'Top10 cache refreshed: {} songs, {} ms.'.format(
+                result.get('rows_count', 0),
+                result.get('refresh_ms', 0)
+            )
+        )
+    elif status == 'busy':
+        flash('Top10 refresh is already running. Please try again later.', 'error')
+    elif status == 'needs_backfill':
+        flash('Top10 refresh needs a manual backfill, but no safe cache was changed.', 'error')
+    elif status == 'error':
+        flash('Top10 refresh failed: {}'.format(result.get('error') or 'unknown error'), 'error')
+    else:
+        flash('Top10 cache is already fresh.')
+
+    return redirect(basedir + 'admin/overview')
 
 
 @app.route(basedir + 'admin/messages')
@@ -1166,11 +1597,18 @@ def route_admin_messages_toggle(message_id):
 def route_admin_songs():
     songs = sorted(
         [normalize_admin_song(song) for song in db.songs.find({})],
-        key=lambda song: (song.get('id') is None, song.get('id') or 0, song.get('title') or '')
+        key=lambda song: (
+            song.get('id') is None,
+            safe_int_value(song.get('id'), 999999),
+            str(song.get('id') or ''),
+            song.get('title') or ''
+        )
     )
-    categories = db.categories.find({})
+    categories = list(db.categories.find({}))
+    song_groups = build_admin_song_groups(songs, categories)
     user = db.users.find_one({'username': session['username']})
-    return render_template('admin_songs.html', songs=songs, admin=user, categories=list(categories), config=get_config())
+    return render_template('admin_songs.html',
+        songs=songs, song_groups=song_groups, admin=user, categories=categories, config=get_config())
 
 
 @app.route(basedir + 'admin/songs/<int:id>')
@@ -1197,8 +1635,7 @@ def route_admin_songs_new():
     categories = list(db.categories.find({}))
     song_skins = list(db.song_skins.find({}))
     makers = list(db.makers.find({}))
-    seq = db.seq.find_one({'name': 'songs'})
-    seq_new = seq['value'] + 1 if seq else 1
+    seq_new = next_sequence_value('songs')
 
     return render_template('admin_song_new.html', categories=categories, song_skins=song_skins, makers=makers, config=get_config(), id=seq_new)
 
@@ -1233,8 +1670,7 @@ def route_admin_songs_new_post():
     output['lyrics'] = True if request.form.get('lyrics') else False
     output['hash'] = request.form.get('hash')
     
-    seq = db.seq.find_one({'name': 'songs'})
-    seq_new = seq['value'] + 1 if seq else 1
+    seq_new = next_sequence_value('songs')
     
     hash_error = False
     if request.form.get('gen_hash'):
@@ -1377,10 +1813,13 @@ def route_api_preview():
     song = db.songs.find_one({'id': song_id})
     if not song:
         abort(400)
+    song = normalize_public_song(song)
+    if not song:
+        abort(400)
 
-    song_type = song['type']
-    song_ext = song['music_type'] if song['music_type'] else "mp3"
-    prev_path = make_preview(song_id, song_type, song_ext, song['preview'])
+    song_type = song.get('type', 'tja')
+    song_ext = song.get('music_type') or "mp3"
+    prev_path = make_preview(song_id, song_type, song_ext, song.get('preview', 0))
     if not prev_path:
         return redirect(get_config()['songs_baseurl'] + '%s/main.%s' % (song_id, song_ext))
 
@@ -1396,8 +1835,12 @@ def route_api_songs():
         if type_q not in SONG_TYPES:
             return abort(400)
         query['song_type'] = type_q
-    songs = list(db.songs.find(query, {'_id': False, 'enabled': False}))
-    for song in songs:
+    raw_songs = list(db.songs.find(query, {'_id': False, 'enabled': False}))
+    songs = []
+    for raw_song in raw_songs:
+        song = normalize_public_song(raw_song)
+        if not song:
+            continue
         maker_id = song.get('maker_id')
         if maker_id is not None:
             if maker_id == 0:
@@ -1411,7 +1854,7 @@ def route_api_songs():
         category_id = song.get('category_id')
         if category_id:
             category = db.categories.find_one({'id': category_id})
-            song['category'] = category['title'] if category else None
+            song['category'] = category.get('title') if category else None
         else:
             song['category'] = None
         #del song['category_id']
@@ -1423,7 +1866,7 @@ def route_api_songs():
             song['song_skin'] = None
         song.pop('skin_id', None)
 
-        song.setdefault('song_type', '')
+        songs.append(song)
 
     return cache_wrap(flask.jsonify(songs), 60)
 
@@ -1512,11 +1955,7 @@ def route_api_login():
         return api_error('invalid_username_password')
 
     password = data.get('password', '').encode('utf-8')
-    try:
-        password_ok = bcrypt.checkpw(password, result.get('password', b''))
-    except (TypeError, ValueError):
-        password_ok = False
-    if not password_ok:
+    if not check_user_password(result, password):
         return api_error('invalid_username_password')
     
     don = get_db_don(result)
@@ -1594,8 +2033,11 @@ def route_api_account_password():
         return abort(400)
 
     user = db.users.find_one({'username': session.get('username')})
+    if not user:
+        session.clear()
+        return api_error('not_logged_in')
     current_password = data.get('current_password', '').encode('utf-8')
-    if not bcrypt.checkpw(current_password, user['password']):
+    if not check_user_password(user, current_password):
         return api_error('current_password_invalid')
     
     new_password = data.get('new_password', '').encode('utf-8')
@@ -1623,8 +2065,11 @@ def route_api_account_remove():
         return abort(400)
 
     user = db.users.find_one({'username': session.get('username')})
+    if not user:
+        session.clear()
+        return api_error('not_logged_in')
     password = data.get('password', '').encode('utf-8')
-    if not bcrypt.checkpw(password, user['password']):
+    if not check_user_password(user, password):
         return api_error('verify_password_invalid')
 
     db.scores.delete_many({'username': session.get('username')})
@@ -1692,15 +2137,18 @@ def route_api_playcount_record():
         return abort(400)
 
     username = session.get('username') if session.get('username') else None
+    played_at = datetime.utcnow()
+    song_hash = data.get('hash')
     
     db.play_records.insert_one({
-        'song_hash': data.get('hash'),
+        'song_hash': song_hash,
         'difficulty': data.get('difficulty'),
         'username': username,
         'score': data.get('score'),
         'is_auto': data.get('is_auto'),
-        'played_at': datetime.utcnow()
+        'played_at': played_at
     })
+    record_song_play_count(song_hash, played_at)
 
     return jsonify({'status': 'ok'})
 

@@ -276,23 +276,7 @@ class SongSelect {
 			this.prepareSongSearch(song)
 			this.songs.push(this.addSong(song))
 		}
-		this.songs.sort((a, b) => {
-			var catA = a.originalCategory in this.songSkin ? this.songSkin[a.originalCategory] : this.songSkin.default
-			var catB = b.originalCategory in this.songSkin ? this.songSkin[b.originalCategory] : this.songSkin.default
-			if (catA.sort !== catB.sort) {
-				return catA.sort > catB.sort ? 1 : -1
-			} else if (a.originalCategory !== b.originalCategory) {
-				return a.originalCategory > b.originalCategory ? 1 : -1
-			} else if (a.order !== b.order) {
-				return a.order > b.order ? 1 : -1
-			} else {
-				return a.id > b.id ? 1 : -1
-			}
-		})
-		const titlesort = localStorage.getItem("titlesort") ?? "false";
-		if (titlesort === "true") {
-			this.songs.sort((a, b) => a.title.localeCompare(b.title));
-		}
+		this.songs = this.sortSongEntries(this.songs)
 		if (assets.songs.length) {
 			this.songs.push({
 				title: strings.back,
@@ -391,43 +375,6 @@ class SongSelect {
 			title: strings.songSelectExtras.board,
 			skin: this.songSkin.keijiban,
 			action: "keijiban",
-		});
-
-		this.songs.push({
-			title: strings.songSelectExtras.songSelectingSpeed,
-			skin: this.songSkin.customSettings,
-			action: "songSelectingSpeed",
-		});
-
-		this.songs.push({
-			title: strings.songSelectExtras.baisoku,
-			skin: this.songSkin.customSettings,
-			action: "baisoku",
-		});
-
-		this.songs.push({
-			title: strings.songSelectExtras.doron,
-			skin: this.songSkin.customSettings,
-			action: "doron",
-		});
-
-		this.songs.push({
-			title: strings.songSelectExtras.abekobe,
-			skin: this.songSkin.customSettings,
-			action: "abekobe",
-		});
-
-		this.songs.push({
-			title: strings.songSelectExtras.detarame,
-			skin: this.songSkin.customSettings,
-			action: "detarame",
-		});
-
-
-		this.songs.push({
-			title: strings.songSelectExtras.titleSort,
-			skin: this.songSkin.customSettings,
-			action: "titlesort",
 		});
 
 		this.songs.push({
@@ -549,14 +496,20 @@ class SongSelect {
 		this.songTypeIndex = Math.max(0, Math.min(this.songTypes.length - 1, +(localStorage.getItem("songTypeIndex") || 0)))
 		this.searchButton = document.getElementById("song-search-btn")
 		this.topSongsButton = document.getElementById("song-top10-btn")
+		this.easySettingsButton = document.getElementById("song-easy-settings-btn")
 		this.searchButton.hidden = true
 		this.topSongsButton.hidden = true
+		this.easySettingsButton.hidden = true
 		pageEvents.add(this.searchButton, ["click", "touchend"], this.openSearchFromButton.bind(this))
+		pageEvents.add(this.easySettingsButton, ["click", "touchend"], this.openEasySettingsFromButton.bind(this))
 		if (this.topSongsEnabled) {
 			pageEvents.add(this.topSongsButton, ["click", "touchend"], this.openTopSongsFromButton.bind(this))
 			this.topSongs = new TopSongs(this)
 		} else {
 			this.topSongs = null
+		}
+		if (typeof window !== "undefined" && window.EasySettings) {
+			window.EasySettings.initUI(this)
 		}
 		if (this.siteMessagesEnabled) {
 			this.siteMessages = new SiteMessages(this)
@@ -595,7 +548,7 @@ class SongSelect {
 			waitPreview: 0
 		}
 		this.songSelecting = {
-			speed: parseFloat(localStorage.getItem("sss") ?? "400", 10),
+			speed: this.getEasySettings().songSelectingSpeed,
 			resize: 0.3,
 			scrollDelay: 0.1
 		}
@@ -684,6 +637,138 @@ class SongSelect {
 		}
 
 		this.selectedSong = songIdx
+	}
+
+	getEasySettings() {
+		if (typeof window !== "undefined" && window.EasySettings && typeof window.EasySettings.getSettings === "function") {
+			return window.EasySettings.getSettings()
+		}
+		return {
+			sortByTitle: localStorage.getItem("titlesort") === "true",
+			songSelectingSpeed: parseFloat(localStorage.getItem("sss") ?? "400", 10) || 400
+		}
+	}
+
+	getSafeSongTitle(song) {
+		if (typeof window !== "undefined" && window.EasySettings && typeof window.EasySettings.getSongTitle === "function") {
+			return window.EasySettings.getSongTitle(song)
+		}
+		return String(song && (song.title || song.name || song.id) || "")
+	}
+
+	compareSongCategory(a, b) {
+		var catA = a.originalCategory in this.songSkin ? this.songSkin[a.originalCategory] : this.songSkin.default
+		var catB = b.originalCategory in this.songSkin ? this.songSkin[b.originalCategory] : this.songSkin.default
+		if (catA.sort !== catB.sort) {
+			return catA.sort > catB.sort ? 1 : -1
+		}
+		var categoryA = String(a.originalCategory || "")
+		var categoryB = String(b.originalCategory || "")
+		if (categoryA !== categoryB) {
+			return categoryA > categoryB ? 1 : -1
+		}
+		return 0
+	}
+
+	compareSongFallback(a, b) {
+		var orderA = Number.isFinite(+a.order) ? +a.order : 0
+		var orderB = Number.isFinite(+b.order) ? +b.order : 0
+		if (orderA !== orderB) {
+			return orderA > orderB ? 1 : -1
+		}
+		return String(a.id || "").localeCompare(String(b.id || ""), undefined, {
+			sensitivity: "base",
+			numeric: true
+		})
+	}
+
+	sortSongEntries(songEntries) {
+		var sortByTitle = !!this.getEasySettings().sortByTitle
+		return songEntries.map((song, index) => {
+			return { song: song, index: index }
+		}).sort((a, b) => {
+			var categoryCompare = this.compareSongCategory(a.song, b.song)
+			if (categoryCompare) {
+				return categoryCompare
+			}
+			if (sortByTitle) {
+				var titleCompare = this.getSafeSongTitle(a.song).localeCompare(this.getSafeSongTitle(b.song), undefined, {
+					sensitivity: "base",
+					numeric: true
+				})
+				if (titleCompare) {
+					return titleCompare
+				}
+			}
+			var fallbackCompare = this.compareSongFallback(a.song, b.song)
+			return fallbackCompare || a.index - b.index
+		}).map(item => item.song)
+	}
+
+	getSongSelectionKey(song) {
+		if (!song) {
+			return ""
+		}
+		if (song.action) {
+			return "action:" + song.action + ":" + String(song.title || "")
+		}
+		if (song.id !== null && typeof song.id !== "undefined") {
+			return "id:" + song.id
+		}
+		if (song.hash) {
+			return "hash:" + song.hash
+		}
+		return "title:" + this.getSafeSongTitle(song)
+	}
+
+	applyEasySettingsSorting(preserveSelection) {
+		if (!this.songs) {
+			return
+		}
+		var selectedKey = preserveSelection ? this.getSongSelectionKey(this.songs[this.selectedSong]) : ""
+		var songEntries = []
+		var actionEntries = []
+		for (var i = 0; i < this.songs.length; i++) {
+			var song = this.songs[i]
+			if (song && !song.action) {
+				songEntries.push(song)
+			} else {
+				actionEntries.push(song)
+			}
+		}
+		this.songs = this.sortSongEntries(songEntries).concat(actionEntries)
+		if (preserveSelection && selectedKey) {
+			var selectedIndex = this.songs.findIndex(song => this.getSongSelectionKey(song) === selectedKey)
+			if (selectedIndex !== -1) {
+				this.setSelectedSong(selectedIndex, false)
+			} else {
+				this.setSelectedSong(Math.min(this.selectedSong, this.songs.length - 1), false)
+			}
+		}
+	}
+
+	onEasySettingsChanged(settings) {
+		if (this.songSelecting && settings.songSelectingSpeed) {
+			this.songSelecting.speed = settings.songSelectingSpeed
+		}
+		var previousSong = this.songs && this.songs[this.selectedSong]
+		this.applyEasySettingsSorting(true)
+		var currentSong = this.songs && this.songs[this.selectedSong]
+		if (previousSong !== currentSong) {
+			pageEvents.send("song-select-move", currentSong)
+			if (this.state && this.state.screen === "song") {
+				this.endPreview()
+				this.startPreview(true)
+			}
+			if (assets.customSongs) {
+				assets.customSelected = this.selectedSong
+				localStorage["customSelected"] = this.selectedSong
+			} else if (!p2.session) {
+				try {
+					localStorage["selectedSong"] = this.selectedSong
+				} catch (e) { }
+			}
+		}
 	}
 
 	keyPress(pressed, name, event, repeat) {
@@ -812,19 +897,30 @@ class SongSelect {
 		}
 	}
 
+	openEasySettingsFromButton(event) {
+		event.preventDefault()
+		event.stopPropagation()
+		if (typeof window !== "undefined" && window.EasySettings && this.state.screen === "song" && !this.search.opened && !(this.topSongs && this.topSongs.opened) && !this.uploadModal.opened) {
+			window.EasySettings.open(this)
+		}
+	}
+
 	updateSearchButtonVisibility() {
-		if (!this.songSelect || !this.searchButton || !this.topSongsButton) {
+		if (!this.songSelect || !this.searchButton || !this.topSongsButton || !this.easySettingsButton) {
 			return
 		}
 		var visible = this.state.screen === "song" &&
 			!this.search.opened &&
 			!(this.topSongs && this.topSongs.opened) &&
 			!this.uploadModal.opened &&
+			!(typeof window !== "undefined" && window.EasySettings && window.EasySettings.isOpen && window.EasySettings.isOpen()) &&
 			!(this.siteMessages && this.siteMessages.isOpen())
 		this.searchButton.hidden = !visible
 		this.topSongsButton.hidden = !visible || !this.topSongsEnabled
+		this.easySettingsButton.hidden = !visible
 		this.songSelect.classList.toggle("search-button-visible", visible)
 		this.songSelect.classList.toggle("top10-button-visible", visible && this.topSongsEnabled)
+		this.songSelect.classList.toggle("easy-settings-button-visible", visible)
 	}
 
 	changeType(delta) {
@@ -1184,98 +1280,6 @@ class SongSelect {
 				this.playSound("se_don");
 				setTimeout(() => {
 					window.location.href = gameConfig.basedir + "board";
-				}, 100);
-			} else if (currentSong.action === "songSelectingSpeed") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let songSelectingSpeed = localStorage.getItem("sss") ?? "400";
-					const pro = prompt(strings.songSelectExtras.songSelectingSpeedPrompt, songSelectingSpeed);
-					if (pro === null) {
-						// キャンセル
-					} else if (pro === "") {
-						songSelectingSpeed = "400";
-					} else {
-						songSelectingSpeed = pro;
-					}
-					const preValue = localStorage.getItem("sss") ?? "400";
-					localStorage.setItem("sss", songSelectingSpeed.toString());
-					if (preValue !== songSelectingSpeed) {
-						location.reload();
-					}
-				}, 100);
-			} else if (currentSong.action === "baisoku") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let baisoku = localStorage.getItem("baisoku") ?? "1";
-					const input = prompt(strings.songSelectExtras.baisokuPrompt, baisoku);
-					if (input === null) {
-						// キャンセル
-					} else if (input === "") {
-						baisoku = "1";
-					} else {
-						baisoku = input;
-					}
-					localStorage.setItem("baisoku", baisoku.toString());
-				}, 100);
-			} else if (currentSong.action === "doron") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let doron = localStorage.getItem("doron") ?? "false";
-					const input = prompt(strings.songSelectExtras.doronPrompt, doron);
-					if (input === null) {
-						// キャンセル
-					} else if (input === "") {
-						doron = "false";
-					} else {
-						doron = input;
-					}
-					localStorage.setItem("doron", doron);
-				}, 100);
-			} else if (currentSong.action === "abekobe") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let abekobe = localStorage.getItem("abekobe") ?? "false";
-					const input = prompt(strings.songSelectExtras.abekobePrompt, abekobe);
-					if (input === null) {
-						// キャンセル
-					} else if (input === "") {
-						abekobe = "false";
-					} else {
-						abekobe = input;
-					}
-					localStorage.setItem("abekobe", abekobe);
-				}, 100);
-			} else if (currentSong.action === "detarame") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let detarame = localStorage.getItem("detarame") ?? "0";
-					const input = prompt(strings.songSelectExtras.detaramePrompt, detarame);
-					if (input === null) {
-						// キャンセル
-					} else if (input === "") {
-						detarame = "0";
-					} else {
-						detarame = input;
-					}
-					localStorage.setItem("detarame", detarame);
-				}, 100);
-			} else if (currentSong.action === "titlesort") {
-				this.playSound("se_don");
-				setTimeout(() => {
-					let titlesort = localStorage.getItem("titlesort") ?? "false";
-					const input = prompt(strings.songSelectExtras.titleSortPrompt, titlesort);
-					if (input === null) {
-						// キャンセル
-					} else if (input === "") {
-						titlesort = "false";
-					} else {
-						titlesort = input;
-					}
-					const preValue = localStorage.getItem("titlesort") ?? "false";
-					localStorage.setItem("titlesort", titlesort);
-					if (preValue !== titlesort) {
-						location.reload();
-					}
 				}, 100);
 			}
 		}
@@ -3559,6 +3563,7 @@ class SongSelect {
 		pageEvents.remove(loader.screen, ["mousemove", "mouseleave", "mousedown", "touchstart"])
 		pageEvents.remove(this.canvas, ["touchend", "wheel"])
 		pageEvents.remove(this.searchButton, ["click", "touchend"])
+		pageEvents.remove(this.easySettingsButton, ["click", "touchend"])
 		if (this.topSongsEnabled) {
 			pageEvents.remove(this.topSongsButton, ["click", "touchend"])
 		}
@@ -3569,6 +3574,7 @@ class SongSelect {
 		}
 		delete this.searchButton
 		delete this.topSongsButton
+		delete this.easySettingsButton
 		delete this.topSongs
 		delete this.siteMessages
 		delete this.uploadModal

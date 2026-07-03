@@ -37,7 +37,8 @@ class Game{
 		this.branchNames = ["normal", "advanced", "master"]
 		this.rollCounter = null
 		this.resetSection()
-		this.gameLagSync = !this.controller.touchEnabled && !(/Firefox/.test(navigator.userAgent))
+		this.playbackRate = this.controller.playbackRate || 1
+		this.gameLagSync = Math.abs(this.playbackRate - 1) < 0.0001 && !this.controller.touchEnabled && !(/Firefox/.test(navigator.userAgent))
 		
 		assets.songs.forEach(song => {
 			if(song.id == selectedSong.folder){
@@ -66,7 +67,7 @@ class Game{
 		}
 		this.elapsedTime = -offsetTime
 		// The real start for the game will start when chrono will reach 0
-		this.startDate = Date.now() + offsetTime
+		this.startDate = Date.now() + offsetTime / this.playbackRate
 	}
 	update(){
 		this.updateTime()
@@ -592,7 +593,7 @@ class Game{
 					this.mainAsset.playLoop((startAt - duration) / 1000, false, 0, 0, beatInterval / 1000)
 				}
 			}else if(this.controller.multiplayer !== 2 && this.mainAsset){
-				this.mainAsset.play((ms < 0 ? -ms : 0) / 1000, false, Math.max(0, ms / 1000))
+				this.mainAsset.play((ms < 0 ? -ms : 0) / 1000 / this.playbackRate, false, Math.max(0, ms / 1000), undefined, this.playbackRate)
 			}
 			this.mainMusicPlaying = true
 		}
@@ -658,14 +659,14 @@ class Game{
 					pageEvents.send("game-lag", lag)
 				}
 			}
-			this.elapsedTime = currentDate - this.startDate
+			this.elapsedTime = this.getAccurateTime()
 		}
 	}
 	getAccurateTime(){
 		if(this.isPaused()){
 			return this.elapsedTime
 		}else{
-			return Date.now() - this.startDate
+			return (Date.now() - this.startDate) * this.playbackRate
 		}
 	}
 	getCircles(){

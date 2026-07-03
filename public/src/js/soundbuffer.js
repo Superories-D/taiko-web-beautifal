@@ -289,7 +289,7 @@ class Sound{
 			this.timeouts.delete(timeout)
 		})
 	}
-	playLoop(time, absolute, seek1, seek2, until){
+	playLoop(time, absolute, seek1, seek2, until, playbackRate){
 		time = this.convertTime(time, absolute)
 		seek1 = seek1 || 0
 		if(typeof seek2 === "undefined"){
@@ -300,11 +300,12 @@ class Sound{
 			return
 		}
 		this.loop = {
-			started: time + until - seek1,
+			started: time + (until - seek1) / (playbackRate || 1),
 			seek: seek2,
-			until: until
+			until: until,
+			playbackRate: playbackRate || 1
 		}
-		this.play(time, true, seek1, until)
+		this.play(time, true, seek1, until, playbackRate)
 		this.addLoop()
 		this.loop.interval = setInterval(() => {
 			this.addLoop()
@@ -312,20 +313,25 @@ class Sound{
 	}
 	addLoop(){
 		while(this.getTime() > this.loop.started - 1){
-			this.play(this.loop.started, true, this.loop.seek, this.loop.until)
-			this.loop.started += this.loop.until - this.loop.seek
+			this.play(this.loop.started, true, this.loop.seek, this.loop.until, this.loop.playbackRate)
+			this.loop.started += (this.loop.until - this.loop.seek) / (this.loop.playbackRate || 1)
 		}
 	}
-	play(time, absolute, seek, until){
+	play(time, absolute, seek, until, playbackRate){
 		time = this.convertTime(time, absolute)
 		var source = this.soundBuffer.createSource(this)
+		playbackRate = playbackRate || 1
+		if(source.playbackRate){
+			source.playbackRate.value = playbackRate
+		}
 		seek = seek || 0
 		until = until || this.duration
 		this.setTimeouts(time).then(() => {
 			this.cfg = {
 				started: time,
 				seek: seek,
-				until: until
+				until: until,
+				playbackRate: playbackRate
 			}
 		})
 		source.start(time, Math.max(0, seek || 0), Math.max(0, until - seek))
@@ -359,9 +365,9 @@ class Sound{
 	resume(time, absolute){
 		if(this.cfg){
 			if(this.loop){
-				this.playLoop(time, absolute, this.cfg.pauseSeek, this.loop.seek, this.loop.until)
+				this.playLoop(time, absolute, this.cfg.pauseSeek, this.loop.seek, this.loop.until, this.cfg.playbackRate)
 			}else{
-				this.play(time, absolute, this.cfg.pauseSeek, this.cfg.until)
+				this.play(time, absolute, this.cfg.pauseSeek, this.cfg.until, this.cfg.playbackRate)
 			}
 		}
 	}

@@ -920,7 +920,8 @@ class Scoresheet {
 	}
 
 	saveScore() {
-		if (this.controller.saveScore) {
+		var leaderboardEligible = !this.controller.isLeaderboardEligible || this.controller.isLeaderboardEligible()
+		if (this.controller.saveScore && leaderboardEligible) {
 			if (this.resultsObj.points < 0) {
 				this.resultsObj.points = 0
 			}
@@ -966,6 +967,9 @@ class Scoresheet {
 	}
 
 	submitToLeaderboard(hash, difficulty, score) {
+		if (this.controller.isLeaderboardEligible && !this.controller.isLeaderboardEligible()) {
+			return
+		}
 		// Prompt user for name
 		var savedName = localStorage.getItem("leaderboardName") || ""
 		var displayName = prompt(strings.enterName || "Enter your name for leaderboard:", savedName)
@@ -996,7 +1000,7 @@ class Scoresheet {
 					}
 					alert(rankMsg)
 				}
-			}).catch(e => console.error("Leaderboard submit failed:", e))
+			}).catch(() => {})
 	}
 
 	clean() {

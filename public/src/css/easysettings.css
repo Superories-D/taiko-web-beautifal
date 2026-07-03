@@ -1,0 +1,229 @@
+#song-easy-settings-btn{
+	display: none;
+	position: absolute;
+	bottom: max(2vmin, 14px);
+	right: max(23vmin, 212px);
+	width: clamp(46px, 7.2vmin, 68px);
+	height: clamp(46px, 7.2vmin, 68px);
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.22);
+	box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.45), 0 4px 10px rgba(0, 0, 0, 0.25);
+	cursor: pointer;
+	opacity: 0.88;
+	z-index: 11;
+	touch-action: manipulation;
+	transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.12s ease;
+	font-family: "Arial Black", "Arial", sans-serif;
+	font-size: clamp(10px, 1.55vmin, 14px);
+	font-weight: 900;
+	color: #2b1400;
+	letter-spacing: 0;
+	text-align: center;
+}
+
+#song-easy-settings-btn span{
+	display: block;
+	transform: rotate(5deg);
+	text-shadow: 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+#song-easy-settings-btn[hidden]{
+	display: none !important;
+}
+
+#song-easy-settings-btn:hover,
+#song-easy-settings-btn:focus-visible{
+	background-color: rgba(255, 249, 35, 0.35);
+	opacity: 1;
+	transform: scale(1.05);
+	outline: none;
+}
+
+#song-select.easy-settings-button-visible #song-easy-settings-btn{
+	display: block;
+}
+
+#song-select.top10-button-visible #song-easy-settings-btn{
+	right: max(32vmin, 292px);
+}
+
+#easy-settings-overlay{
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	padding: clamp(14px, 4vmin, 36px);
+	background: rgba(16, 7, 22, 0.64);
+	backdrop-filter: blur(0.35em) saturate(1.1);
+	-webkit-backdrop-filter: blur(0.35em) saturate(1.1);
+	z-index: 31;
+	user-select: text;
+	white-space: normal;
+}
+
+#easy-settings-overlay[hidden]{
+	display: none !important;
+}
+
+#easy-settings-panel{
+	box-sizing: border-box;
+	width: min(640px, 100%);
+	max-height: min(82vh, 680px);
+	display: flex;
+	flex-direction: column;
+	border-radius: 8px;
+	border: 0.28em solid rgba(255, 249, 35, 0.96);
+	color: #fff;
+	background-image:
+		linear-gradient(180deg, rgba(73, 10, 31, 0.14), rgba(16, 7, 22, 0.34)),
+		url("../../assets/img/ai_search_panel.png");
+	background-size: cover, cover;
+	background-position: center, center;
+	box-shadow:
+		0 1em 3em rgba(0, 0, 0, 0.42),
+		0 0 0 0.16em rgba(0, 0, 0, 0.72),
+		inset 0 0.18em 0 rgba(255, 255, 255, 0.24);
+	overflow: hidden;
+	font-family: "Outfit", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.easy-settings-header{
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 14px 16px;
+	background: rgba(255, 112, 67, 0.94);
+}
+
+.easy-settings-header h2{
+	margin: 0;
+	font-size: clamp(1.1rem, 3vmin, 1.55rem);
+	line-height: 1.1;
+	text-shadow: 0 0.08em 0 rgba(0, 0, 0, 0.65);
+}
+
+#easy-settings-close{
+	display: grid;
+	place-items: center;
+	flex: 0 0 auto;
+	width: 38px;
+	height: 38px;
+	border: 2px solid rgba(0, 0, 0, 0.35);
+	border-radius: 50%;
+	background: #ff443d;
+	color: #fff;
+	font: 900 24px/1 Arial, sans-serif;
+	cursor: pointer;
+	box-shadow: 0 0.1em 0 rgba(0, 0, 0, 0.28);
+}
+
+.easy-settings-body{
+	display: grid;
+	gap: 10px;
+	padding: 16px;
+	overflow: auto;
+}
+
+.easy-settings-row,
+.easy-settings-toggle{
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 12px;
+	padding: 12px;
+	border-radius: 8px;
+	background: rgba(0, 0, 0, 0.48);
+	border: 0.12em solid rgba(255, 249, 35, 0.34);
+	font-weight: 800;
+	text-shadow: 0 0.08em 0 rgba(0, 0, 0, 0.65);
+}
+
+.easy-settings-row input[type="range"]{
+	grid-column: 1 / -1;
+	width: 100%;
+	margin: 2px 0 0;
+}
+
+.easy-settings-row select,
+.easy-settings-row input[type="number"]{
+	width: min(10em, 42vw);
+	box-sizing: border-box;
+	border: 0.12em rgba(0, 0, 0, 0.82) solid;
+	border-radius: 0.42em;
+	padding: 0.48em 0.6em;
+	background: rgba(255, 255, 255, 0.96);
+	color: #23120d;
+	font: inherit;
+	outline: none;
+	box-shadow: inset 0 -0.12em 0 rgba(255, 143, 43, 0.35);
+}
+
+.easy-settings-value{
+	color: #fff923;
+	font-weight: 900;
+}
+
+.easy-settings-toggle{
+	grid-template-columns: auto minmax(0, 1fr);
+	cursor: pointer;
+}
+
+.easy-settings-toggle input{
+	width: 1.35em;
+	height: 1.35em;
+	margin: 0;
+	accent-color: #ff7043;
+}
+
+.easy-settings-footer{
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 14px 16px;
+	background: rgba(0, 0, 0, 0.42);
+}
+
+#easy-settings-leaderboard{
+	color: #d7ffaf;
+	font-weight: 900;
+	text-shadow: 0 0.08em 0 rgba(0, 0, 0, 0.65);
+}
+
+#easy-settings-leaderboard.modified{
+	color: #ffe15a;
+}
+
+#easy-settings-reset{
+	flex: 0 0 auto;
+	border: 0.14em solid rgba(0, 0, 0, 0.82);
+	border-radius: 0.42em;
+	padding: 0.58em 1em;
+	background: #fff923;
+	color: #23120d;
+	font: inherit;
+	font-weight: 900;
+	cursor: pointer;
+	box-shadow: 0 0.18em 0 rgba(0, 0, 0, 0.32);
+}
+
+@media (max-width: 700px){
+	#song-easy-settings-btn{
+		right: max(32vmin, 250px);
+		font-size: 10px;
+	}
+
+	.easy-settings-footer{
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	#easy-settings-reset{
+		width: 100%;
+	}
+}

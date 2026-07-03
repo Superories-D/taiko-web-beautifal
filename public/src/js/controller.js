@@ -7,6 +7,18 @@ class Controller{
 		this.songData = songData
 		this.autoPlayEnabled = autoPlayEnabled
 		this.saveScore = !autoPlayEnabled
+		var easySettingsApi = typeof window !== "undefined" && window.EasySettings ? window.EasySettings : null
+		this.easySettings = easySettingsApi && easySettingsApi.getSettings ? easySettingsApi.getSettings() : {
+			playbackRate: 1,
+			baisoku: parseFloat(localStorage.getItem("baisoku") || "1") || 1,
+			doron: localStorage.getItem("doron") === "true",
+			abekobe: localStorage.getItem("abekobe") === "true",
+			detarame: localStorage.getItem("detarame") === "true" || parseFloat(localStorage.getItem("detarame") || "0") > 0
+		}
+		this.playbackRate = this.easySettings.playbackRate || 1
+		if (!this.isLeaderboardEligible()) {
+			this.saveScore = false
+		}
 		this.multiplayer = multiplayer
 		this.touchEnabled = touchEnabled
 		if(multiplayer === 2){
@@ -83,9 +95,6 @@ class Controller{
 		
 		this.game = new Game(this, this.selectedSong, this.parsedSongData)
 		this.view = new View(this)
-		if (parseFloat(localStorage.getItem("baisoku") ?? "1", 10) !== 1) {
-			this.saveScore = false;
-		}
 		this.mekadon = new Mekadon(this, this.game)
 		this.keyboard = new GameInput(this)
 		if(!autoPlayEnabled && this.multiplayer !== 2){
@@ -96,6 +105,22 @@ class Controller{
 		
 		this.drumSounds = settings.getItem("latency").drumSounds
 		this.playedSounds = {}
+	}
+	isLeaderboardEligible(){
+		if(this.autoPlayEnabled){
+			return false
+		}
+		var easySettingsApi = typeof window !== "undefined" && window.EasySettings ? window.EasySettings : null
+		if(easySettingsApi && typeof easySettingsApi.isLeaderboardEligible === "function"){
+			return easySettingsApi.isLeaderboardEligible(this.easySettings)
+		}
+		return !(
+			Math.abs((this.easySettings.playbackRate || 1) - 1) > 0.0001 ||
+			Math.abs((this.easySettings.baisoku || 1) - 1) > 0.0001 ||
+			this.easySettings.doron ||
+			this.easySettings.abekobe ||
+			this.easySettings.detarame
+		)
 	}
 	run(syncWith){
 		if(syncWith){

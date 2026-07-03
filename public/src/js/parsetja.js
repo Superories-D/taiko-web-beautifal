@@ -33,6 +33,18 @@
 			"A": {name: "daiDon", txt: strings.note.daiDon},
 			"B": {name: "daiKa", txt: strings.note.daiKa}
 		}
+		var readLocalSetting = key => {
+			try {
+				return typeof localStorage !== "undefined" ? localStorage.getItem(key) : null
+			} catch (e) {
+				return null
+			}
+		}
+		var easySettingsApi = typeof window !== "undefined" && window.EasySettings ? window.EasySettings : null
+		this.easySettings = easySettingsApi && easySettingsApi.getSettings ? easySettingsApi.getSettings() : {
+			abekobe: readLocalSetting("abekobe") === "true",
+			detarame: readLocalSetting("detarame") === "true" || parseFloat(readLocalSetting("detarame") || "0") > 0
+		}
 		this.noteTypes_ex = strings.ex_note;
 		this.courseTypes = {
 			"0": "easy",
@@ -515,12 +527,12 @@
 				
 				var string = line.toUpperCase().split("")
 
-				const abekobe = localStorage.getItem("abekobe") ?? "false";
-				const detarame = parseFloat(localStorage.getItem("detarame") ?? "0", 10);
+				const abekobe = this.easySettings.abekobe;
+				const detarame = this.easySettings.detarame;
 
 				for(let symbol of string){
 
-					if (abekobe === "true") {
+					if (abekobe) {
 						if (symbol === "1") {
 							symbol = "2";
 						} else if (symbol === "2") {
@@ -532,23 +544,20 @@
 						} else if (symbol === "A") {
 							symbol = "B";
 						} else if (symbol === "B") {
-							symbol - "A";
+							symbol = "A";
 						}
 					}
 
-					if (detarame > 0) {
-						const randomValue = Math.random() * 100;
-						if (randomValue < detarame) {
-
-							const first = ["1", "2"];
-							const second = ["3", "4", "A", "B"];
-							if (first.includes(symbol)) {
-								const firstIndex = Math.floor(Math.random() * first.length);
-								symbol = first[firstIndex];
-							} else if (second.includes(symbol)) {
-								const secondIndex = Math.floor(Math.random() * second.length);
-								symbol = second[secondIndex];
-							}
+					if (detarame) {
+						const first = ["1", "2"];
+						const second = ["3", "4"];
+						const third = ["A", "B"];
+						if (first.includes(symbol)) {
+							symbol = first[Math.floor(Math.random() * first.length)];
+						} else if (second.includes(symbol)) {
+							symbol = second[Math.floor(Math.random() * second.length)];
+						} else if (third.includes(symbol)) {
+							symbol = third[Math.floor(Math.random() * third.length)];
 						}
 					}
 

@@ -110,6 +110,9 @@ class Controller{
 		if(this.autoPlayEnabled){
 			return false
 		}
+		if(typeof window !== "undefined" && window.netplayActive){
+			return false
+		}
 		var easySettingsApi = typeof window !== "undefined" && window.EasySettings ? window.EasySettings : null
 		if(easySettingsApi && typeof easySettingsApi.isLeaderboardEligible === "function"){
 			return easySettingsApi.isLeaderboardEligible(this.easySettings)

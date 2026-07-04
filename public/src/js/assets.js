@@ -6,6 +6,7 @@ var assets = {
 		"parseosu.js",
 		"sitemessages.js",
 		"topsongs.js",
+		"netplay.js",
 		"titlescreen.js",
 		"scoresheet.js",
 		"easysettings.js",
@@ -56,7 +57,8 @@ var assets = {
 		"songbg.css",
 		"view.css",
 		"search.css",
-		"easysettings.css"
+		"easysettings.css",
+		"netplay.css"
 	],
 	"img": [
 		"notes.png",

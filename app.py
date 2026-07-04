@@ -3,6 +3,7 @@
 import base64
 import bcrypt
 import hashlib
+import hmac
 import ipaddress
 try:
     import config
@@ -21,6 +22,7 @@ from datetime import datetime, timedelta
 
 import pathlib
 import shutil
+from urllib.parse import urlparse
 from flask_limiter import Limiter
 
 import flask
@@ -309,6 +311,9 @@ db.leaderboard.create_index('username')
 db.site_messages.create_index([('active', 1), ('created_at', -1)])
 db.site_message_reads.create_index([('username', 1), ('message_id', 1)], unique=True)
 db.site_message_reads.create_index('message_id')
+db.netplay_servers.create_index('server_id', unique=True)
+db.netplay_servers.create_index([('enabled', 1), ('official', 1), ('last_heartbeat_at', -1)])
+db.netplay_servers.create_index('last_heartbeat_at')
 
 VISIT_RETENTION_DAYS = 400
 VISIT_RETENTION_SECONDS = VISIT_RETENTION_DAYS * 24 * 60 * 60
@@ -328,6 +333,12 @@ TOP_SONGS_REFRESH_LOCK_SECONDS = max(60, env_int('TAIKO_WEB_TOP_SONGS_REFRESH_LO
 TOP_SONGS_SORT_MAX_TIME_MS = max(1000, env_int('TAIKO_WEB_TOP_SONGS_SORT_MAX_TIME_MS', 2000))
 TOP_SONGS_BACKFILL_MAX_TIME_MS = max(1000, env_int('TAIKO_WEB_TOP_SONGS_BACKFILL_MAX_TIME_MS', 5000))
 REMOTE_REQUEST_TIMEOUT = (3.05, 15)
+NETPLAY_HEARTBEAT_TIMEOUT_SECONDS = max(
+    60,
+    min(env_int('TAIKO_WEB_NETPLAY_HEARTBEAT_TIMEOUT_SECONDS', 90), 120)
+)
+NETPLAY_SERVER_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$')
+NETPLAY_STATUS_VALUES = {'online', 'offline', 'degraded'}
 
 
 def ensure_visit_record_indexes():
@@ -1446,6 +1457,206 @@ def form_float(name, default=None):
     return safe_float_value(request.form.get(name), default)
 
 
+def bool_from_value(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on', 'enabled')
+
+
+def bounded_int(value, default=0, minimum=0, maximum=100000):
+    number = safe_int_value(value, default)
+    if number is None:
+        number = default
+    return max(minimum, min(number, maximum))
+
+
+def parse_netplay_ip_allowlist(value):
+    if value in (None, ''):
+        return []
+    if isinstance(value, str):
+        raw_entries = re.split(r'[\s,]+', value)
+    elif isinstance(value, list):
+        raw_entries = value
+    else:
+        raise ValueError('ip_allowlist must be a list or string')
+
+    entries = []
+    for raw_entry in raw_entries:
+        entry = str(raw_entry or '').strip()
+        if not entry:
+            continue
+        try:
+            ipaddress.ip_network(entry, strict=False)
+        except ValueError as exc:
+            raise ValueError('Invalid IP allowlist entry: {}'.format(entry)) from exc
+        entries.append(entry)
+    return entries
+
+
+def netplay_token_hash(token):
+    token = str(token or '')
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
+def generate_netplay_token():
+    return secrets.token_urlsafe(32)
+
+
+def is_valid_netplay_endpoint(endpoint):
+    if not endpoint or len(endpoint) > 500:
+        return False
+    try:
+        parsed = urlparse(endpoint)
+    except Exception:
+        return False
+    return parsed.scheme in ('ws', 'wss') and bool(parsed.netloc)
+
+
+def netplay_heartbeat_age(server):
+    last_heartbeat = server.get('last_heartbeat_at')
+    if not isinstance(last_heartbeat, datetime):
+        return None
+    return max(0, int((datetime.utcnow() - last_heartbeat).total_seconds()))
+
+
+def netplay_server_status(server, now=None):
+    now = now or datetime.utcnow()
+    last_heartbeat = server.get('last_heartbeat_at')
+    if not isinstance(last_heartbeat, datetime):
+        return 'offline'
+    if now - last_heartbeat > timedelta(seconds=NETPLAY_HEARTBEAT_TIMEOUT_SECONDS):
+        return 'offline'
+    status = server.get('last_status') or 'offline'
+    if status not in NETPLAY_STATUS_VALUES:
+        return 'offline'
+    return status
+
+
+def serialize_datetime(value):
+    if isinstance(value, datetime):
+        return value.isoformat() + 'Z'
+    return None
+
+
+def sanitize_netplay_server(server, admin=False):
+    status = netplay_server_status(server)
+    output = {
+        'server_id': server.get('server_id') or '',
+        'name': server.get('name') or server.get('server_id') or 'Official Server',
+        'region': server.get('region') or '',
+        'endpoint': server.get('endpoint') or '',
+        'official': bool(server.get('official', True)),
+        'current_players': bounded_int(server.get('current_players'), 0),
+        'current_rooms': bounded_int(server.get('current_rooms'), 0),
+        'max_players': bounded_int(server.get('max_players'), 0),
+        'max_rooms': bounded_int(server.get('max_rooms'), 0),
+        'status': status
+    }
+    if admin:
+        output.update({
+            'domain': server.get('domain') or '',
+            'ip_allowlist': list(server.get('ip_allowlist') or []),
+            'enabled': bool(server.get('enabled')),
+            'last_heartbeat_at': serialize_datetime(server.get('last_heartbeat_at')),
+            'last_status': server.get('last_status') or 'offline',
+            'version': server.get('version') or '',
+            'notes': server.get('notes') or '',
+            'created_at': serialize_datetime(server.get('created_at')),
+            'updated_at': serialize_datetime(server.get('updated_at')),
+            'token_configured': bool(server.get('token_hash')),
+            'heartbeat_age_seconds': netplay_heartbeat_age(server)
+        })
+    return output
+
+
+def public_netplay_servers():
+    servers = []
+    now = datetime.utcnow()
+    try:
+        cursor = db.netplay_servers.find({
+            'enabled': True,
+            'official': True
+        }).sort([('region', 1), ('name', 1)])
+        for server in cursor:
+            if netplay_server_status(server, now) != 'online':
+                continue
+            if not is_valid_netplay_endpoint(server.get('endpoint')):
+                continue
+            servers.append(sanitize_netplay_server(server))
+    except PyMongoError:
+        app.logger.exception('Failed to load public netplay servers')
+    return servers
+
+
+def validate_netplay_server_id(server_id):
+    server_id = str(server_id or '').strip()
+    if not NETPLAY_SERVER_ID_RE.match(server_id):
+        raise ValueError('server_id must be 2-64 chars: letters, numbers, dot, dash, underscore')
+    return server_id
+
+
+def build_netplay_server_payload(source, creating=False):
+    source = source or {}
+    server_id = validate_netplay_server_id(source.get('server_id')) if creating else None
+    endpoint = str(source.get('endpoint') or '').strip()
+    if not is_valid_netplay_endpoint(endpoint):
+        raise ValueError('Endpoint must be a valid ws:// or wss:// URL.')
+
+    payload = {
+        'name': str(source.get('name') or server_id or '').strip()[:120],
+        'region': str(source.get('region') or '').strip()[:40],
+        'endpoint': endpoint,
+        'domain': str(source.get('domain') or '').strip()[:255],
+        'ip_allowlist': parse_netplay_ip_allowlist(source.get('ip_allowlist')),
+        'enabled': bool_from_value(source.get('enabled'), False),
+        'official': True,
+        'max_players': bounded_int(source.get('max_players'), 100, 1, 10000),
+        'max_rooms': bounded_int(source.get('max_rooms'), 50, 1, 10000),
+        'notes': str(source.get('notes') or '').strip()[:2000],
+        'updated_at': datetime.utcnow()
+    }
+    if creating:
+        payload.update({
+            'server_id': server_id,
+            'current_players': 0,
+            'current_rooms': 0,
+            'last_heartbeat_at': None,
+            'last_status': 'offline',
+            'version': '',
+            'created_at': datetime.utcnow()
+        })
+    if not payload['name']:
+        raise ValueError('Name is required.')
+    return payload
+
+
+def request_json_or_form():
+    if request.is_json:
+        return request.get_json(silent=True) or {}
+    return request.form
+
+
+def netplay_client_ip_allowed(server, client_ip):
+    allowlist = server.get('ip_allowlist') or []
+    if not allowlist:
+        return True
+    try:
+        remote_ip = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False
+    for entry in allowlist:
+        try:
+            if remote_ip in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def normalize_admin_song(song):
     song = dict(song or {})
     song['title_lang'] = safe_lang_map(song.get('title_lang'))
@@ -1902,6 +2113,209 @@ def route_admin_messages_toggle(message_id):
     return redirect(basedir + 'admin/messages')
 
 
+def create_netplay_server(source):
+    payload = build_netplay_server_payload(source, creating=True)
+    token = str(source.get('token') or '').strip() or generate_netplay_token()
+    payload['token_hash'] = netplay_token_hash(token)
+    db.netplay_servers.insert_one(payload)
+    return token
+
+
+def update_netplay_server(server_id, source):
+    server_id = validate_netplay_server_id(server_id)
+    payload = build_netplay_server_payload(source, creating=False)
+    payload.pop('server_id', None)
+    result = db.netplay_servers.update_one({'server_id': server_id}, {'$set': payload})
+    return result.matched_count > 0
+
+
+def sorted_admin_netplay_servers():
+    servers = [
+        sanitize_netplay_server(server, admin=True)
+        for server in db.netplay_servers.find({}).sort([('region', 1), ('name', 1)])
+    ]
+    return servers
+
+
+def netplay_api_error(message, status=400):
+    return jsonify({'status': 'error', 'message': message}), status
+
+
+@app.route(basedir + 'admin/netplay')
+@admin_required(level=50)
+def route_admin_netplay():
+    user = db.users.find_one({'username': session['username']})
+    return render_template('admin_netplay_servers.html',
+        servers=sorted_admin_netplay_servers(), admin=user, config=get_config())
+
+
+@app.route(basedir + 'admin/netplay/servers', methods=['POST'])
+@admin_required(level=100)
+def route_admin_netplay_servers_create():
+    try:
+        token = create_netplay_server(request.form)
+    except DuplicateKeyError:
+        flash('Error: server_id already exists.', 'error')
+    except (ValueError, PyMongoError) as exc:
+        flash('Error: {}'.format(exc), 'error')
+    else:
+        flash('Server created. New token, shown once: {}'.format(token))
+    return redirect(basedir + 'admin/netplay')
+
+
+@app.route(basedir + 'admin/netplay/servers/<server_id>', methods=['POST'])
+@admin_required(level=100)
+def route_admin_netplay_servers_update(server_id):
+    try:
+        if not update_netplay_server(server_id, request.form):
+            abort(404)
+    except ValueError as exc:
+        flash('Error: {}'.format(exc), 'error')
+    except PyMongoError as exc:
+        flash('Error: {}'.format(exc), 'error')
+    else:
+        flash('Server updated.')
+    return redirect(basedir + 'admin/netplay')
+
+
+@app.route(basedir + 'admin/netplay/servers/<server_id>/rotate-token', methods=['POST'])
+@admin_required(level=100)
+def route_admin_netplay_servers_rotate_token(server_id):
+    server_id = validate_netplay_server_id(server_id)
+    token = generate_netplay_token()
+    result = db.netplay_servers.update_one(
+        {'server_id': server_id},
+        {'$set': {'token_hash': netplay_token_hash(token), 'updated_at': datetime.utcnow()}}
+    )
+    if not result.matched_count:
+        abort(404)
+    flash('Token rotated for {}. New token, shown once: {}'.format(server_id, token))
+    return redirect(basedir + 'admin/netplay')
+
+
+@app.route(basedir + 'admin/netplay/servers/<server_id>/enable', methods=['POST'])
+@admin_required(level=100)
+def route_admin_netplay_servers_enable(server_id):
+    server_id = validate_netplay_server_id(server_id)
+    result = db.netplay_servers.update_one(
+        {'server_id': server_id},
+        {'$set': {'enabled': True, 'updated_at': datetime.utcnow()}}
+    )
+    if not result.matched_count:
+        abort(404)
+    flash('Server enabled.')
+    return redirect(basedir + 'admin/netplay')
+
+
+@app.route(basedir + 'admin/netplay/servers/<server_id>/disable', methods=['POST'])
+@admin_required(level=100)
+def route_admin_netplay_servers_disable(server_id):
+    server_id = validate_netplay_server_id(server_id)
+    result = db.netplay_servers.update_one(
+        {'server_id': server_id},
+        {'$set': {'enabled': False, 'updated_at': datetime.utcnow()}}
+    )
+    if not result.matched_count:
+        abort(404)
+    flash('Server disabled.')
+    return redirect(basedir + 'admin/netplay')
+
+
+@app.route(basedir + 'admin/netplay/servers/<server_id>/delete', methods=['POST'])
+@admin_required(level=100)
+def route_admin_netplay_servers_delete(server_id):
+    server_id = validate_netplay_server_id(server_id)
+    result = db.netplay_servers.delete_one({'server_id': server_id})
+    if not result.deleted_count:
+        abort(404)
+    flash('Server deleted.')
+    return redirect(basedir + 'admin/netplay')
+
+
+@app.route(basedir + 'api/admin/netplay/servers')
+@admin_required(level=50)
+def route_admin_api_netplay_servers():
+    return jsonify({'status': 'ok', 'servers': sorted_admin_netplay_servers()})
+
+
+@app.route(basedir + 'api/admin/netplay/servers', methods=['POST'])
+@admin_required(level=100)
+def route_admin_api_netplay_servers_create():
+    try:
+        token = create_netplay_server(request_json_or_form())
+    except DuplicateKeyError:
+        return netplay_api_error('server_id_exists', 409)
+    except ValueError as exc:
+        return netplay_api_error(str(exc), 400)
+    return jsonify({'status': 'ok', 'token': token})
+
+
+@app.route(basedir + 'api/admin/netplay/servers/<server_id>', methods=['PUT'])
+@admin_required(level=100)
+def route_admin_api_netplay_servers_update(server_id):
+    try:
+        updated = update_netplay_server(server_id, request_json_or_form())
+    except ValueError as exc:
+        return netplay_api_error(str(exc), 400)
+    if not updated:
+        return netplay_api_error('not_found', 404)
+    return jsonify({'status': 'ok'})
+
+
+@app.route(basedir + 'api/admin/netplay/servers/<server_id>', methods=['DELETE'])
+@admin_required(level=100)
+def route_admin_api_netplay_servers_delete(server_id):
+    try:
+        server_id = validate_netplay_server_id(server_id)
+    except ValueError as exc:
+        return netplay_api_error(str(exc), 400)
+    result = db.netplay_servers.delete_one({'server_id': server_id})
+    if not result.deleted_count:
+        return netplay_api_error('not_found', 404)
+    return jsonify({'status': 'ok'})
+
+
+@app.route(basedir + 'api/admin/netplay/servers/<server_id>/rotate-token', methods=['POST'])
+@admin_required(level=100)
+def route_admin_api_netplay_servers_rotate_token(server_id):
+    try:
+        server_id = validate_netplay_server_id(server_id)
+    except ValueError as exc:
+        return netplay_api_error(str(exc), 400)
+    token = generate_netplay_token()
+    result = db.netplay_servers.update_one(
+        {'server_id': server_id},
+        {'$set': {'token_hash': netplay_token_hash(token), 'updated_at': datetime.utcnow()}}
+    )
+    if not result.matched_count:
+        return netplay_api_error('not_found', 404)
+    return jsonify({'status': 'ok', 'token': token})
+
+
+@app.route(basedir + 'api/admin/netplay/servers/<server_id>/enable', methods=['POST'])
+@admin_required(level=100)
+def route_admin_api_netplay_servers_enable(server_id):
+    result = db.netplay_servers.update_one(
+        {'server_id': server_id},
+        {'$set': {'enabled': True, 'updated_at': datetime.utcnow()}}
+    )
+    if not result.matched_count:
+        return netplay_api_error('not_found', 404)
+    return jsonify({'status': 'ok'})
+
+
+@app.route(basedir + 'api/admin/netplay/servers/<server_id>/disable', methods=['POST'])
+@admin_required(level=100)
+def route_admin_api_netplay_servers_disable(server_id):
+    result = db.netplay_servers.update_one(
+        {'server_id': server_id},
+        {'$set': {'enabled': False, 'updated_at': datetime.utcnow()}}
+    )
+    if not result.matched_count:
+        return netplay_api_error('not_found', 404)
+    return jsonify({'status': 'ok'})
+
+
 @app.route(basedir + 'admin/songs')
 @admin_required(level=50)
 def route_admin_songs():
@@ -2118,6 +2532,52 @@ def route_admin_users_post():
             flash('User updated.')
     
     return render_template('admin_users.html', config=get_config(), max_level=max_level, username=username, level=level)
+
+
+@app.route(basedir + 'api/netplay/servers')
+def route_api_netplay_servers():
+    try:
+        servers = public_netplay_servers()
+    except Exception:
+        app.logger.exception('Failed to build netplay server response')
+        servers = []
+    return jsonify({'enabled': bool(servers), 'servers': servers})
+
+
+@app.route(basedir + 'api/netplay/heartbeat', methods=['POST'])
+@limiter.limit("120 per minute")
+def route_api_netplay_heartbeat():
+    data = request.get_json(silent=True) or {}
+    server_id = str(data.get('server_id') or '').strip()
+    auth_header = request.headers.get('Authorization') or ''
+    auth_parts = auth_header.split(None, 1)
+    token = auth_parts[1].strip() if len(auth_parts) == 2 and auth_parts[0].lower() == 'bearer' else ''
+    if not server_id or not token:
+        return jsonify({'status': 'error', 'message': 'unauthorized'}), 401
+
+    server = db.netplay_servers.find_one({'server_id': server_id, 'official': True})
+    if not server or not server.get('token_hash'):
+        return jsonify({'status': 'error', 'message': 'unauthorized'}), 401
+    if not hmac.compare_digest(str(server.get('token_hash')), netplay_token_hash(token)):
+        return jsonify({'status': 'error', 'message': 'unauthorized'}), 401
+    if not netplay_client_ip_allowed(server, get_remote_address()):
+        return jsonify({'status': 'error', 'message': 'forbidden'}), 403
+
+    status = str(data.get('status') or 'online').strip().lower()
+    if status not in NETPLAY_STATUS_VALUES:
+        status = 'online'
+    update = {
+        'current_players': bounded_int(data.get('current_players'), 0, 0, 100000),
+        'current_rooms': bounded_int(data.get('current_rooms'), 0, 0, 100000),
+        'max_players': bounded_int(data.get('max_players'), server.get('max_players') or 100, 1, 100000),
+        'max_rooms': bounded_int(data.get('max_rooms'), server.get('max_rooms') or 50, 1, 100000),
+        'version': str(data.get('version') or '')[:80],
+        'last_status': status,
+        'last_heartbeat_at': datetime.utcnow(),
+        'updated_at': datetime.utcnow()
+    }
+    db.netplay_servers.update_one({'_id': server['_id']}, {'$set': update})
+    return jsonify({'status': 'ok'})
 
 
 @app.route(basedir + 'api/preview')

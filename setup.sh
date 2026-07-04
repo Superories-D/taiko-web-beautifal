@@ -13,6 +13,9 @@ SERVICE_NAME=taiko-web
 COMPOSE_PROJECT_NAME=taiko-web
 APP_USER=${APP_USER:-www-data}
 APP_GROUP=${APP_GROUP:-www-data}
+NETPLAY_INSTALL_DIR=${NETPLAY_INSTALL_DIR:-/opt/taiko-netplay-ws}
+NETPLAY_CONFIG_DIR=${NETPLAY_CONFIG_DIR:-/etc/taiko-netplay-ws}
+NETPLAY_SERVICE_NAME=${NETPLAY_SERVICE_NAME:-taiko-netplay-ws}
 BACKUP_ROOT=${BACKUP_ROOT:-$INSTALL_DIR/backups/mongodb}
 DESTRUCTIVE_CONFIRMATION=I_UNDERSTAND_THIS_WILL_DELETE_MONGODB_DATA
 LAST_BACKUP_DIR=
@@ -1013,6 +1016,19 @@ uninstall_all() {
   log "Persistent data directory preserved: $DATA_DIR"
 }
 
+deploy_netplay_ws() {
+  log "Starting official netplay WebSocket node deployment."
+  local installer="$SRC_DIR/tools/netplay_ws/install.sh"
+  if [ ! -f "$installer" ]; then
+    echo "Netplay WebSocket installer not found: $installer"
+    exit 1
+  fi
+  NETPLAY_INSTALL_DIR="$NETPLAY_INSTALL_DIR" \
+  NETPLAY_CONFIG_DIR="$NETPLAY_CONFIG_DIR" \
+  NETPLAY_SERVICE_NAME="$NETPLAY_SERVICE_NAME" \
+  bash "$installer"
+}
+
 print_menu() {
   printf '%s\n' \
     "Available actions:" \
@@ -1025,6 +1041,7 @@ print_menu() {
     "  reset-db            Delete MongoDB data; requires full confirmation" \
     "  deploy-container    Legacy alias for install" \
     "  deploy-direct       Direct-system install" \
+    "  deploy-netplay-ws   Install or update an official WebSocket netplay node" \
     "  upgrade-container   Legacy alias for update" \
     "  upgrade-direct      Direct-system update" \
     "  uninstall           Remove app files; preserves persistent data directory"
@@ -1086,6 +1103,7 @@ main() {
     reset-db) reset_db ;;
     deploy-container) deploy_container ;;
     deploy-direct) deploy_direct ;;
+    deploy-netplay-ws) deploy_netplay_ws ;;
     upgrade-container) upgrade_container "$skip_backup" ;;
     upgrade-direct) upgrade_direct "$skip_backup" ;;
     uninstall) uninstall_all ;;

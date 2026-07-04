@@ -270,6 +270,7 @@ class SongSelect {
 		this.features = gameConfig.features || {}
 		this.siteMessagesEnabled = !!this.features.site_messages
 		this.topSongsEnabled = !!this.features.top_songs
+		this.legacyNetplayEnabled = !!this.features.legacy_netplay
 
 		this.songs = []
 		for (let song of assets.songs) {
@@ -497,9 +498,11 @@ class SongSelect {
 		this.searchButton = document.getElementById("song-search-btn")
 		this.topSongsButton = document.getElementById("song-top10-btn")
 		this.easySettingsButton = document.getElementById("song-easy-settings-btn")
+		this.netplayButton = document.getElementById("song-netplay-btn")
 		this.searchButton.hidden = true
 		this.topSongsButton.hidden = true
 		this.easySettingsButton.hidden = true
+		this.netplayButton.hidden = true
 		pageEvents.add(this.searchButton, ["click", "touchend"], this.openSearchFromButton.bind(this))
 		pageEvents.add(this.easySettingsButton, ["click", "touchend"], this.openEasySettingsFromButton.bind(this))
 		if (this.topSongsEnabled) {
@@ -524,6 +527,7 @@ class SongSelect {
 				siteMessageOverlay.hidden = true
 			}
 		}
+		this.netplay = new NetplayBeta(this)
 		var cat = this.songs[this.selectedSong].originalCategory
 		this.drawBackground(cat)
 
@@ -585,7 +589,7 @@ class SongSelect {
 			jump_right: ["rb"]
 		}, this.keyPress.bind(this))
 
-		if (!assets.customSongs) {
+		if (!assets.customSongs && this.legacyNetplayEnabled) {
 			this.startP2()
 		}
 
@@ -791,6 +795,10 @@ class SongSelect {
 			}
 			return
 		}
+		if (this.netplay && this.netplay.isOpen()) {
+			this.netplay.keyPress(pressed, name, event, repeat)
+			return
+		}
 		if (this.state.showWarning) {
 			if (name === "confirm") {
 				this.playSound("se_don")
@@ -884,7 +892,7 @@ class SongSelect {
 	openSearchFromButton(event) {
 		event.preventDefault()
 		event.stopPropagation()
-		if (this.state.screen === "song" && !this.search.opened && !(this.topSongs && this.topSongs.opened)) {
+		if (this.state.screen === "song" && !this.search.opened && !(this.topSongs && this.topSongs.opened) && !(this.netplay && this.netplay.isOpen())) {
 			this.search.display(true)
 		}
 	}
@@ -892,7 +900,7 @@ class SongSelect {
 	openTopSongsFromButton(event) {
 		event.preventDefault()
 		event.stopPropagation()
-		if (this.topSongs && this.state.screen === "song" && !this.search.opened && !this.topSongs.opened) {
+		if (this.topSongs && this.state.screen === "song" && !this.search.opened && !this.topSongs.opened && !(this.netplay && this.netplay.isOpen())) {
 			this.topSongs.display(true)
 		}
 	}
@@ -900,13 +908,13 @@ class SongSelect {
 	openEasySettingsFromButton(event) {
 		event.preventDefault()
 		event.stopPropagation()
-		if (typeof window !== "undefined" && window.EasySettings && this.state.screen === "song" && !this.search.opened && !(this.topSongs && this.topSongs.opened) && !this.uploadModal.opened) {
+		if (typeof window !== "undefined" && window.EasySettings && this.state.screen === "song" && !this.search.opened && !(this.topSongs && this.topSongs.opened) && !this.uploadModal.opened && !(this.netplay && this.netplay.isOpen())) {
 			window.EasySettings.open(this)
 		}
 	}
 
 	updateSearchButtonVisibility() {
-		if (!this.songSelect || !this.searchButton || !this.topSongsButton || !this.easySettingsButton) {
+		if (!this.songSelect || !this.searchButton || !this.topSongsButton || !this.easySettingsButton || !this.netplayButton) {
 			return
 		}
 		var visible = this.state.screen === "song" &&
@@ -914,13 +922,17 @@ class SongSelect {
 			!(this.topSongs && this.topSongs.opened) &&
 			!this.uploadModal.opened &&
 			!(typeof window !== "undefined" && window.EasySettings && window.EasySettings.isOpen && window.EasySettings.isOpen()) &&
-			!(this.siteMessages && this.siteMessages.isOpen())
+			!(this.siteMessages && this.siteMessages.isOpen()) &&
+			!(this.netplay && this.netplay.isOpen())
+		var netplayVisible = visible && this.netplay && this.netplay.hasServers
 		this.searchButton.hidden = !visible
 		this.topSongsButton.hidden = !visible || !this.topSongsEnabled
 		this.easySettingsButton.hidden = !visible
+		this.netplayButton.hidden = !netplayVisible
 		this.songSelect.classList.toggle("search-button-visible", visible)
 		this.songSelect.classList.toggle("top10-button-visible", visible && this.topSongsEnabled)
 		this.songSelect.classList.toggle("easy-settings-button-visible", visible)
+		this.songSelect.classList.toggle("netplay-button-visible", !!netplayVisible)
 	}
 
 	changeType(delta) {
@@ -3544,6 +3556,9 @@ class SongSelect {
 		if (this.siteMessages) {
 			this.siteMessages.clean()
 		}
+		if (this.netplay) {
+			this.netplay.clean()
+		}
 		if(assets.sounds["bgm_songsel"]){
 			assets.sounds["bgm_songsel"].stop()
 		}
@@ -3575,8 +3590,10 @@ class SongSelect {
 		delete this.searchButton
 		delete this.topSongsButton
 		delete this.easySettingsButton
+		delete this.netplayButton
 		delete this.topSongs
 		delete this.siteMessages
+		delete this.netplay
 		delete this.uploadModal
 		delete this.selectable
 		delete this.ctx

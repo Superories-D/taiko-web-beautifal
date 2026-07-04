@@ -26,6 +26,9 @@ class PlayStats {
 
     // 记录一次游玩
     async record(hash, difficulty, score, isAuto) {
+        if (typeof window !== "undefined" && window.netplayActive) {
+            return
+        }
         try {
             const token = await loader.getCsrfToken()
             await fetch('api/playcount/record', {

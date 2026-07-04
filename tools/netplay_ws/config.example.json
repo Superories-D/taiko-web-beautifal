@@ -1,0 +1,26 @@
+{
+  "main_server": "https://taiko.asia",
+  "server_id": "official-jp-1",
+  "server_token": "paste-token-shown-once-by-admin",
+  "public_endpoint": "wss://ws-jp.taiko.asia",
+  "region": "JP",
+  "listen_host": "0.0.0.0",
+  "listen_port": 8765,
+  "max_players": 100,
+  "max_rooms": 50,
+  "max_players_per_ip": 3,
+  "heartbeat_interval": 20,
+  "invite_ttl_seconds": 300,
+  "room_idle_seconds": 900,
+  "message_rate_limit_per_second": 25,
+  "max_message_bytes": 32768,
+  "allowed_origins": [
+    "https://taiko.asia",
+    "https://www.taiko.asia",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000"
+  ],
+  "allow_missing_origin": false
+}

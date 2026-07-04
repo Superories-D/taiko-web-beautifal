@@ -497,6 +497,232 @@ var translations = {
 		tw: "網上對打",
 		ko: "온라인 대전"
 	},
+	netplayBeta: {
+		title: {
+			ja: "オンライン Beta",
+			en: "Netplay Beta",
+			cn: "联机 Beta",
+			tw: "聯機 Beta",
+			ko: "온라인 Beta"
+		},
+		buttonShort: {
+			ja: "Net",
+			en: "Net",
+			cn: "联机",
+			tw: "聯機",
+			ko: "Net"
+		},
+		officialServer: {
+			ja: "公式サーバー",
+			en: "Official Server",
+			cn: "官方服务器",
+			tw: "官方伺服器",
+			ko: "공식 서버"
+		},
+		connecting: {
+			ja: "接続中...",
+			en: "Connecting...",
+			cn: "正在连接……",
+			tw: "正在連線……",
+			ko: "연결 중..."
+		},
+		connectionFailed: {
+			ja: "接続に失敗しました",
+			en: "Connection failed",
+			cn: "连接失败",
+			tw: "連線失敗",
+			ko: "연결에 실패했습니다"
+		},
+		noneAvailable: {
+			ja: "利用可能なオンラインサーバーがありません",
+			en: "No netplay servers available",
+			cn: "当前没有可用联机服务器",
+			tw: "目前沒有可用聯機伺服器",
+			ko: "사용 가능한 온라인 서버가 없습니다"
+		},
+		connect: {
+			ja: "接続",
+			en: "Connect",
+			cn: "连接",
+			tw: "連線",
+			ko: "연결"
+		},
+		connected: {
+			ja: "接続しました",
+			en: "Connected",
+			cn: "已连接",
+			tw: "已連線",
+			ko: "연결됨"
+		},
+		disconnected: {
+			ja: "切断しました",
+			en: "Disconnected",
+			cn: "已断开",
+			tw: "已中斷",
+			ko: "연결 해제됨"
+		},
+		notConnected: {
+			ja: "未接続",
+			en: "Not connected",
+			cn: "未连接",
+			tw: "未連線",
+			ko: "연결되지 않음"
+		},
+		players: {
+			ja: "人",
+			en: "players",
+			cn: "人",
+			tw: "人",
+			ko: "명"
+		},
+		rooms: {
+			ja: "部屋",
+			en: "rooms",
+			cn: "房间",
+			tw: "房間",
+			ko: "방"
+		},
+		roomId: {
+			ja: "ルームID",
+			en: "Room ID",
+			cn: "房间 ID",
+			tw: "房間 ID",
+			ko: "방 ID"
+		},
+		playerName: {
+			ja: "プレイヤー名",
+			en: "Player name",
+			cn: "玩家名",
+			tw: "玩家名",
+			ko: "플레이어 이름"
+		},
+		joinRoom: {
+			ja: "入室",
+			en: "Join room",
+			cn: "加入房间",
+			tw: "加入房間",
+			ko: "방 참가"
+		},
+		ready: {
+			ja: "準備OK",
+			en: "Ready",
+			cn: "准备",
+			tw: "準備",
+			ko: "준비"
+		},
+		start: {
+			ja: "開始",
+			en: "Start",
+			cn: "开始",
+			tw: "開始",
+			ko: "시작"
+		},
+		leave: {
+			ja: "退出",
+			en: "Leave",
+			cn: "离开",
+			tw: "離開",
+			ko: "나가기"
+		},
+		disconnect: {
+			ja: "切断",
+			en: "Disconnect",
+			cn: "断开",
+			tw: "中斷",
+			ko: "연결 해제"
+		},
+		loading: {
+			ja: "読み込み中...",
+			en: "Loading...",
+			cn: "正在加载……",
+			tw: "正在載入……",
+			ko: "로딩 중..."
+		},
+		refresh: {
+			ja: "更新",
+			en: "Refresh",
+			cn: "刷新",
+			tw: "重新整理",
+			ko: "새로고침"
+		},
+		createInvite: {
+			ja: "招待リンクを作成",
+			en: "Create invite",
+			cn: "创建邀请链接",
+			tw: "建立邀請連結",
+			ko: "초대 링크 만들기"
+		},
+		creatingInvite: {
+			ja: "招待を作成中...",
+			en: "Creating invite...",
+			cn: "正在创建邀请……",
+			tw: "正在建立邀請……",
+			ko: "초대 생성 중..."
+		},
+		joiningInvite: {
+			ja: "招待に参加中...",
+			en: "Joining invite...",
+			cn: "正在加入邀请……",
+			tw: "正在加入邀請……",
+			ko: "초대 참가 중..."
+		},
+		inviteReady: {
+			ja: "招待リンクを作成しました",
+			en: "Invite link ready",
+			cn: "邀请链接已创建",
+			tw: "邀請連結已建立",
+			ko: "초대 링크 준비됨"
+		},
+		inviteLink: {
+			ja: "招待リンク",
+			en: "Invite link",
+			cn: "邀请链接",
+			tw: "邀請連結",
+			ko: "초대 링크"
+		},
+		copy: {
+			ja: "コピー",
+			en: "Copy",
+			cn: "复制",
+			tw: "複製",
+			ko: "복사"
+		},
+		copied: {
+			ja: "コピーしました",
+			en: "Copied",
+			cn: "已复制",
+			tw: "已複製",
+			ko: "복사됨"
+		},
+		expiresInFive: {
+			ja: "未参加のまま5分経つと無効になります",
+			en: "Expires if unopened after 5 minutes",
+			cn: "5 分钟内未打开会失效",
+			tw: "5 分鐘內未開啟會失效",
+			ko: "5분 동안 열리지 않으면 만료됩니다"
+		},
+		inviteExpired: {
+			ja: "この招待は利用できません",
+			en: "This invite is no longer available.",
+			cn: "这个邀请已不可用",
+			tw: "這個邀請已不可用",
+			ko: "이 초대는 더 이상 사용할 수 없습니다"
+		},
+		peerJoined: {
+			ja: "相手が参加しました",
+			en: "Peer joined",
+			cn: "对方已加入",
+			tw: "對方已加入",
+			ko: "상대가 참가했습니다"
+		},
+		inviteClosed: {
+			ja: "招待は終了しました",
+			en: "Invite closed",
+			cn: "邀请已结束",
+			tw: "邀請已結束",
+			ko: "초대가 종료되었습니다"
+		}
+	},
 	easy: {
 		ja: "かんたん",
 		en: "Easy",

@@ -1,0 +1,278 @@
+#song-netplay-btn{
+	display: none;
+	position: absolute;
+	bottom: max(2vmin, 14px);
+	right: max(32vmin, 292px);
+	width: clamp(46px, 7.2vmin, 68px);
+	height: clamp(46px, 7.2vmin, 68px);
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.22);
+	box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.45), 0 4px 10px rgba(0, 0, 0, 0.25);
+	cursor: pointer;
+	opacity: 0.88;
+	z-index: 11;
+	touch-action: manipulation;
+	transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.12s ease;
+	font-family: "Arial Black", "Arial", sans-serif;
+	font-size: clamp(10px, 1.55vmin, 14px);
+	font-weight: 900;
+	color: #2b1400;
+	letter-spacing: 0;
+	text-align: center;
+}
+
+#song-netplay-btn span{
+	display: block;
+	transform: rotate(-5deg);
+	text-shadow: 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+#song-netplay-btn[hidden]{
+	display: none !important;
+}
+
+#song-netplay-btn:hover,
+#song-netplay-btn:focus-visible{
+	background-color: rgba(255, 249, 35, 0.35);
+	opacity: 1;
+	transform: scale(1.05);
+	outline: none;
+}
+
+#song-select.netplay-button-visible #song-netplay-btn{
+	display: block;
+}
+
+#song-select.top10-button-visible #song-netplay-btn{
+	right: max(41vmin, 372px);
+}
+
+#netplay-overlay{
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	padding: clamp(14px, 4vmin, 36px);
+	background: rgba(8, 15, 28, 0.66);
+	z-index: 32;
+	user-select: text;
+	white-space: normal;
+}
+
+#netplay-overlay[hidden]{
+	display: none !important;
+}
+
+#netplay-panel{
+	box-sizing: border-box;
+	width: min(760px, 100%);
+	max-height: min(84vh, 720px);
+	display: flex;
+	flex-direction: column;
+	border-radius: 8px;
+	border: 4px solid #4dd2ff;
+	background: #fffdf6;
+	box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
+	color: #243244;
+	overflow: hidden;
+	font-family: "Outfit", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.netplay-header{
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 14px 16px;
+	background: #1c7ed6;
+	color: #fff;
+}
+
+.netplay-header h2{
+	margin: 0;
+	font-size: clamp(1.1rem, 3vmin, 1.55rem);
+	line-height: 1.1;
+}
+
+#netplay-close{
+	display: grid;
+	place-items: center;
+	flex: 0 0 auto;
+	width: 38px;
+	height: 38px;
+	border: 2px solid rgba(0, 0, 0, 0.35);
+	border-radius: 50%;
+	background: #ff443d;
+	color: #fff;
+	font: 900 24px/1 Arial, sans-serif;
+	cursor: pointer;
+}
+
+#netplay-body{
+	padding: 16px;
+	overflow: auto;
+}
+
+.netplay-server-list{
+	display: grid;
+	gap: 10px;
+	margin-bottom: 14px;
+}
+
+.netplay-server{
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 14px;
+	padding: 12px;
+	border: 2px solid #d4e5f7;
+	border-radius: 8px;
+	background: #f8fbff;
+}
+
+.netplay-server h3{
+	margin: 0 0 4px;
+	font-size: 1rem;
+}
+
+.netplay-server p{
+	margin: 0 0 6px;
+	color: #4d6177;
+	font-size: 0.9rem;
+}
+
+.netplay-official{
+	display: inline-block;
+	padding: 3px 8px;
+	border-radius: 999px;
+	background: #e7f5ff;
+	color: #1864ab;
+	font-weight: 700;
+	font-size: 0.78rem;
+}
+
+.netplay-server button,
+.netplay-action-row button{
+	border: 0;
+	border-radius: 6px;
+	background: #1c7ed6;
+	color: #fff;
+	font-weight: 700;
+	padding: 9px 12px;
+	cursor: pointer;
+}
+
+.netplay-server button:hover,
+.netplay-action-row button:hover{
+	background: #1864ab;
+}
+
+.netplay-action-row button:disabled{
+	cursor: not-allowed;
+	opacity: 0.45;
+}
+
+.netplay-controls{
+	padding: 12px;
+	border: 2px solid #d4e5f7;
+	border-radius: 8px;
+	background: #ffffff;
+}
+
+.netplay-invite{
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 8px;
+	align-items: center;
+	padding: 12px;
+	margin-bottom: 12px;
+	border: 2px solid #ffd43b;
+	border-radius: 8px;
+	background: #fff9db;
+}
+
+.netplay-invite strong,
+.netplay-invite small{
+	grid-column: 1 / -1;
+}
+
+.netplay-invite input{
+	min-width: 0;
+	width: 100%;
+	box-sizing: border-box;
+	padding: 9px 10px;
+	border: 2px solid #d4a017;
+	border-radius: 6px;
+	background: #fff;
+	color: #243244;
+	font: inherit;
+}
+
+.netplay-invite button{
+	border: 0;
+	border-radius: 6px;
+	background: #1c7ed6;
+	color: #fff;
+	font-weight: 700;
+	padding: 9px 12px;
+	cursor: pointer;
+}
+
+.netplay-status{
+	font-weight: 800;
+	margin-bottom: 10px;
+}
+
+.netplay-room-row,
+.netplay-action-row{
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.netplay-room-row input{
+	flex: 1 1 180px;
+	min-width: 0;
+	padding: 9px 10px;
+	border: 2px solid #ccd8e6;
+	border-radius: 6px;
+	font: inherit;
+}
+
+.netplay-log{
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 12px;
+}
+
+.netplay-log span,
+.netplay-state{
+	padding: 7px 9px;
+	border-radius: 6px;
+	background: #edf2f7;
+	color: #334155;
+	font-size: 0.9rem;
+}
+
+@media (max-width: 560px){
+	.netplay-server{
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.netplay-server button,
+	.netplay-action-row button,
+	.netplay-invite button{
+		width: 100%;
+	}
+
+	.netplay-invite{
+		grid-template-columns: 1fr;
+	}
+}

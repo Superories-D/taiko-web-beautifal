@@ -274,6 +274,9 @@ class ScoreStorage{
 		}
 	}
 	sendToServer(obj, retry){
+		if(typeof window !== "undefined" && window.netplayActive){
+			return Promise.resolve()
+		}
 		if(account.loggedIn){
 			return loader.getCsrfToken().then(token => {
 				var request = new XMLHttpRequest()

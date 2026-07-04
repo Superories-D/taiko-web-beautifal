@@ -920,6 +920,10 @@ class Scoresheet {
 	}
 
 	saveScore() {
+		if (typeof window !== "undefined" && window.netplayActive) {
+			this.scoreSaved = true
+			return
+		}
 		var leaderboardEligible = !this.controller.isLeaderboardEligible || this.controller.isLeaderboardEligible()
 		if (this.controller.saveScore && leaderboardEligible) {
 			if (this.resultsObj.points < 0) {
@@ -967,6 +971,9 @@ class Scoresheet {
 	}
 
 	submitToLeaderboard(hash, difficulty, score) {
+		if (typeof window !== "undefined" && window.netplayActive) {
+			return
+		}
 		if (this.controller.isLeaderboardEligible && !this.controller.isLeaderboardEligible()) {
 			return
 		}

@@ -313,6 +313,51 @@ h1 .song-id {
     word-break: break-all;
 }
 
+.admin-netplay-table code {
+    color: inherit;
+    font-weight: 700;
+}
+
+.admin-status {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #555;
+    color: #fff;
+    font-weight: 700;
+    text-transform: capitalize;
+}
+
+.admin-status-online {
+    background: #0f766e;
+}
+
+.admin-status-degraded {
+    background: #a16207;
+}
+
+.admin-status-offline {
+    background: #667085;
+}
+
+.admin-netplay-actions form {
+    display: inline-block;
+    margin: 0 4px 6px 0;
+}
+
+.admin-netplay-form {
+    margin-bottom: 24px;
+}
+
+.admin-netplay-form h3 {
+    margin: 0 0 12px;
+}
+
+.admin-netplay-form label {
+    display: block;
+    margin: 8px 0;
+}
+
 .admin-song-stats {
     margin-bottom: 24px;
 }

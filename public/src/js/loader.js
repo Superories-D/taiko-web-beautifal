@@ -1434,6 +1434,8 @@ class Loader{
 						songId = number
 						readyEvent = "song-id"
 					}
+				}else if(hashLower.startsWith("#netplay=") || hashLower.startsWith("#np=")){
+					readyEvent = "netplay-invite"
 				}else if(location.hash.length === 6){
 					p2.hashLock = true
 					promises.push(new Promise(resolve => {

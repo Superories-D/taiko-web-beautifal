@@ -213,6 +213,10 @@ class P2Connection{
 		}
 	}
 	onhashchange(){
+		var hashLower = location.hash.toLowerCase()
+		if(hashLower.startsWith("#netplay=") || hashLower.startsWith("#np=")){
+			return
+		}
 		if(this.hashLock){
 			this.hash(this.currentHash)
 		}else{

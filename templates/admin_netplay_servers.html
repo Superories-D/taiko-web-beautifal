@@ -1,0 +1,137 @@
+{% extends 'admin.html' %}
+{% block content %}
+<div class="admin-page-header">
+    <div>
+        <h1>Netplay Servers</h1>
+        <p class="admin-kicker">Official WebSocket nodes controlled by this main server</p>
+    </div>
+</div>
+
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div class="message{% if category == 'error' %} message-error{% endif %}">{{ message }}</div>
+{% endfor %}
+
+<div class="admin-table-wrap">
+    <table class="admin-table admin-netplay-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Server ID</th>
+                <th>Region</th>
+                <th>Endpoint</th>
+                <th>Enabled</th>
+                <th>Status</th>
+                <th>Players</th>
+                <th>Rooms</th>
+                <th>Last heartbeat</th>
+                <th>Version</th>
+                <th>Notes</th>
+                {% if admin.user_level|default(0, true) >= 100 %}
+                <th>Actions</th>
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for server in servers %}
+            <tr>
+                <td>{{ server.name }}</td>
+                <td><code>{{ server.server_id }}</code></td>
+                <td>{{ server.region or '--' }}</td>
+                <td><small>{{ server.endpoint }}</small></td>
+                <td>{{ 'Yes' if server.enabled else 'No' }}</td>
+                <td>
+                    <span class="admin-status admin-status-{{ server.status }}">{{ server.status }}</span>
+                    <small>official: {{ 'yes' if server.official else 'no' }}</small>
+                </td>
+                <td>{{ server.current_players }} / {{ server.max_players }}</td>
+                <td>{{ server.current_rooms }} / {{ server.max_rooms }}</td>
+                <td>
+                    {{ server.last_heartbeat_at or 'Never' }}
+                    {% if server.heartbeat_age_seconds is not none %}
+                    <small>{{ server.heartbeat_age_seconds }}s ago</small>
+                    {% endif %}
+                </td>
+                <td>{{ server.version or '--' }}</td>
+                <td>{{ server.notes or '--' }}</td>
+                {% if admin.user_level|default(0, true) >= 100 %}
+                <td class="admin-netplay-actions">
+                    <form method="post" action="{{config.basedir}}admin/netplay/servers/{{ server.server_id }}/{{ 'disable' if server.enabled else 'enable' }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit">{{ 'Disable' if server.enabled else 'Enable' }}</button>
+                    </form>
+                    <form method="post" action="{{config.basedir}}admin/netplay/servers/{{ server.server_id }}/rotate-token" onsubmit="return confirm('Rotate token for {{ server.server_id }}? The new token is shown once.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit">Rotate token</button>
+                    </form>
+                    <form method="post" action="{{config.basedir}}admin/netplay/servers/{{ server.server_id }}/delete" onsubmit="return confirm('Delete {{ server.server_id }}?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit">Delete</button>
+                    </form>
+                </td>
+                {% endif %}
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="{{ 12 if admin.user_level|default(0, true) >= 100 else 11 }}">No official netplay servers configured.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if admin.user_level|default(0, true) >= 100 %}
+<h2>Add Official Server</h2>
+<form method="post" action="{{config.basedir}}admin/netplay/servers" class="song-form admin-netplay-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-field">
+        <p>Identity</p>
+        <label>Server ID <input name="server_id" type="text" required placeholder="official-jp-1"></label>
+        <label>Name <input name="name" type="text" required placeholder="Official Japan Node"></label>
+        <label>Region <input name="region" type="text" placeholder="JP"></label>
+    </div>
+    <div class="form-field">
+        <p>Connection</p>
+        <label>Endpoint <input name="endpoint" type="text" required placeholder="wss://ws-jp.example.com"></label>
+        <label>Domain <input name="domain" type="text" placeholder="ws-jp.example.com"></label>
+        <label>IP allowlist <textarea name="ip_allowlist" rows="3" placeholder="203.0.113.10&#10;2001:db8::/64"></textarea></label>
+    </div>
+    <div class="form-field">
+        <p>Token</p>
+        <label>Token <input name="token" type="text" placeholder="Leave blank to generate automatically"></label>
+        <small>Only the token hash is stored. Generated or rotated tokens are shown once.</small>
+    </div>
+    <div class="form-field">
+        <p>Limits</p>
+        <label>Max players <input name="max_players" type="number" min="1" value="100"></label>
+        <label>Max rooms <input name="max_rooms" type="number" min="1" value="50"></label>
+        <label class="checkbox"><input name="enabled" type="checkbox" checked> Enabled</label>
+    </div>
+    <div class="form-field">
+        <p>Notes</p>
+        <textarea name="notes" rows="4"></textarea>
+    </div>
+    <button type="submit" class="save-song">Add</button>
+</form>
+
+<h2>Edit Servers</h2>
+{% for server in servers %}
+<form method="post" action="{{config.basedir}}admin/netplay/servers/{{ server.server_id }}" class="song-form admin-netplay-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h3>{{ server.name }} <small>{{ server.server_id }}</small></h3>
+    <div class="form-field">
+        <p>Details</p>
+        <label>Name <input name="name" type="text" required value="{{ server.name }}"></label>
+        <label>Region <input name="region" type="text" value="{{ server.region }}"></label>
+        <label>Endpoint <input name="endpoint" type="text" required value="{{ server.endpoint }}"></label>
+        <label>Domain <input name="domain" type="text" value="{{ server.domain }}"></label>
+        <label>IP allowlist <textarea name="ip_allowlist" rows="3">{{ server.ip_allowlist|join('\n') }}</textarea></label>
+        <label>Max players <input name="max_players" type="number" min="1" value="{{ server.max_players }}"></label>
+        <label>Max rooms <input name="max_rooms" type="number" min="1" value="{{ server.max_rooms }}"></label>
+        <label class="checkbox"><input name="enabled" type="checkbox"{% if server.enabled %} checked{% endif %}> Enabled</label>
+        <label>Notes <textarea name="notes" rows="3">{{ server.notes }}</textarea></label>
+    </div>
+    <button type="submit" class="save-song">Save</button>
+</form>
+{% endfor %}
+{% endif %}
+{% endblock %}

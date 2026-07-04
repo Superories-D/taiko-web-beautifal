@@ -1,0 +1,21 @@
+[Unit]
+Description=Taiko Web Official Netplay WebSocket Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/taiko-netplay-ws
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/taiko-netplay-ws/.venv/bin/python /opt/taiko-netplay-ws/server.py --config /etc/taiko-netplay-ws/config.json
+Restart=always
+RestartSec=3
+User=taiko-netplay
+Group=taiko-netplay
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

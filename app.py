@@ -1204,7 +1204,7 @@ def handle_csrf_error(e):
 
 @app.errorhandler(413)
 def handle_request_too_large(e):
-    if request.path.endswith('/api/upload'):
+    if request.path.endswith('/api/upload') or request.path.endswith('/api/user-upload'):
         return jsonify({'success': False, 'error': 'upload_too_large'}), 413
     return e
 
@@ -2897,7 +2897,7 @@ def finalize_uploaded_song_files(state):
         fsync_directory(SONGS_DIR.resolve())
 
 
-def process_song_upload():
+def process_song_upload(allowed_song_types=None, default_song_type=None, upload_source='web_upload'):
     try:
         if 'file_tja' not in request.files or 'file_music' not in request.files:
             raise UploadValidationError('missing_files')
@@ -2929,8 +2929,9 @@ def process_song_upload():
         tja = tjaf.Tja(tja_text)
         validate_uploaded_tja(tja, tja_text, music_type)
 
-        song_type = request.form.get('song_type')
-        if song_type != CUSTOM_CATEGORY['title']:
+        allowed_song_types = set(allowed_song_types or [CUSTOM_CATEGORY['title']])
+        song_type = (request.form.get('song_type') or default_song_type or '').strip()
+        if song_type not in allowed_song_types:
             raise UploadValidationError('invalid_song_type')
 
         tja_data = tja_text.encode('utf-8')
@@ -2945,7 +2946,7 @@ def process_song_upload():
             'music_type': music_type,
             'song_type': song_type,
             'uploaded_at': datetime.utcnow(),
-            'upload_source': 'web_upload'
+            'upload_source': upload_source
         })
 
         file_state = install_uploaded_song_files(
@@ -2995,10 +2996,22 @@ def process_song_upload():
 def send_upload(ref):
     return cache_wrap(flask.send_from_directory("public/upload", ref), 3600)
 
-@app.route("/api/upload", methods=["POST"])
+@app.route("/api/user-upload", methods=["POST"])
 @limiter.limit("5 per hour")
-def upload_file():
-    return process_song_upload()
+def user_upload_file():
+    return process_song_upload(
+        allowed_song_types=[CUSTOM_CATEGORY['title']],
+        default_song_type=CUSTOM_CATEGORY['title'],
+        upload_source='web_upload'
+    )
+
+@app.route("/api/upload", methods=["POST"])
+def api_upload_file():
+    return process_song_upload(
+        allowed_song_types=SONG_TYPES,
+        default_song_type=CUSTOM_CATEGORY['title'],
+        upload_source='api_upload'
+    )
 
 @app.route("/api/remove", methods=["POST"])
 def remove():

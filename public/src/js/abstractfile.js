@@ -49,7 +49,38 @@ class RemoteFile{
 	arrayBuffer(loadOptions){
 		return loader.ajax(this.url, request => {
 			request.responseType = "arraybuffer"
-		}, null, loadOptions)
+		}, null, loadOptions).catch(error => {
+			if(!this.shouldRetryArrayBufferOnMainThread(error)){
+				return Promise.reject(error)
+			}
+			return loader.fetchWithRetry(this.url, Object.assign({}, loadOptions || {}, {
+				resourceType: loader.inferResourceType(this.url),
+				responseType: "arraybuffer",
+				fetchOptions: Object.assign({
+					cache: "reload"
+				}, loadOptions && loadOptions.fetchOptions || {})
+			}))
+		})
+	}
+	shouldRetryArrayBufferOnMainThread(error){
+		if(this.isCancelError(error)){
+			return false
+		}
+		var detail = error && error.detail || {}
+		var code = error && error.code || detail.code
+		var status = error && error.status || detail.status
+		if(status >= 400 && status < 500 && [408, 425, 429].indexOf(status) === -1){
+			return false
+		}
+		if(code === "RESOURCE_FETCH_FAILED" || code === "WORKER_STALLED" || code === "WORKER_CRASHED" || code === "WORKER_MESSAGE_ERROR"){
+			return true
+		}
+		var name = error && error.name || detail.name || ""
+		var message = error && error.message || detail.message || ""
+		return !status && /AbortError|NetworkError|Failed to fetch|Load failed|resource worker/i.test(name + " " + message)
+	}
+	isCancelError(error){
+		return error === "cancel" || error && error.code === "RESOURCE_CANCELLED" || Array.isArray(error) && this.isCancelError(error[0])
 	}
 	read(encoding, loadOptions){
 		if(encoding){

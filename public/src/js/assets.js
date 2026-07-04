@@ -9,6 +9,7 @@ var assets = {
 		"weeklychallenge.js",
 		"titlescreen.js",
 		"scoresheet.js",
+		"easysettings.js",
 		"songselect.js",
 		"keyboard.js",
 		"gameinput.js",
@@ -55,7 +56,8 @@ var assets = {
 		"debug.css",
 		"songbg.css",
 		"view.css",
-		"search.css"
+		"search.css",
+		"easysettings.css"
 	],
 	"img": [
 		"notes.png",

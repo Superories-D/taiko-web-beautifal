@@ -236,6 +236,48 @@ class WeeklyChallenge {
 			detarame: "0"
 		}
 	}
+	static fixedEasySettings() {
+		return {
+			playbackRate: 1,
+			baisoku: 1,
+			doron: false,
+			abekobe: false,
+			detarame: false
+		}
+	}
+	static lockEasySettings() {
+		var easySettings = typeof window !== "undefined" && window.EasySettings
+		if (!easySettings || typeof easySettings.getSettings !== "function" || typeof easySettings.saveSettings !== "function") {
+			return
+		}
+		try {
+			if (!sessionStorage.getItem("weeklyChallengeEasySettings")) {
+				sessionStorage.setItem("weeklyChallengeEasySettings", JSON.stringify(easySettings.getSettings()))
+			}
+		} catch (e) { }
+		easySettings.saveSettings(Object.assign(
+			{},
+			easySettings.getSettings(),
+			WeeklyChallenge.fixedEasySettings()
+		), true)
+	}
+	static restoreEasySettings() {
+		var easySettings = typeof window !== "undefined" && window.EasySettings
+		if (!easySettings || typeof easySettings.saveSettings !== "function") {
+			return
+		}
+		var raw = null
+		try {
+			raw = sessionStorage.getItem("weeklyChallengeEasySettings")
+		} catch (e) { }
+		if (!raw) {
+			return
+		}
+		try {
+			easySettings.saveSettings(JSON.parse(raw), true)
+			sessionStorage.removeItem("weeklyChallengeEasySettings")
+		} catch (e) { }
+	}
 	static lockOptions() {
 		var backup = null
 		try {
@@ -256,6 +298,7 @@ class WeeklyChallenge {
 		Object.keys(WeeklyChallenge.fixedOptions()).forEach(key => {
 			localStorage.setItem(key, WeeklyChallenge.fixedOptions()[key])
 		})
+		WeeklyChallenge.lockEasySettings()
 	}
 	static restoreOptions() {
 		var raw = null
@@ -263,6 +306,7 @@ class WeeklyChallenge {
 			raw = sessionStorage.getItem("weeklyChallengeOptions")
 		} catch (e) { }
 		if (!raw) {
+			WeeklyChallenge.restoreEasySettings()
 			return
 		}
 		try {
@@ -276,6 +320,7 @@ class WeeklyChallenge {
 			})
 			sessionStorage.removeItem("weeklyChallengeOptions")
 		} catch (e) { }
+		WeeklyChallenge.restoreEasySettings()
 	}
 	static markRun(challenge, song) {
 		var run = {

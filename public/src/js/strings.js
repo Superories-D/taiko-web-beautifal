@@ -239,6 +239,92 @@ var translations = {
 			ko: "제목순으로 정렬하려면 \"true\"를 입력하세요!"
 		}
 	},
+	easySettings: {
+		title: {
+			ja: "Easy Settings",
+			en: "Easy Settings",
+			cn: "Easy Settings",
+			tw: "Easy Settings",
+			ko: "Easy Settings"
+		},
+		button: {
+			ja: "Easy",
+			en: "Easy",
+			cn: "设置",
+			tw: "設定",
+			ko: "설정"
+		},
+		playbackRate: {
+			ja: "再生速度",
+			en: "Playback Rate",
+			cn: "播放速度",
+			tw: "播放速度",
+			ko: "재생 속도"
+		},
+		baisoku: {
+			ja: "ばいそく",
+			en: "Note Speed",
+			cn: "谱面显示倍速",
+			tw: "譜面顯示倍速",
+			ko: "노트 속도"
+		},
+		songSelectingSpeed: {
+			ja: "曲選択速度",
+			en: "Song Select Speed",
+			cn: "选曲速度",
+			tw: "選曲速度",
+			ko: "곡 선택 속도"
+		},
+		doron: {
+			ja: "ドロン",
+			en: "Hidden Notes",
+			cn: "隐谱",
+			tw: "隱譜",
+			ko: "도론"
+		},
+		abekobe: {
+			ja: "あべこべ",
+			en: "Reverse",
+			cn: "红蓝反转",
+			tw: "紅藍反轉",
+			ko: "반전"
+		},
+		detarame: {
+			ja: "でたらめ",
+			en: "Random Notes",
+			cn: "随机红蓝",
+			tw: "隨機紅藍",
+			ko: "랜덤 노트"
+		},
+		sortByTitle: {
+			ja: "分類内タイトル順",
+			en: "Sort Current Category by Title",
+			cn: "分类内标题排序",
+			tw: "分類內標題排序",
+			ko: "분류 안 제목순 정렬"
+		},
+		leaderboardEnabled: {
+			ja: "ランキング有効",
+			en: "Leaderboard enabled",
+			cn: "排行榜可用",
+			tw: "排行榜可用",
+			ko: "순위표 사용 가능"
+		},
+		leaderboardDisabled: {
+			ja: "現在の設定はランキング非対応",
+			en: "Current settings do not support leaderboard",
+			cn: "当前配置不支持排行榜",
+			tw: "目前配置不支援排行榜",
+			ko: "현재 설정은 순위표를 지원하지 않음"
+		},
+		reset: {
+			ja: "標準設定に戻す",
+			en: "Restore Defaults",
+			cn: "恢复默认配置",
+			tw: "恢復預設配置",
+			ko: "기본 설정 복원"
+		}
+	},
 	siteMessages: {
 		title: {
 			ja: "お知らせ",

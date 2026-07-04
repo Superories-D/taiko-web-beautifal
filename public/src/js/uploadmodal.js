@@ -86,7 +86,7 @@ class UploadModal {
 		this.submitButton.disabled = true
 
 		try {
-			var response = await fetch("/api/upload", {
+			var response = await fetch("/api/user-upload", {
 				method: "POST",
 				body: new FormData(this.form)
 			})

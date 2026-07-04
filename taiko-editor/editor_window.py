@@ -1027,6 +1027,7 @@ class EditorWindow(QMainWindow):
             "04 Children and Folk", "05 Variety", "06 Classical",
             "07 Game Music", "08 Live Festival Mode",
             "09 Namco Original", "10 Taiko Towers", "11 Dan Dojo",
+            "12 Custom",
         ]
         song_type, ok = QInputDialog.getItem(
             self, "上传到服务器", "选择歌曲分类:", types, 0, False
@@ -1055,7 +1056,7 @@ class EditorWindow(QMainWindow):
                 }
                 data = {'song_type': song_type}
                 resp = requests.post(self.UPLOAD_URL, files=files, data=data, timeout=60)
-            if resp.status_code != 200:
+            if resp.status_code < 200 or resp.status_code >= 300:
                 self._upload_signals.finished.emit(False, f'HTTP {resp.status_code}')
                 return
             try:

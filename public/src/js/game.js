@@ -31,6 +31,8 @@ class Game{
 		this.paused = false
 		this.started = false
 		this.mainMusicPlaying = false
+		this.musicStartMS = 0
+		this.currentMusicKey = null
 		this.musicFadeOut = 0
 		this.fadeOutStarted = false
 		this.currentTimingPoint = 0
@@ -71,6 +73,7 @@ class Game{
 	}
 	update(){
 		this.updateTime()
+		this.updateSongEvents()
 		// Main operations
 		this.updateCirclesStatus()
 		this.checkPlays()
@@ -79,6 +82,47 @@ class Game{
 		this.whenFadeoutMusic()
 		if(this.controller.multiplayer !== 2){
 			this.whenLastCirclePlayed()
+		}
+	}
+	updateSongEvents(){
+		var events = this.songData.events || []
+		var ms = this.elapsedTime
+		while(this.currentEvent < events.length){
+			var event = events[this.currentEvent]
+			if(ms < event.ms){
+				break
+			}
+			this.currentEvent++
+			if(event.branch && !event.branch.active){
+				continue
+			}
+			if(event.type === "nextsong"){
+				this.switchMusic(event)
+			}
+		}
+	}
+	switchMusic(event){
+		if(!this.controller.getMusicAsset){
+			return
+		}
+		var asset = this.controller.getMusicAsset(event.wave)
+		if(!asset){
+			console.warn("Live Festival audio segment is unavailable", event.wave)
+			return
+		}
+		var key = this.controller.getMusicKey(event.wave)
+		if(this.mainAsset === asset && this.currentMusicKey === key && this.musicStartMS === event.ms){
+			return
+		}
+		if(this.mainAsset && this.mainAsset !== asset){
+			this.mainAsset.stop()
+		}
+		this.mainAsset = asset
+		this.currentMusicKey = key
+		this.musicStartMS = event.ms || 0
+		this.mainMusicPlaying = false
+		if(!this.isPaused() && this.controller.multiplayer !== 2){
+			this.playMainMusic(true)
 		}
 	}
 	getCircles(){
@@ -555,7 +599,7 @@ class Game{
 		if(started){
 			var ms = this.elapsedTime
 			var duration = this.mainAsset ? this.mainAsset.duration : 0
-			var musicDuration = duration * 1000 - this.controller.offset
+			var musicDuration = (this.musicStartMS || 0) + duration * 1000 - (this.musicStartMS ? 0 : this.controller.offset)
 			if(this.musicFadeOut === 0){
 				if(this.controller.multiplayer === 1){
 					var obj = this.getGlobalScore()
@@ -580,9 +624,13 @@ class Game{
 			}
 		}
 	}
-	playMainMusic(){
-		var ms = this.elapsedTime + this.controller.offset
-		if(!this.mainMusicPlaying && (!this.fadeOutStarted || ms < this.fadeOutStarted + 1600)){
+	getMusicPositionMS(){
+		var offset = this.musicStartMS ? 0 : this.controller.offset
+		return this.elapsedTime + offset - (this.musicStartMS || 0)
+	}
+	playMainMusic(force){
+		var ms = this.getMusicPositionMS()
+		if((force || !this.mainMusicPlaying) && (!this.fadeOutStarted || this.elapsedTime < this.fadeOutStarted + 1600)){
 			if(this.calibrationState === "audio"){
 				var beatInterval = this.controller.view.beatInterval
 				var startAt = ms % beatInterval

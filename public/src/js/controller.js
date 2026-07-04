@@ -82,6 +82,7 @@ class Controller{
 			assets.songs.forEach(song => {
 				if(song.id == this.selectedSong.folder){
 					this.mainAsset = song.sound
+					this.liveFestivalSounds = song.liveFestivalSounds || {}
 					this.volume = song.volume || 1
 					if(!multiplayer && (!this.touchEnabled || this.autoPlayEnabled) && settings.getItem("showLyrics")){
 						if(song.lyricsData){
@@ -183,8 +184,34 @@ class Controller{
 		if(this.game.mainAsset){
 			this.game.mainAsset.stop()
 		}
+		this.stopLiveFestivalSounds()
 		if(this.multiplayer !== 2){
 			clearInterval(this.gameInterval)
+		}
+	}
+	getMusicKey(path){
+		return (path || "").replace(/\\/g, "/").split("/").pop().toLowerCase()
+	}
+	getMusicAsset(wave){
+		var key = this.getMusicKey(wave)
+		if(key && this.liveFestivalSounds && this.liveFestivalSounds[key]){
+			return this.liveFestivalSounds[key]
+		}
+		return key ? null : this.mainAsset
+	}
+	stopLiveFestivalSounds(){
+		var stopped = []
+		if(this.mainAsset){
+			stopped.push(this.mainAsset)
+		}
+		if(this.liveFestivalSounds){
+			for(var key in this.liveFestivalSounds){
+				var sound = this.liveFestivalSounds[key]
+				if(sound && stopped.indexOf(sound) === -1){
+					sound.stop()
+					stopped.push(sound)
+				}
+			}
 		}
 	}
 	gameLoop(){

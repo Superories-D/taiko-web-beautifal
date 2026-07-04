@@ -48,6 +48,8 @@ class Tja:
                         "ONI": "oni",
                         "EDIT": "ura",
                         "URA": "ura",
+                        "DAN": "oni",
+                        "TOWER": "oni",
                     }
                     current_course = course_map.get(val.strip().upper())
                     if current_course and current_course not in self.courses:

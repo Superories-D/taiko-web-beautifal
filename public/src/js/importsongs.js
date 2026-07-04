@@ -270,7 +270,19 @@ class ImportSongs{
 				}
 				coursesAdded = true
 				if(meta.wave){
-					songObj.music = this.otherFiles[dir + meta.wave.toLowerCase()] || songObj.music
+					var musicFile = this.otherFiles[dir + meta.wave.toLowerCase()]
+					if(musicFile){
+						songObj.music = musicFile
+						this.addLiveFestivalFile(songObj, meta.wave, musicFile)
+					}
+				}
+				if(meta.nextSongs){
+					meta.nextSongs.forEach(nextSong => {
+						var nextFile = this.otherFiles[this.normPath(this.joinPath(dir, nextSong.wave))]
+						if(nextFile){
+							this.addLiveFestivalFile(songObj, nextSong.wave, nextFile)
+						}
+					})
 				}
 				if(meta.genre){
 					if(meta.genre.toLowerCase() in this.categoryAliases){
@@ -523,6 +535,19 @@ class ImportSongs{
 	}
 	getFilename(name){
 		return name.slice(0, name.lastIndexOf("."))
+	}
+	getMusicKey(path){
+		return (path || "").replace(/\\/g, "/").split("/").pop().toLowerCase()
+	}
+	addLiveFestivalFile(songObj, wave, file){
+		var key = this.getMusicKey(wave)
+		if(!key || !file){
+			return
+		}
+		if(!songObj.liveFestivalFiles){
+			songObj.liveFestivalFiles = {}
+		}
+		songObj.liveFestivalFiles[key] = file
 	}
 	
 	addPlugin(fileObj){

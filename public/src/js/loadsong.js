@@ -120,10 +120,17 @@ class LoadSong{
 		
 		if(songObj.sound && songObj.sound.buffer){
 			songObj.sound.gain = snd.musicGain
+			this.mainSoundPromise = Promise.resolve(songObj.sound)
+			this.registerLiveFestivalSound(songObj, songObj.music, songObj.sound)
 		}else if(songObj.music !== "muted"){
-			this.addPromise(snd.musicGain.load(songObj.music, this.gameLoadOptions).then(sound => {
+			this.mainSoundPromise = snd.musicGain.load(songObj.music, this.gameLoadOptions).then(sound => {
 				songObj.sound = sound
-			}), songObj.music.url)
+				this.registerLiveFestivalSound(songObj, songObj.music, sound)
+				return sound
+			})
+			this.addPromise(this.mainSoundPromise, songObj.music.url)
+		}else{
+			this.mainSoundPromise = Promise.resolve()
 		}
 		var chart = songObj.chart
 		if(chart && chart.separateDiff){
@@ -133,6 +140,7 @@ class LoadSong{
 		if(chart){
 			this.addPromise(chart.read(song.type === "tja" ? "utf-8" : "", this.gameLoadOptions).then(data => {
 				this.songData = data.replace(/\0/g, "").split("\n")
+				return this.loadLiveFestivalAudio(songObj, this.songData)
 			}), chart.url)
 		}else{
 			this.songData = ""
@@ -172,6 +180,88 @@ class LoadSong{
 			this.errorMsg(response, url)
 			return Promise.resolve()
 		}))
+	}
+	getMusicKey(path){
+		return (path || "").replace(/\\/g, "/").split("/").pop().toLowerCase()
+	}
+	getSongDirectory(songObj){
+		if(songObj.directory){
+			return songObj.directory
+		}
+		var url = songObj.chart && songObj.chart.url || songObj.music && songObj.music.url
+		if(!url){
+			return null
+		}
+		var slash = url.lastIndexOf("/")
+		return slash === -1 ? "" : url.slice(0, slash + 1)
+	}
+	encodeMusicPath(path){
+		return (path || "").replace(/\\/g, "/").split("/").map(part => encodeURIComponent(part)).join("/")
+	}
+	registerLiveFestivalSound(songObj, fileOrWave, sound){
+		var key = this.getMusicKey(typeof fileOrWave === "string" ? fileOrWave : fileOrWave && (fileOrWave.name || fileOrWave.url))
+		if(!key || !sound){
+			return
+		}
+		if(!songObj.liveFestivalSounds){
+			songObj.liveFestivalSounds = {}
+		}
+		songObj.liveFestivalSounds[key] = sound
+	}
+	getLiveFestivalFile(songObj, wave){
+		var key = this.getMusicKey(wave)
+		if(!key){
+			return null
+		}
+		if(songObj.liveFestivalFiles && songObj.liveFestivalFiles[key]){
+			return songObj.liveFestivalFiles[key]
+		}
+		var directory = this.getSongDirectory(songObj)
+		if(directory){
+			return new RemoteFile(directory + this.encodeMusicPath(wave))
+		}
+		return null
+	}
+	loadLiveFestivalAudio(songObj, songData){
+		if(this.selectedSong.type !== "tja" || !songData || !songData.length){
+			return Promise.resolve()
+		}
+		var tja = new ParseTja(songData, this.selectedSong.difficulty, this.selectedSong.stars, this.selectedSong.offset, true)
+		var meta = tja.metadata[this.selectedSong.difficulty] || {}
+		var nextSongs = meta.nextSongs || []
+		if(meta.wave && songObj.sound){
+			this.registerLiveFestivalSound(songObj, meta.wave, songObj.sound)
+		}
+		if(!nextSongs.length){
+			return Promise.resolve()
+		}
+		var mainKey = this.getMusicKey(meta.wave || songObj.music && (songObj.music.name || songObj.music.url))
+		var promises = []
+		nextSongs.forEach(nextSong => {
+			var key = this.getMusicKey(nextSong.wave)
+			if(!key){
+				return
+			}
+			if(songObj.liveFestivalSounds && songObj.liveFestivalSounds[key]){
+				return
+			}
+			if(mainKey && key === mainKey){
+				promises.push((this.mainSoundPromise || Promise.resolve(songObj.sound)).then(sound => {
+					this.registerLiveFestivalSound(songObj, nextSong.wave, sound)
+				}))
+				return
+			}
+			var file = this.getLiveFestivalFile(songObj, nextSong.wave)
+			if(!file){
+				return
+			}
+			promises.push(snd.musicGain.load(file, this.gameLoadOptions).then(sound => {
+				this.registerLiveFestivalSound(songObj, nextSong.wave, sound)
+			}, error => {
+				console.warn("Live Festival audio segment failed", nextSong.wave, error)
+			}))
+		})
+		return Promise.all(promises)
 	}
 	errorMsg(error, url){
 		if(!this.error){

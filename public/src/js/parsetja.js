@@ -52,7 +52,9 @@
 			"2": "hard",
 			"3": "oni",
 			"4": "ura",
-			"edit": "ura"
+			"edit": "ura",
+			"dan": "oni",
+			"tower": "oni"
 		}
 		
 		this.metadata = this.parseMetadata()
@@ -103,6 +105,17 @@
 					courses[courseName].branch = true
 				}else if(name.startsWith("lyric") && inSong){
 					courses[courseName].inlineLyrics = true
+				}else if(name.startsWith("nextsong") && inSong){
+					if(!(courseName in courses)){
+						courses[courseName] = {}
+					}
+					var nextSong = this.parseNextSong(line.slice(1).replace(/^nextsong\s*/i, ""))
+					if(nextSong.wave){
+						if(!courses[courseName].nextSongs){
+							courses[courseName].nextSongs = []
+						}
+						courses[courseName].nextSongs.push(nextSong)
+					}
 				}
 				
 			}else if(!inSong){
@@ -146,6 +159,28 @@
 			return [string, ""]
 		}
 		return [string.slice(0, index), string.slice(index + delimiter.length)]
+	}
+	parseNextSong(value){
+		value = (value || "").trim()
+		var parts = value.split(",")
+		if(parts.length > 6){
+			parts = [parts.slice(0, parts.length - 5).join(",")].concat(parts.slice(parts.length - 5))
+		}
+		var nextSong = {
+			title: (parts[0] || "").trim(),
+			subtitle: (parts[1] || "").trim(),
+			genre: (parts[2] || "").trim(),
+			wave: (parts[3] || "").trim()
+		}
+		var score = parseFloat(parts[4])
+		var bpm = parseFloat(parts[5])
+		if(!isNaN(score)){
+			nextSong.score = score
+		}
+		if(!isNaN(bpm)){
+			nextSong.bpm = bpm
+		}
+		return nextSong
 	}
 	parseCircles(difficulty, lyricsOnly){
 		var meta = this.metadata[difficulty] || {}
@@ -417,6 +452,20 @@
 						break
 					case "delay":
 						ms += (parseFloat(value) || 0) * 1000
+						break
+					case "nextsong":
+						if(!lyricsOnly){
+							var nextSong = this.parseNextSong(value)
+							if(nextSong.wave){
+								nextSong.type = "nextsong"
+								nextSong.ms = ms
+								nextSong.originalMS = ms
+								nextSong.beatMS = 60000 / bpm
+								nextSong.gogoTime = gogo
+								nextSong.branch = currentBranch
+								events.push(nextSong)
+							}
+						}
 						break
 					case "barlineon":
 						barLine = true

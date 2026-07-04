@@ -7,9 +7,12 @@ class WeeklyChallenge {
 		this.opened = false
 		this.data = null
 		this.container = null
+		this.challengePreview = null
+		this.challengePreviewId = 0
+		this.restoreAudio = null
 	}
 	display() {
-		if (!account.loggedIn || this.opened) {
+		if (this.opened) {
 			return
 		}
 		this.opened = true
@@ -28,11 +31,7 @@ class WeeklyChallenge {
 		this.songSelect.playSound("se_pause")
 		cancelTouch = false
 		noResizeRoot = true
-		if (this.songSelect.songs[this.songSelect.selectedSong].courses) {
-			snd.previewGain.setVolumeMul(0.5)
-		} else if (this.songSelect.bgmEnabled) {
-			snd.musicGain.setVolumeMul(0.5)
-		}
+		this.pauseSongSelectAudio()
 		this.fetchData()
 	}
 	setStaticText() {
@@ -52,6 +51,7 @@ class WeeklyChallenge {
 			}
 			this.data = data
 			this.render()
+			this.startChallengePreview(data.current)
 		}).catch(() => {
 			this.setStatus(strings.errorOccured, true)
 		})
@@ -72,8 +72,13 @@ class WeeklyChallenge {
 		this.renderSong(current)
 		this.renderBoard(".weekly-challenge-current-list", current.leaderboard)
 		this.renderPrevious(this.data.previous)
-		this.setStatus("")
-		this.startButton.disabled = false
+		if (account.loggedIn) {
+			this.setStatus("")
+			this.startButton.disabled = false
+		} else {
+			this.setStatus(strings.weeklyChallenge.loginRequired)
+			this.startButton.disabled = true
+		}
 	}
 	renderSong(challenge) {
 		var song = challenge.song
@@ -90,17 +95,17 @@ class WeeklyChallenge {
 			label.innerText = this.songSelect.getLocalTitle(previous.song.title, previous.song.title_lang)
 			this.renderBoard(".weekly-challenge-previous-list", previous.leaderboard)
 		} else {
-			label.innerText = strings.weeklyChallenge.noPrevious
-			this.renderBoard(".weekly-challenge-previous-list", [])
+			label.innerText = ""
+			this.renderBoard(".weekly-challenge-previous-list", [], strings.weeklyChallenge.noPrevious)
 		}
 	}
-	renderBoard(selector, entries) {
+	renderBoard(selector, entries, emptyText) {
 		var list = this.div.querySelector(":scope " + selector)
 		list.innerHTML = ""
 		if (!entries || !entries.length) {
 			var empty = document.createElement("li")
 			empty.className = "weekly-challenge-empty"
-			empty.innerText = strings.noScores
+			empty.innerText = emptyText || strings.noScores
 			list.appendChild(empty)
 			return
 		}
@@ -128,12 +133,75 @@ class WeeklyChallenge {
 		status.classList.toggle("weekly-challenge-status-error", !!error)
 		status.hidden = !message
 	}
+	pauseSongSelectAudio() {
+		var previewing = this.songSelect.previewing
+		this.restoreAudio = {
+			bgmEnabled: !!this.songSelect.bgmEnabled,
+			previewing: previewing,
+			selectedSong: this.songSelect.selectedSong,
+			shouldRestorePreview: previewing !== null && previewing !== "muted"
+		}
+		if (this.restoreAudio.shouldRestorePreview) {
+			this.songSelect.endPreview(true)
+		}
+		if (this.restoreAudio.bgmEnabled) {
+			this.songSelect.playBgm(false)
+		}
+	}
+	restoreSongSelectAudio() {
+		if (!this.restoreAudio || !this.songSelect || this.songSelect.closed) {
+			return
+		}
+		var restoreAudio = this.restoreAudio
+		this.restoreAudio = null
+		if (restoreAudio.bgmEnabled) {
+			this.songSelect.playBgm(true)
+		}
+		if (restoreAudio.shouldRestorePreview && this.songSelect.state && this.songSelect.state.screen === "song") {
+			this.songSelect.previewing = null
+			this.songSelect.startPreview()
+		} else {
+			this.songSelect.previewing = restoreAudio.previewing
+		}
+	}
+	startChallengePreview(challenge) {
+		if (!challenge || !challenge.song) {
+			return
+		}
+		var song = WeeklyChallenge.prepareSongAsset(challenge.song)
+		if (!song || !song.music) {
+			return
+		}
+		this.stopChallengePreview()
+		var previewId = ++this.challengePreviewId
+		snd.previewGain.setVolumeMul(song.volume || 1)
+		snd.previewGain.load(song.music).then(sound => {
+			if (!this.opened || previewId !== this.challengePreviewId) {
+				sound.clean()
+				return
+			}
+			this.challengePreview = sound
+			this.challengePreview.playLoop(0, false, 0)
+		}).catch(() => {})
+	}
+	stopChallengePreview() {
+		this.challengePreviewId++
+		if (this.challengePreview) {
+			this.challengePreview.stop()
+			this.challengePreview.clean()
+			this.challengePreview = null
+		}
+	}
 	onStart(event) {
 		if (event) {
 			event.preventDefault()
 			event.stopPropagation()
 		}
 		if (!this.data || !this.data.current || !this.data.current.song) {
+			return
+		}
+		if (!account.loggedIn) {
+			this.setStatus(strings.weeklyChallenge.loginRequired)
 			return
 		}
 		this.startButton.disabled = true
@@ -144,6 +212,7 @@ class WeeklyChallenge {
 			this.startButton.disabled = false
 			return
 		}
+		this.skipRestoreAudio = true
 		this.remove()
 		this.songSelect.startWeeklyChallenge(challenge, song)
 	}
@@ -182,6 +251,7 @@ class WeeklyChallenge {
 		if (byUser) {
 			this.songSelect.playSound("se_cancel")
 		}
+		this.stopChallengePreview()
 		pageEvents.remove(this.container, ["mousedown", "touchstart"])
 		pageEvents.remove(this.startButton, ["click", "touchstart"])
 		this.div.remove()
@@ -191,13 +261,15 @@ class WeeklyChallenge {
 		this.data = null
 		cancelTouch = true
 		noResizeRoot = false
-		if (this.songSelect.songs[this.songSelect.selectedSong].courses) {
-			snd.previewGain.setVolumeMul(1)
-		} else if (this.songSelect.bgmEnabled) {
-			snd.musicGain.setVolumeMul(1)
+		if (this.skipRestoreAudio) {
+			this.restoreAudio = null
+			this.skipRestoreAudio = false
+		} else {
+			this.restoreSongSelectAudio()
 		}
 	}
 	clean() {
+		this.skipRestoreAudio = true
 		this.remove()
 		delete this.songSelect
 	}

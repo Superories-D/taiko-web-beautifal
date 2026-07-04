@@ -902,6 +902,13 @@ var translations = {
 			tw: "開始挑戰",
 			ko: "챌린지 시작"
 		},
+		loginRequired: {
+			ja: "ログインするとチャレンジを開始してランキングに記録できます。",
+			en: "Log in to start the challenge and submit your score.",
+			cn: "登录后可开始挑战并提交排行榜成绩。",
+			tw: "登入後可開始挑戰並提交排行榜成績。",
+			ko: "로그인하면 챌린지를 시작하고 순위에 기록할 수 있습니다."
+		},
 		noChallenge: {
 			ja: "挑戦できる魔王難度の曲がありません。",
 			en: "No Extreme song is available for the challenge.",

@@ -915,7 +915,7 @@ class SongSelect {
 	openWeeklyChallengeFromButton(event) {
 		event.preventDefault()
 		event.stopPropagation()
-		if (this.state.screen === "song" && !this.search.opened && !(this.topSongs && this.topSongs.opened) && !this.weeklyChallenge.opened && !this.uploadModal.opened && !(typeof window !== "undefined" && window.EasySettings && window.EasySettings.isOpen && window.EasySettings.isOpen()) && account.loggedIn) {
+		if (this.state.screen === "song" && !this.search.opened && !(this.topSongs && this.topSongs.opened) && !this.weeklyChallenge.opened && !this.uploadModal.opened && !(typeof window !== "undefined" && window.EasySettings && window.EasySettings.isOpen && window.EasySettings.isOpen())) {
 			this.weeklyChallenge.display(true)
 		}
 	}
@@ -939,7 +939,7 @@ class SongSelect {
 			!this.uploadModal.opened &&
 			!(typeof window !== "undefined" && window.EasySettings && window.EasySettings.isOpen && window.EasySettings.isOpen()) &&
 			!(this.siteMessages && this.siteMessages.isOpen())
-		var challengeVisible = visible && account.loggedIn
+		var challengeVisible = visible
 		this.searchButton.hidden = !visible
 		this.topSongsButton.hidden = !visible || !this.topSongsEnabled
 		this.weeklyChallengeButton.hidden = !challengeVisible

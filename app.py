@@ -1497,6 +1497,71 @@ def normalize_public_song(song):
     return song
 
 
+def build_id_map(items):
+    output = {}
+    for item in items:
+        item_id = item.get('id')
+        if item_id is None:
+            continue
+        output[item_id] = item
+        output[str(item_id)] = item
+        int_id = safe_int_value(item_id)
+        if int_id is not None:
+            output[int_id] = item
+    return output
+
+
+def get_public_song_context():
+    return {
+        'categories_by_id': build_id_map(list(db.categories.find({}, {'_id': False}))),
+        'makers_by_id': build_id_map(list(db.makers.find({}, {'_id': False}))),
+        'song_skins_by_id': build_id_map(list(db.song_skins.find({}, {'_id': False})))
+    }
+
+
+def serialize_public_song(raw_song, context=None):
+    song = normalize_public_song(raw_song)
+    if not song:
+        return None
+    context = context or get_public_song_context()
+    song.pop('_id', None)
+    song.pop('enabled', None)
+
+    maker_id = song.get('maker_id')
+    if maker_id is not None:
+        if maker_id == 0:
+            song['maker'] = 0
+        else:
+            makers_by_id = context['makers_by_id']
+            song['maker'] = makers_by_id.get(maker_id) or makers_by_id.get(safe_int_value(maker_id)) or makers_by_id.get(str(maker_id))
+    else:
+        song['maker'] = None
+    song.pop('maker_id', None)
+
+    category_id = song.get('category_id')
+    if category_id:
+        categories_by_id = context['categories_by_id']
+        category = categories_by_id.get(category_id) or categories_by_id.get(safe_int_value(category_id)) or categories_by_id.get(str(category_id))
+        song['category'] = category.get('title') if category else None
+    else:
+        song['category'] = None
+
+    skin_id = song.get('skin_id')
+    if skin_id:
+        song_skins_by_id = context['song_skins_by_id']
+        song_skin = song_skins_by_id.get(skin_id) or song_skins_by_id.get(safe_int_value(skin_id)) or song_skins_by_id.get(str(skin_id))
+        song['song_skin'] = {
+            key: value
+            for key, value in song_skin.items()
+            if key != 'id'
+        } if song_skin else None
+    else:
+        song['song_skin'] = None
+    song.pop('skin_id', None)
+
+    return song
+
+
 def next_sequence_value(name):
     seq = db.seq.find_one({'name': name})
     if not seq:
@@ -2165,62 +2230,12 @@ def route_api_songs():
         return cache_wrap(flask.jsonify(cached_songs), 60)
 
     raw_songs = list(db.songs.find(query, {'_id': False, 'enabled': False}))
-    categories = list(db.categories.find({}, {'_id': False}))
-    makers = list(db.makers.find({}, {'_id': False}))
-    song_skins = list(db.song_skins.find({}, {'_id': False}))
-
-    def build_id_map(items):
-        output = {}
-        for item in items:
-            item_id = item.get('id')
-            if item_id is None:
-                continue
-            output[item_id] = item
-            output[str(item_id)] = item
-            int_id = safe_int_value(item_id)
-            if int_id is not None:
-                output[int_id] = item
-        return output
-
-    categories_by_id = build_id_map(categories)
-    makers_by_id = build_id_map(makers)
-    song_skins_by_id = build_id_map(song_skins)
-
+    context = get_public_song_context()
     songs = []
     for raw_song in raw_songs:
-        song = normalize_public_song(raw_song)
+        song = serialize_public_song(raw_song, context)
         if not song:
             continue
-        maker_id = song.get('maker_id')
-        if maker_id is not None:
-            if maker_id == 0:
-                song['maker'] = 0
-            else:
-                song['maker'] = makers_by_id.get(maker_id) or makers_by_id.get(safe_int_value(maker_id)) or makers_by_id.get(str(maker_id))
-        else:
-            song['maker'] = None
-        song.pop('maker_id', None)
-
-        category_id = song.get('category_id')
-        if category_id:
-            category = categories_by_id.get(category_id) or categories_by_id.get(safe_int_value(category_id)) or categories_by_id.get(str(category_id))
-            song['category'] = category.get('title') if category else None
-        else:
-            song['category'] = None
-        #del song['category_id']
-
-        skin_id = song.get('skin_id')
-        if skin_id:
-            song_skin = song_skins_by_id.get(skin_id) or song_skins_by_id.get(safe_int_value(skin_id)) or song_skins_by_id.get(str(skin_id))
-            song['song_skin'] = {
-                key: value
-                for key, value in song_skin.items()
-                if key != 'id'
-            } if song_skin else None
-        else:
-            song['song_skin'] = None
-        song.pop('skin_id', None)
-
         songs.append(song)
 
     app.cache.set(cache_key, songs, timeout=PUBLIC_SONGS_CACHE_SECONDS)
@@ -2770,7 +2785,6 @@ def challenge_board(week_key):
 
 
 @app.route(basedir + 'api/weekly-challenge/current')
-@login_required
 def route_api_weekly_challenge_current():
     challenge = current_weekly_challenge()
     if not challenge:
@@ -2783,12 +2797,11 @@ def route_api_weekly_challenge_current():
     return jsonify({
         'status': 'ok',
         'challenge': serialize_challenge(challenge),
-        'song': serialize_song(song)
+        'song': serialize_public_song(song)
     })
 
 
 @app.route(basedir + 'api/weekly-challenge/leaderboards')
-@login_required
 def route_api_weekly_challenge_leaderboards():
     now = datetime.utcnow()
     challenge = current_weekly_challenge(now)
@@ -2806,7 +2819,7 @@ def route_api_weekly_challenge_leaderboards():
             return None
         song = db.songs.find_one({'id': item.get('song_id')})
         payload = serialize_challenge(item)
-        payload['song'] = serialize_song(song) if song else None
+        payload['song'] = serialize_public_song(song) if song else None
         payload['leaderboard'] = challenge_board(item.get('week_key'))
         return payload
 

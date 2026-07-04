@@ -49,6 +49,10 @@
 	right: max(32vmin, 292px);
 }
 
+#song-select.top10-button-visible.weekly-challenge-visible #song-easy-settings-btn{
+	right: max(41vmin, 372px);
+}
+
 #easy-settings-overlay{
 	position: absolute;
 	inset: 0;

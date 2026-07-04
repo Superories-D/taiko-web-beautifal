@@ -46,22 +46,22 @@ class RemoteFile{
 			}
 		}
 	}
-	arrayBuffer(){
+	arrayBuffer(loadOptions){
 		return loader.ajax(this.url, request => {
 			request.responseType = "arraybuffer"
-		})
+		}, null, loadOptions)
 	}
-	read(encoding){
+	read(encoding, loadOptions){
 		if(encoding){
-			return this.blob().then(blob => readFile(blob, false, encoding))
+			return this.blob(loadOptions).then(blob => readFile(blob, false, encoding))
 		}else{
-			return loader.ajax(this.url)
+			return loader.ajax(this.url, null, null, loadOptions)
 		}
 	}
-	blob(){
+	blob(loadOptions){
 		return loader.ajax(this.url, request => {
 			request.responseType = "blob"
-		})
+		}, null, loadOptions)
 	}
 }
 class LocalFile{
@@ -74,13 +74,13 @@ class LocalFile{
 		this.url = this.path
 		this.name = file.name
 	}
-	arrayBuffer(){
+	arrayBuffer(loadOptions){
 		return readFile(this.file, true)
 	}
-	read(encoding){
+	read(encoding, loadOptions){
 		return readFile(this.file, false, encoding)
 	}
-	blob(){
+	blob(loadOptions){
 		return Promise.resolve(this.file)
 	}
 }
@@ -94,13 +94,13 @@ class FilesystemFile{
 		this.url = this.path
 		this.name = file.name
 	}
-	arrayBuffer(){
-		return this.blob().then(blob => blob.arrayBuffer())
+	arrayBuffer(loadOptions){
+		return this.blob(loadOptions).then(blob => blob.arrayBuffer())
 	}
-	read(encoding){
-		return this.blob().then(blob => readFile(blob, false, encoding))
+	read(encoding, loadOptions){
+		return this.blob(loadOptions).then(blob => readFile(blob, false, encoding))
 	}
-	blob(){
+	blob(loadOptions){
 		return filePermission(this.file).then(file => file.getFile())
 	}
 }
@@ -114,17 +114,17 @@ class GdriveFile{
 		this.id = fileObj.id
 		this.url = gpicker.filesUrl + this.id + "?alt=media"
 	}
-	arrayBuffer(){
+	arrayBuffer(loadOptions){
 		return gpicker.downloadFile(this.id, "arraybuffer")
 	}
-	read(encoding){
+	read(encoding, loadOptions){
 		if(encoding){
-			return this.blob().then(blob => readFile(blob, false, encoding))
+			return this.blob(loadOptions).then(blob => readFile(blob, false, encoding))
 		}else{
 			return gpicker.downloadFile(this.id)
 		}
 	}
-	blob(){
+	blob(loadOptions){
 		return gpicker.downloadFile(this.id, "blob")
 	}
 }
@@ -139,13 +139,13 @@ class CachedFile{
 		this.name = oldFile.name
 		this.url = oldFile.url
 	}
-	arrayBuffer(){
+	arrayBuffer(loadOptions){
 		return Promise.resolve(this.contents)
 	}
-	read(encoding){
+	read(encoding, loadOptions){
 		return this.arrayBuffer()
 	}
-	blob(){
+	blob(loadOptions){
 		return this.arrayBuffer()
 	}
 }

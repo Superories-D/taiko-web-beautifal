@@ -3227,6 +3227,27 @@ class SongSelect {
 		}
 	}
 
+	getPreviewLoadOptions(loadOnly) {
+		return {
+			priority: loadOnly ? "background" : "interactive",
+			cancelGroup: loadOnly ? "song-preview-warmup" : "song-preview",
+			cancellable: true
+		}
+	}
+	cancelPreviewLoads(loadOnly) {
+		if (typeof loader === "undefined" || !loader.cancelWorkerTasks) {
+			return
+		}
+		if (loadOnly) {
+			loader.cancelWorkerTasks("song-preview-warmup")
+		} else {
+			loader.cancelWorkerTasks("song-preview-warmup")
+			loader.cancelWorkerTasks("song-preview")
+		}
+	}
+	isLoadCancelled(error) {
+		return error === "cancel" || error && error.code === "RESOURCE_CANCELLED" || Array.isArray(error) && this.isLoadCancelled(error[0])
+	}
 	startPreview(loadOnly) {
 		if (!loadOnly && this.state && this.state.showWarning || this.state.waitPreview > this.getMS()) {
 			return
@@ -3235,6 +3256,8 @@ class SongSelect {
 		var id = currentSong.id
 		var prvTime = currentSong.preview
 		this.endPreview()
+		this.cancelPreviewLoads(loadOnly)
+		var loadOptions = this.getPreviewLoadOptions(loadOnly)
 
 		if ("id" in currentSong) {
 			var startLoad = this.getMS()
@@ -3256,19 +3279,22 @@ class SongSelect {
 				songObj = { id: id }
 				if (currentSong.previewMusic) {
 					songObj.preview_time = 0
-					var promise = snd.previewGain.load(currentSong.previewMusic).catch(() => {
+					var promise = snd.previewGain.load(currentSong.previewMusic, loadOptions).catch(error => {
+						if (this.isLoadCancelled(error)) {
+							return Promise.reject("cancel")
+						}
 						songObj.preview_time = prvTime
-						return snd.previewGain.load(currentSong.music)
+						return snd.previewGain.load(currentSong.music, loadOptions)
 					})
 				} else if (currentSong.unloaded) {
-					var promise = this.getUnloaded(this.selectedSong, songObj, currentId)
+					var promise = this.getUnloaded(this.selectedSong, songObj, currentId, loadOptions)
 				} else if (currentSong.sound) {
 					songObj.preview_time = prvTime
 					currentSong.sound.gain = snd.previewGain
 					var promise = Promise.resolve(currentSong.sound)
 				} else if (currentSong.music !== "muted") {
 					songObj.preview_time = prvTime
-					var promise = snd.previewGain.load(currentSong.music)
+					var promise = snd.previewGain.load(currentSong.music, loadOptions)
 				} else {
 					return
 				}
@@ -3288,7 +3314,7 @@ class SongSelect {
 						sound.clean()
 					}
 				}).catch(e => {
-					if (e !== "cancel") {
+					if (!this.isLoadCancelled(e)) {
 						return Promise.reject(e)
 					}
 				})
@@ -3322,11 +3348,11 @@ class SongSelect {
 			snd.musicGain.fadeOut(0.4)
 		}
 	}
-	getUnloaded(selectedSong, songObj, currentId) {
+	getUnloaded(selectedSong, songObj, currentId, loadOptions) {
 		var currentSong = this.songs[selectedSong]
 		var file = currentSong.chart
 		var importSongs = new ImportSongs(false, assets.otherFiles)
-		return file.read(currentSong.type === "tja" ? "utf-8" : "").then(data => {
+		return file.read(currentSong.type === "tja" ? "utf-8" : "", loadOptions).then(data => {
 			currentSong.chart = new CachedFile(data, file)
 			return importSongs[currentSong.type === "tja" ? "addTja" : "addOsu"]({
 				file: currentSong.chart,
@@ -3344,7 +3370,7 @@ class SongSelect {
 			this.songs[selectedSong] = this.addSong(imported)
 			this.state.moveMS = this.getMS() - this.songSelecting.speed * this.songSelecting.resize
 			if (imported.music && currentId === this.previewId) {
-				return snd.previewGain.load(imported.music).then(sound => {
+				return snd.previewGain.load(imported.music, loadOptions).then(sound => {
 					imported.sound = sound
 					this.songs[selectedSong].sound = sound
 					return sound.copy()

@@ -82,6 +82,7 @@ class Loader{
 		this.workerQueue = []
 		this.workerCallbacks = {}
 		this.workerId = 0
+		this.workerSequence = 0
 		this.networkProfile = this.getNetworkProfile()
 		this.workerTarget = this.networkProfile.concurrency
 		this.resizeWorkers(this.workerTarget)
@@ -218,6 +219,10 @@ class Loader{
 			if(task){
 				delete this.workerCallbacks[task.id]
 				clearTimeout(task.watchdog)
+				if(task.cancelled){
+					this.removeWorker(workerObj)
+					return
+				}
 				task.worker = null
 				task.loaded = 0
 				task.options = this.getRetryOptions(task.retryOverrides)
@@ -228,10 +233,12 @@ class Loader{
 		})
 		if(tasks.length){
 			this.workerQueue = tasks.concat(this.workerQueue)
+			this.sortWorkerQueue()
 		}
 	}
 	createWorker(){
-		var worker = new Worker("src/js/loader-worker.js")
+		var workerCacheBust = this.queryString || "?worker=" + Date.now()
+		var worker = new Worker("src/js/loader-worker.js" + workerCacheBust)
 		var workerObj = {
 			worker: worker,
 			active: false,
@@ -319,38 +326,185 @@ class Loader{
 				this.retryingResource = null
 			}
 			if(data.error){
-				callback.reject(data.error)
+				this.rejectWorkerTask(callback, data.error && data.error.code === "RESOURCE_CANCELLED" ? "cancel" : data.error)
 			}else{
-				callback.resolve(data.data)
+				this.resolveWorkerTask(callback, data.data)
 			}
 			this.workerFree(workerObj)
 		}
 	}
 	workerFetch(url, type, options){
+		options = options || {}
+		var normalizedUrl = new URL(url, location.href).href
+		var dedupeKey = options.dedupeKey === false ? null : (options.dedupeKey || normalizedUrl + "|" + type)
+		if(dedupeKey){
+			var existingTask = this.findWorkerTask(dedupeKey)
+			if(existingTask){
+				return new Promise((resolve, reject) => {
+					existingTask.consumers.push({
+						resolve: resolve,
+						reject: reject
+					})
+					this.promoteWorkerTask(existingTask, options)
+					this.workerRun()
+				})
+			}
+		}
 		return new Promise((resolve, reject) => {
 			var id = ++this.workerId
-			var retryOverrides = Object.assign({}, options || {})
+			var retryOverrides = this.getWorkerRetryOverrides(options)
 			var taskOptions = this.getRetryOptions(retryOverrides)
-			this.workerQueue.push({
+			var task = {
 				id: id,
-				url: new URL(url, location.href).href,
+				url: normalizedUrl,
 				type: type,
 				options: taskOptions,
 				retryOverrides: retryOverrides,
-				resolve: resolve,
-				reject: reject,
+				consumers: [{
+					resolve: resolve,
+					reject: reject
+				}],
+				priority: options.priority == null ? "normal" : options.priority,
+				priorityValue: this.getWorkerPriorityValue(options.priority),
+				sequence: ++this.workerSequence,
+				dedupeKey: dedupeKey,
+				cancelGroup: options.cancelGroup,
+				cancellable: options.cancellable === true,
 				loaded: 0,
 				total: 0,
 				recoveryAttempts: 0,
 				maxWorkerRecoveries: taskOptions.workerRecoveries
-			})
+			}
+			this.workerQueue.push(task)
+			this.sortWorkerQueue()
 			this.workerRun()
 		})
+	}
+	getWorkerRetryOverrides(options){
+		var retryOverrides = Object.assign({}, options || {})
+		delete retryOverrides.priority
+		delete retryOverrides.dedupeKey
+		delete retryOverrides.cancelGroup
+		delete retryOverrides.cancellable
+		return retryOverrides
+	}
+	getWorkerPriorityValue(priority){
+		if(typeof priority === "number" && isFinite(priority)){
+			return priority
+		}
+		switch(priority){
+			case "game":
+				return 300
+			case "interactive":
+				return 200
+			case "background":
+				return 10
+			case "normal":
+			default:
+				return 100
+		}
+	}
+	sortWorkerQueue(){
+		this.workerQueue.sort((a, b) => {
+			return b.priorityValue - a.priorityValue || a.sequence - b.sequence
+		})
+	}
+	findWorkerTask(dedupeKey){
+		var queued = this.workerQueue.find(task => task.dedupeKey === dedupeKey && !task.cancelled)
+		if(queued){
+			return queued
+		}
+		for(var id in this.workerCallbacks){
+			var task = this.workerCallbacks[id]
+			if(task && task.dedupeKey === dedupeKey && !task.cancelled){
+				return task
+			}
+		}
+	}
+	promoteWorkerTask(task, options){
+		options = options || {}
+		var priorityValue = this.getWorkerPriorityValue(options.priority)
+		if(priorityValue > task.priorityValue){
+			task.priority = options.priority
+			task.priorityValue = priorityValue
+		}
+		if(options.cancellable === false){
+			task.cancellable = false
+		}
+		var retryOverrides = this.getWorkerRetryOverrides(options)
+		for(var key in retryOverrides){
+			if(retryOverrides[key] != null){
+				task.retryOverrides[key] = retryOverrides[key]
+			}
+		}
+		if(!task.worker){
+			task.options = this.getRetryOptions(task.retryOverrides)
+			task.maxWorkerRecoveries = Math.max(task.maxWorkerRecoveries, task.options.workerRecoveries)
+			this.sortWorkerQueue()
+		}
+	}
+	isWorkerArrayBuffer(value){
+		return value && Object.prototype.toString.call(value) === "[object ArrayBuffer]"
+	}
+	cloneWorkerResult(value, totalConsumers){
+		if(this.isWorkerArrayBuffer(value) && totalConsumers > 1){
+			return value.slice(0)
+		}
+		return value
+	}
+	resolveWorkerTask(task, value){
+		if(task.settled){
+			return
+		}
+		task.settled = true
+		var total = task.consumers.length
+		var values = task.consumers.map(() => this.cloneWorkerResult(value, total))
+		task.consumers.forEach((consumer, index) => {
+			consumer.resolve(values[index])
+		})
+		task.consumers = []
+	}
+	rejectWorkerTask(task, error){
+		if(task.settled){
+			return
+		}
+		task.settled = true
+		task.consumers.forEach(consumer => consumer.reject(error))
+		task.consumers = []
+	}
+	cancelWorkerTasks(cancelGroup, options){
+		options = options || {}
+		var cancelled = 0
+		for(var i = this.workerQueue.length - 1; i >= 0; i--){
+			var task = this.workerQueue[i]
+			if(task.cancelGroup === cancelGroup && task.cancellable && task.dedupeKey !== options.exceptDedupeKey){
+				this.workerQueue.splice(i, 1)
+				task.cancelled = true
+				this.rejectWorkerTask(task, "cancel")
+				cancelled++
+			}
+		}
+		for(var id in this.workerCallbacks){
+			var task = this.workerCallbacks[id]
+			if(task && task.cancelGroup === cancelGroup && task.cancellable && task.dedupeKey !== options.exceptDedupeKey){
+				task.cancelled = true
+				this.rejectWorkerTask(task, "cancel")
+				if(task.worker && task.worker.worker){
+					task.worker.worker.postMessage({
+						id: task.id,
+						cancel: true
+					})
+				}
+				cancelled++
+			}
+		}
+		return cancelled
 	}
 	workerRun(){
 		if(this.workerQueue.length === 0){
 			return
 		}
+		this.sortWorkerQueue()
 		for(var workerIndex = 0; workerIndex < this.workers.length && this.workerQueue.length; workerIndex++){
 			var workerObj = this.workers[workerIndex]
 			if(workerObj.active || workerObj.retiring || workerObj.failed){
@@ -392,6 +546,12 @@ class Loader{
 		}
 		this.removeWorker(workerObj)
 		if(task){
+			if(task.cancelled){
+				this.rejectWorkerTask(task, "cancel")
+				this.resizeWorkers(this.workerTarget || this.getDownloadConcurrency())
+				this.workerRun()
+				return
+			}
 			task.recoveryAttempts++
 			if(task.recoveryAttempts <= task.maxWorkerRecoveries){
 				task.options = this.getRetryOptions(task.retryOverrides)
@@ -402,7 +562,8 @@ class Loader{
 					attempt: task.recoveryAttempts + 1,
 					retries: task.maxWorkerRecoveries + 1
 				}
-				this.workerQueue.unshift(task)
+				this.workerQueue.push(task)
+				this.sortWorkerQueue()
 				this.updateLoaderStatus()
 			}else{
 				var error = new Error(failure.message)
@@ -415,7 +576,7 @@ class Loader{
 				if(this.retryingResource && this.retryingResource.url === task.url){
 					this.retryingResource = null
 				}
-				task.reject(error)
+				this.rejectWorkerTask(task, error)
 			}
 		}
 		this.resizeWorkers(this.workerTarget || this.getDownloadConcurrency())
@@ -1609,7 +1770,7 @@ class Loader{
 	soundUrl(name){
 		return gameConfig.assets_baseurl + "audio/" + name
 	}
-	loadSound(name, gain){
+	loadSound(name, gain, loadOptions){
 		var id = this.getFilename(name)
 		if(assets.sounds[id]){
 			return Promise.resolve(assets.sounds[id])
@@ -1617,7 +1778,7 @@ class Loader{
 		if(this.soundLoadPromises[id]){
 			return this.soundLoadPromises[id]
 		}
-		this.soundLoadPromises[id] = gain.load(new RemoteFile(this.soundUrl(name))).then(sound => {
+		this.soundLoadPromises[id] = gain.load(new RemoteFile(this.soundUrl(name)), loadOptions).then(sound => {
 			assets.sounds[id] = sound
 			delete this.soundLoadPromises[id]
 			return sound
@@ -1637,7 +1798,9 @@ class Loader{
 		if(assets.sounds[id]){
 			play(assets.sounds[id])
 		}else{
-			this.addBackgroundTask(() => this.loadSound(name, snd.musicGain).then(play), this.soundUrl(name), {
+			this.addBackgroundTask(() => this.loadSound(name, snd.musicGain, {
+				priority: "background"
+			}).then(play), this.soundUrl(name), {
 				baseDelay: 1000
 			})
 		}
@@ -1660,7 +1823,11 @@ class Loader{
 		this.imageLoadPromises[id] = this.workerFetch(url, "blob", {
 			resourceType: "image",
 			timeout: options.timeout,
-			retries: options.retries
+			retries: options.retries,
+			priority: options.priority,
+			cancelGroup: options.cancelGroup,
+			cancellable: options.cancellable,
+			dedupeKey: options.dedupeKey
 		}).then(blob => {
 			sourceUrl = URL.createObjectURL(blob)
 			var loaded = pageEvents.load(img)
@@ -1736,7 +1903,9 @@ class Loader{
 		this.preloadGameImages()
 		this.preloadComboVoices()
 		assets.audioMusic.forEach(name => {
-			this.addBackgroundTask(() => this.loadSound(name, snd.musicGain), this.soundUrl(name))
+			this.addBackgroundTask(() => this.loadSound(name, snd.musicGain, {
+				priority: "background"
+			}), this.soundUrl(name))
 		})
 	}
 	preloadComboVoices(){
@@ -1746,7 +1915,9 @@ class Loader{
 		}
 		names.forEach(name => {
 			var id = this.getFilename(name)
-			this.addBackgroundTask(() => this.loadSound(name, snd.sfxGain).then(() => {
+			this.addBackgroundTask(() => this.loadSound(name, snd.sfxGain, {
+				priority: "background"
+			}).then(() => {
 				if(!assets.sounds[id + "_p1"]){
 					assets.sounds[id + "_p1"] = assets.sounds[id].copy(snd.sfxGainL)
 				}
@@ -1856,14 +2027,18 @@ class Loader{
 				type = reqStub.responseType
 			}
 		}
-		if(!customResponse && (url.startsWith("src/") || url.startsWith("assets/") || url.indexOf("img/") !== -1 || url.indexOf("audio/") !== -1 || url.indexOf("fonts/") !== -1 || url.indexOf("views/") !== -1)){
+		var resourceType = this.inferResourceType(url)
+		var songsBaseurl = typeof gameConfig !== "undefined" && gameConfig && gameConfig.songs_baseurl || ""
+		var isApiResource = url.startsWith("api/") || url.indexOf("/api/") !== -1
+		var isSongResource = !isApiResource && (songsBaseurl && url.indexOf(songsBaseurl) !== -1 || url.indexOf("/songs/") !== -1 || url.startsWith("songs/") || /\.(tja|osu|vtt)(\?|$)/.test(url))
+		if(!customResponse && (isSongResource || url.startsWith("src/") || url.startsWith("assets/") || url.indexOf("img/") !== -1 || url.indexOf("audio/") !== -1 || url.indexOf("fonts/") !== -1 || url.indexOf("views/") !== -1 || ["audio", "image", "font", "javascript", "view", "css"].indexOf(resourceType) !== -1)){
 			return this.workerFetch(url, type, Object.assign({
-				resourceType: this.inferResourceType(url)
+				resourceType: resourceType
 			}, retryOptions))
 		}
 		if(!customResponse){
 			return this.fetchWithRetry(url, Object.assign({
-				resourceType: this.inferResourceType(url),
+				resourceType: resourceType,
 				responseType: type
 			}, retryOptions))
 		}

@@ -13,32 +13,38 @@
 		pageEvents.add(window, ["click", "touchend", "keypress"], this.pageClicked.bind(this))
 		this.gainList = []
 	}
-	load(file, gain){
-		var promise = file.name.endsWith(".ogg") ? this.loadOgg(file) : this.loadAudio(file, this.audioDecoder)
+	load(file, gain, loadOptions){
+		var promise = file.name.endsWith(".ogg") ? this.loadOgg(file, loadOptions) : this.loadAudio(file, this.audioDecoder, loadOptions)
 		return promise.then(buffer => {
 			return new Sound(gain || {soundBuffer: this}, buffer)
 		})
 	}
-	loadAudio(file, decoder){
-		return file.arrayBuffer().then(response => {
-			return this.decodeBuffer(decoder, response)
-		}).catch(error => Promise.reject([error, file.url]))
+	isCancelError(error){
+		return error === "cancel" || error && error.code === "RESOURCE_CANCELLED" || Array.isArray(error) && this.isCancelError(error[0])
 	}
-	loadOgg(file){
+	loadAudio(file, decoder, loadOptions){
+		return file.arrayBuffer(loadOptions).then(response => {
+			return this.decodeBuffer(decoder, response)
+		}).catch(error => this.isCancelError(error) ? Promise.reject("cancel") : Promise.reject([error, file.url]))
+	}
+	loadOgg(file, loadOptions){
 		if(this.oggFallbackActive && this.canUseOggFallback()){
-			return this.loadOggFallbackFile(file, new Error("Skipped native OGG decoder after previous native decode failure"))
+			return this.loadOggFallbackFile(file, new Error("Skipped native OGG decoder after previous native decode failure"), loadOptions)
 		}
-		return file.arrayBuffer().then(response => {
+		return file.arrayBuffer(loadOptions).then(response => {
+			var fallbackResponse = this.canUseOggFallback() && response && response.slice ? response.slice(0) : null
 			return this.decodeBuffer(this.oggDecoder, response).catch(nativeError => {
-				if(!this.canUseOggFallback()){
+				if(!fallbackResponse){
 					return Promise.reject(nativeError)
 				}
-				return this.loadOggFallbackFile(file, nativeError).then(buffer => {
+				return this.decodeOggFallback(fallbackResponse).catch(fallbackError => {
+					return Promise.reject(this.createOggFallbackError(nativeError, fallbackError))
+				}).then(buffer => {
 					this.oggFallbackActive = true
 					return buffer
 				})
 			})
-		}).catch(error => Promise.reject([error, file.url]))
+		}).catch(error => this.isCancelError(error) ? Promise.reject("cancel") : Promise.reject([error, file.url]))
 	}
 	decodeBuffer(decoder, response){
 		return new Promise((resolve, reject) => {
@@ -56,10 +62,13 @@
 	canUseOggFallback(){
 		return "WebAssembly" in window
 	}
-	loadOggFallbackFile(file, nativeError){
-		return file.arrayBuffer().then(response => {
+	loadOggFallbackFile(file, nativeError, loadOptions){
+		return file.arrayBuffer(loadOptions).then(response => {
 			return this.decodeOggFallback(response)
 		}).catch(fallbackError => {
+			if(this.isCancelError(fallbackError)){
+				return Promise.reject("cancel")
+			}
 			return Promise.reject(this.createOggFallbackError(nativeError, fallbackError))
 		})
 	}
@@ -214,8 +223,8 @@ class SoundGain{
 		}
 		this.setVolume(1)
 	}
-	load(url){
-		return this.soundBuffer.load(url, this)
+	load(url, loadOptions){
+		return this.soundBuffer.load(url, this, loadOptions)
 	}
 	convertTime(time, absolute){
 		return this.soundBuffer.convertTime(time, absolute)

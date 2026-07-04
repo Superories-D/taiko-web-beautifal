@@ -306,19 +306,23 @@ class Controller{
 				}else{
 					var songObj = assets.songs.find(song => song.id === this.selectedSong.folder)
 					var promises = []
+					var gameLoadOptions = {
+						priority: "game",
+						cancellable: false
+					}
 					if(songObj.chart && songObj.chart !== "blank"){
 						var chart = songObj.chart
 						if(chart.separateDiff){
 							var chartDiff = this.selectedSong.difficulty
 							chart = chart[chartDiff]
 						}
-						this.addPromise(promises, chart.read(this.selectedSong.type === "tja" ? "utf-8" : undefined).then(data => {
+						this.addPromise(promises, chart.read(this.selectedSong.type === "tja" ? "utf-8" : undefined, gameLoadOptions).then(data => {
 							this.songData = data.replace(/\0/g, "").split("\n")
 							return Promise.resolve()
 						}), chart.url)
 					}
 					if(songObj.lyricsFile){
-						this.addPromise(promises, songObj.lyricsFile.read().then(result => {
+						this.addPromise(promises, songObj.lyricsFile.read(undefined, gameLoadOptions).then(result => {
 							songObj.lyricsData = result
 						}, () => Promise.resolve()), songObj.lyricsFile.url)
 					}

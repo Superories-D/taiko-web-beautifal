@@ -7,6 +7,10 @@ class LoadSong{
 		this.autoPlayEnabled = autoPlayEnabled
 		this.multiplayer = multiplayer
 		this.touchEnabled = touchEnabled
+		this.gameLoadOptions = {
+			priority: "game",
+			cancellable: false
+		}
 		
 		loader.changePage("loadsong", true)
 		var loadingText = document.getElementById("loading-text")
@@ -117,7 +121,7 @@ class LoadSong{
 		if(songObj.sound && songObj.sound.buffer){
 			songObj.sound.gain = snd.musicGain
 		}else if(songObj.music !== "muted"){
-			this.addPromise(snd.musicGain.load(songObj.music).then(sound => {
+			this.addPromise(snd.musicGain.load(songObj.music, this.gameLoadOptions).then(sound => {
 				songObj.sound = sound
 			}), songObj.music.url)
 		}
@@ -127,14 +131,14 @@ class LoadSong{
 			chart = chart[chartDiff]
 		}
 		if(chart){
-			this.addPromise(chart.read(song.type === "tja" ? "utf-8" : "").then(data => {
+			this.addPromise(chart.read(song.type === "tja" ? "utf-8" : "", this.gameLoadOptions).then(data => {
 				this.songData = data.replace(/\0/g, "").split("\n")
 			}), chart.url)
 		}else{
 			this.songData = ""
 		}
 		if(songObj.lyricsFile && !songObj.lyricsData && !this.multiplayer && (!this.touchEnabled || this.autoPlayEnabled) && settings.getItem("showLyrics")){
-			this.addPromise(songObj.lyricsFile.read().then(data => {
+			this.addPromise(songObj.lyricsFile.read(undefined, this.gameLoadOptions).then(data => {
 				songObj.lyricsData = data
 			}, () => {}), songObj.lyricsFile.url)
 		}
@@ -259,7 +263,7 @@ class LoadSong{
 						if(song.type === "tja" || !chart || !chart.separateDiff || !chart[chartDiff]){
 							this.startMultiplayer()
 						}else{
-							chart[chartDiff].read(song.type === "tja" ? "utf-8" : "").then(data => {
+							chart[chartDiff].read(song.type === "tja" ? "utf-8" : "", this.gameLoadOptions).then(data => {
 								this.song2Data = data.replace(/\0/g, "").split("\n")
 							}, () => {}).then(() => {
 								this.startMultiplayer()

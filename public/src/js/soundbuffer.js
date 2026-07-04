@@ -10,6 +10,11 @@
 		this.oggmentedPromise = null
 		this.oggFallbackQueue = Promise.resolve()
 		this.oggFallbackActive = false
+		this.oggByteCache = {}
+		this.oggByteCacheOrder = []
+		this.oggByteCacheBytes = 0
+		this.oggByteCacheMaxEntries = 4
+		this.oggByteCacheMaxBytes = 64 * 1024 * 1024
 		pageEvents.add(window, ["click", "touchend", "keypress"], this.pageClicked.bind(this))
 		this.gainList = []
 	}
@@ -33,6 +38,9 @@
 		}
 		return file.arrayBuffer(loadOptions).then(response => {
 			var fallbackResponse = this.canUseOggFallback() && response && response.slice ? response.slice(0) : null
+			if(fallbackResponse){
+				this.setOggByteCache(file, fallbackResponse)
+			}
 			return this.decodeBuffer(this.oggDecoder, response).catch(nativeError => {
 				if(!fallbackResponse){
 					return Promise.reject(nativeError)
@@ -63,14 +71,87 @@
 		return "WebAssembly" in window
 	}
 	loadOggFallbackFile(file, nativeError, loadOptions){
-		return file.arrayBuffer(loadOptions).then(response => {
-			return this.decodeOggFallback(response)
-		}).catch(fallbackError => {
+		var cached = this.getOggByteCache(file)
+		var loadFresh = () => {
+			return file.arrayBuffer(loadOptions).then(response => {
+				if(response && response.slice){
+					this.setOggByteCache(file, response)
+				}
+				return this.decodeOggFallback(response)
+			})
+		}
+		var promise = cached ? this.decodeOggFallback(cached).catch(() => {
+			this.deleteOggByteCache(file)
+			return loadFresh()
+		}) : loadFresh()
+		return promise.catch(fallbackError => {
 			if(this.isCancelError(fallbackError)){
 				return Promise.reject("cancel")
 			}
 			return Promise.reject(this.createOggFallbackError(nativeError, fallbackError))
 		})
+	}
+	getOggCacheKey(file){
+		return file && (file.url || file.path || file.name) || ""
+	}
+	getOggByteCache(file){
+		var key = this.getOggCacheKey(file)
+		var entry = key && this.oggByteCache[key]
+		if(!entry || !entry.buffer || !entry.buffer.slice){
+			return null
+		}
+		this.touchOggByteCache(key)
+		return entry.buffer.slice(0)
+	}
+	setOggByteCache(file, buffer){
+		if(!buffer || !buffer.slice || !buffer.byteLength){
+			return
+		}
+		if(buffer.byteLength > this.oggByteCacheMaxBytes){
+			return
+		}
+		var key = this.getOggCacheKey(file)
+		if(!key){
+			return
+		}
+		this.deleteOggByteCache(file)
+		this.oggByteCache[key] = {
+			buffer: buffer.slice(0),
+			bytes: buffer.byteLength
+		}
+		this.oggByteCacheBytes += buffer.byteLength
+		this.oggByteCacheOrder.push(key)
+		this.trimOggByteCache()
+	}
+	deleteOggByteCache(file){
+		var key = this.getOggCacheKey(file)
+		var entry = key && this.oggByteCache[key]
+		if(!entry){
+			return
+		}
+		this.oggByteCacheBytes -= entry.bytes || 0
+		delete this.oggByteCache[key]
+		var index = this.oggByteCacheOrder.indexOf(key)
+		if(index !== -1){
+			this.oggByteCacheOrder.splice(index, 1)
+		}
+	}
+	touchOggByteCache(key){
+		var index = this.oggByteCacheOrder.indexOf(key)
+		if(index !== -1){
+			this.oggByteCacheOrder.splice(index, 1)
+		}
+		this.oggByteCacheOrder.push(key)
+	}
+	trimOggByteCache(){
+		while(this.oggByteCacheOrder.length > this.oggByteCacheMaxEntries || this.oggByteCacheBytes > this.oggByteCacheMaxBytes){
+			var key = this.oggByteCacheOrder.shift()
+			var entry = key && this.oggByteCache[key]
+			if(entry){
+				this.oggByteCacheBytes -= entry.bytes || 0
+				delete this.oggByteCache[key]
+			}
+		}
 	}
 	decodeOggFallback(response){
 		var task = this.oggFallbackQueue.then(() => {

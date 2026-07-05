@@ -41,7 +41,10 @@ class Leaderboard {
 			this.hide()
 		}
 		this.keyHandler = (e) => {
-			if (this.visible && (e.key === "Escape" || e.key === "Esc")) {
+			const key = String(e.key || "").toLowerCase()
+			if (this.visible && ["escape", "esc", "d", "f", "j", "k"].indexOf(key) !== -1) {
+				e.preventDefault()
+				e.stopPropagation()
 				this.hide()
 			}
 		}

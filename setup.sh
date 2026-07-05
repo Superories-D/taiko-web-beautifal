@@ -838,6 +838,45 @@ ensure_admin_user() {
   log "Administrator account is ready: $ADMIN_USERNAME_RESULT"
 }
 
+reparse_uploaded_categories_container() {
+  if [ "${TAIKO_WEB_UPDATE_REPARSE_UPLOADS:-1}" = "0" ]; then
+    log "Uploaded category reparse skipped by TAIKO_WEB_UPDATE_REPARSE_UPLOADS=0."
+    return 0
+  fi
+  if ! command -v docker >/dev/null 2>&1 ||
+    ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^taiko-web-app$'; then
+    log "Uploaded category reparse skipped; app container is not running."
+    return 0
+  fi
+
+  log "Reparsing uploaded songs for updated special categories."
+  if docker exec taiko-web-app python /app/scripts/reparse_uploaded_categories.py; then
+    log "Uploaded category reparse completed."
+  else
+    log "Uploaded category reparse failed; update will continue. Inspect logs and rerun scripts/reparse_uploaded_categories.py if needed."
+  fi
+}
+
+reparse_uploaded_categories_direct() {
+  if [ "${TAIKO_WEB_UPDATE_REPARSE_UPLOADS:-1}" = "0" ]; then
+    log "Uploaded category reparse skipped by TAIKO_WEB_UPDATE_REPARSE_UPLOADS=0."
+    return 0
+  fi
+  if [ ! -x "$INSTALL_DIR/.venv/bin/python3" ]; then
+    log "Uploaded category reparse skipped; Python virtualenv is missing."
+    return 0
+  fi
+
+  log "Reparsing uploaded songs for updated special categories."
+  if TAIKO_WEB_SONGS_DIR="$DATA_DIR/songs" \
+    TAIKO_WEB_MONGO_HOST="${TAIKO_WEB_MONGO_HOST:-127.0.0.1:27017}" \
+    "$INSTALL_DIR/.venv/bin/python3" "$INSTALL_DIR/scripts/reparse_uploaded_categories.py"; then
+    log "Uploaded category reparse completed."
+  else
+    log "Uploaded category reparse failed; update will continue. Inspect logs and rerun scripts/reparse_uploaded_categories.py if needed."
+  fi
+}
+
 deploy_direct() {
   begin_update_guard
   log "Starting direct deployment."
@@ -911,6 +950,7 @@ upgrade_container() {
     compose_up_or_recreate_named up -d --build --force-recreate --remove-orphans
   )
   check_mongodb_health "$UPDATE_BEFORE_SONGS_COUNT" "$LAST_BACKUP_DIR"
+  reparse_uploaded_categories_container
   ensure_admin_user
   log "Container upgrade completed."
   log "Persistent data directory kept intact: $DATA_DIR"
@@ -943,6 +983,7 @@ upgrade_direct() {
   systemctl enable "$SERVICE_NAME"
   systemctl restart "$SERVICE_NAME"
   check_mongodb_health "$UPDATE_BEFORE_SONGS_COUNT" "$LAST_BACKUP_DIR"
+  reparse_uploaded_categories_direct
   ensure_admin_user
   log "Direct upgrade completed."
   log "Persistent data directory kept intact: $DATA_DIR"

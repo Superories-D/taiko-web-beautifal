@@ -364,11 +364,12 @@ SITE_MESSAGE_MAX_BODY_LENGTH = 5000
 SITE_MESSAGE_MAX_IMAGE_URL_LENGTH = 1000
 UPLOAD_TJA_MAX_BYTES = max(64 * 1024, min(env_int('TAIKO_WEB_UPLOAD_TJA_MAX_BYTES', 2 * 1024 * 1024), 10 * 1024 * 1024))
 UPLOAD_MUSIC_MAX_BYTES = max(1024 * 1024, min(env_int('TAIKO_WEB_UPLOAD_MUSIC_MAX_BYTES', 32 * 1024 * 1024), 128 * 1024 * 1024))
+UPLOAD_DAN_DOJO_MAX_AUDIO_FILES = max(3, min(env_int('TAIKO_WEB_UPLOAD_DAN_DOJO_MAX_AUDIO_FILES', 8), 20))
 UPLOAD_ALLOWED_MUSIC_TYPES = {'ogg', 'mp3'}
 UPLOAD_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
 app.config['MAX_CONTENT_LENGTH'] = (
     UPLOAD_TJA_MAX_BYTES +
-    UPLOAD_MUSIC_MAX_BYTES +
+    UPLOAD_MUSIC_MAX_BYTES * UPLOAD_DAN_DOJO_MAX_AUDIO_FILES +
     UPLOAD_MULTIPART_OVERHEAD_BYTES
 )
 
@@ -3055,6 +3056,35 @@ def validate_uploaded_tja(tja, tja_text, music_type):
         raise UploadValidationError('music_type_mismatch')
 
 
+def upload_wave_basename(name):
+    basename = pathlib.PurePosixPath((name or '').replace('\\', '/')).name
+    if not basename or basename in ('.', '..') or '\x00' in basename:
+        raise UploadValidationError('invalid_music_filename')
+    return basename
+
+
+def expected_dan_dojo_waves(tja):
+    waves = []
+    seen = set()
+    for wave in [tja.wave] + [song.get('wave') for song in tja.dan_dojo.get('songs', [])]:
+        if not wave:
+            continue
+        basename = upload_wave_basename(wave)
+        key = basename.lower()
+        if key not in seen:
+            seen.add(key)
+            waves.append(basename)
+    return waves
+
+
+def validate_uploaded_dan_dojo_tja(tja, tja_text):
+    validate_uploaded_tja(tja, tja_text, pathlib.Path((tja.wave or '').replace('\\', '/')).suffix.lower().lstrip('.') or 'ogg')
+    if not tja.is_dan or not tja.dan_dojo.get('exams'):
+        raise UploadValidationError('missing_dan_dojo_exams')
+    if not expected_dan_dojo_waves(tja):
+        raise UploadValidationError('missing_dan_dojo_waves')
+
+
 def song_storage_child(name):
     if not re.fullmatch(r'[A-Za-z0-9._-]+', name or ''):
         raise ValueError('invalid song storage name')
@@ -3111,6 +3141,41 @@ def install_uploaded_song_files(song_id, music_type, tja_data, music_data):
         staged.mkdir()
         write_durable_file(staged / 'main.tja', tja_data)
         write_durable_file(staged / 'main.{}'.format(music_type), music_data)
+        if target.exists() or target.is_symlink():
+            target.replace(backup)
+            state['backup'] = backup
+        staged.replace(target)
+        state['installed'] = True
+        fsync_directory(SONGS_DIR.resolve())
+        return state
+    except Exception:
+        if staged.exists() or staged.is_symlink():
+            remove_song_storage_entry(staged)
+        if state['backup'] and (state['backup'].exists() or state['backup'].is_symlink()):
+            if target.exists() or target.is_symlink():
+                remove_song_storage_entry(target)
+            state['backup'].replace(target)
+        raise
+
+
+def install_uploaded_dan_dojo_files(song_id, music_type, tja_data, main_music_data, extra_music_files):
+    if not re.fullmatch(r'[a-f0-9]{64}-[a-f0-9]{64}', song_id):
+        raise ValueError('invalid uploaded song id')
+
+    SONGS_DIR.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex
+    target = song_storage_child(song_id)
+    staged = song_storage_child('.upload-{}'.format(token))
+    backup = song_storage_child('.backup-{}'.format(token))
+    state = {'target': target, 'backup': None, 'installed': False}
+
+    try:
+        staged.mkdir()
+        write_durable_file(staged / 'main.tja', tja_data)
+        write_durable_file(staged / 'main.{}'.format(music_type), main_music_data)
+        for filename, data in extra_music_files.items():
+            basename = upload_wave_basename(filename)
+            write_durable_file(staged / basename, data)
         if target.exists() or target.is_symlink():
             target.replace(backup)
             state['backup'] = backup
@@ -3239,6 +3304,140 @@ def process_song_upload(allowed_song_types=None, default_song_type=None, upload_
         return jsonify({'success': False, 'error': 'upload_failed'}), 500
 
 
+def process_dan_dojo_upload(upload_source='dan_dojo_upload'):
+    try:
+        if 'file_tja' not in request.files or 'file_music' not in request.files:
+            raise UploadValidationError('missing_files')
+
+        file_tja = request.files['file_tja']
+        if not file_tja.filename:
+            raise UploadValidationError('empty_filename')
+        if pathlib.Path(file_tja.filename.replace('\\', '/')).suffix.lower() != '.tja':
+            raise UploadValidationError('unsupported_chart_type')
+
+        raw_tja_data = read_limited_upload(
+            file_tja,
+            UPLOAD_TJA_MAX_BYTES,
+            'tja_too_large'
+        )
+        tja_text = decode_uploaded_tja(raw_tja_data)
+        if '\x00' in tja_text:
+            raise UploadValidationError('invalid_tja_content')
+
+        tja = tjaf.Tja(tja_text)
+        validate_uploaded_dan_dojo_tja(tja, tja_text)
+        expected_waves = expected_dan_dojo_waves(tja)
+        if len(expected_waves) > UPLOAD_DAN_DOJO_MAX_AUDIO_FILES:
+            raise UploadValidationError('too_many_dan_dojo_audio_files')
+
+        uploads = request.files.getlist('file_music')
+        if not uploads:
+            raise UploadValidationError('missing_files')
+        if len(uploads) > UPLOAD_DAN_DOJO_MAX_AUDIO_FILES:
+            raise UploadValidationError('too_many_dan_dojo_audio_files')
+
+        music_files = {}
+        for upload in uploads:
+            if not upload.filename:
+                raise UploadValidationError('empty_filename')
+            basename = upload_wave_basename(upload.filename)
+            music_data = read_limited_upload(
+                upload,
+                UPLOAD_MUSIC_MAX_BYTES,
+                'music_too_large'
+            )
+            music_type = uploaded_music_type(basename)
+            if not music_signature_matches(music_data, music_type):
+                raise UploadValidationError('invalid_music_file')
+            music_files[basename.lower()] = {
+                'filename': basename,
+                'type': music_type,
+                'data': music_data
+            }
+
+        missing = [wave for wave in expected_waves if wave.lower() not in music_files]
+        if missing:
+            raise UploadValidationError('missing_dan_dojo_music:{}'.format(','.join(missing)))
+
+        main_wave = upload_wave_basename(tja.wave or expected_waves[0])
+        main_music = music_files[main_wave.lower()]
+        music_type = main_music['type']
+        validate_uploaded_tja(tja, tja_text, music_type)
+
+        tja_data = tja_text.encode('utf-8')
+        tja_hash = hashlib.sha256(tja_data).hexdigest()
+        music_hash_input = hashlib.sha256()
+        for wave in sorted(expected_waves, key=lambda value: value.lower()):
+            item = music_files[wave.lower()]
+            music_hash_input.update(wave.lower().encode('utf-8'))
+            music_hash_input.update(hashlib.sha256(item['data']).digest())
+        generated_id = '{}-{}'.format(tja_hash, music_hash_input.hexdigest())
+
+        db_entry = tja.to_mongo(generated_id, time.time_ns())
+        db_entry.update({
+            'enabled': request.form.get('enabled', '1').lower() not in ('0', 'false', 'off', 'no'),
+            'hash': generated_id,
+            'music_type': music_type,
+            'song_type': '11 Dan Dojo',
+            'uploaded_at': datetime.utcnow(),
+            'upload_source': upload_source
+        })
+        category_id = form_int('category_id')
+        if category_id:
+            db_entry['category_id'] = category_id
+
+        extra_music_files = {}
+        main_storage_name = 'main.{}'.format(music_type).lower()
+        for wave in expected_waves:
+            item = music_files[wave.lower()]
+            if item['filename'].lower() != main_storage_name:
+                extra_music_files[item['filename']] = item['data']
+
+        file_state = install_uploaded_dan_dojo_files(
+            generated_id,
+            music_type,
+            tja_data,
+            main_music['data'],
+            extra_music_files
+        )
+        try:
+            result = db.songs.update_one(
+                {'id': generated_id},
+                {'$setOnInsert': db_entry},
+                upsert=True
+            )
+        except Exception:
+            rollback_uploaded_song_files(file_state)
+            raise
+
+        try:
+            finalize_uploaded_song_files(file_state)
+        except Exception:
+            app.logger.exception('Failed to remove a Dan Dojo upload backup for %s', generated_id)
+
+        created = result.upserted_id is not None
+        if created:
+            try:
+                invalidate_song_derived_caches()
+            except Exception:
+                app.logger.exception('Failed to invalidate song caches after Dan Dojo upload %s', generated_id)
+
+        return {
+            'success': True,
+            'id': generated_id,
+            'created': created,
+            'songs': len(tja.dan_dojo.get('songs', [])),
+            'exams': len(tja.dan_dojo.get('exams', []))
+        }, 201 if created else 200
+    except UploadValidationError as error:
+        return {'success': False, 'error': str(error)}, 400
+    except RequestEntityTooLarge:
+        raise
+    except Exception:
+        app.logger.exception('Dan Dojo upload failed')
+        return {'success': False, 'error': 'upload_failed'}, 500
+
+
 @app.route("/upload/", defaults={"ref": "index.html"})
 @app.route("/upload/<path:ref>")
 def send_upload(ref):
@@ -3260,6 +3459,21 @@ def api_upload_file():
         default_song_type=CUSTOM_CATEGORY['title'],
         upload_source='api_upload'
     )
+
+@app.route("/api/upload/dan-dojo", methods=["POST"])
+def api_upload_dan_dojo_file():
+    result, status = process_dan_dojo_upload('api_dan_dojo_upload')
+    return jsonify(result), status
+
+@app.route(basedir + 'admin/songs/upload-dan-dojo', methods=['POST'])
+@admin_required(level=100)
+def route_admin_upload_dan_dojo():
+    result, status = process_dan_dojo_upload('admin_dan_dojo_upload')
+    if result.get('success'):
+        flash('Dan Dojo uploaded.')
+        return redirect(basedir + 'admin/songs/%s' % result['id'])
+    flash('Dan Dojo upload failed: %s' % result.get('error', 'unknown'), 'error')
+    return redirect(basedir + 'admin/songs/new')
 
 @app.route("/api/remove", methods=["POST"])
 def remove():

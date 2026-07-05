@@ -23,6 +23,9 @@ class Game{
 			title: selectedSong.title,
 			difficulty: this.rules.difficulty
 		}
+		if(this.controller.danDojoStatus){
+			this.controller.danDojoStatus.setSegment(0, this.globalScore, this.combo)
+		}
 		var combo = this.songData.circles.filter(circle => {
 			var type = circle.type
 			return (type === "don" || type === "ka" || type === "daiDon" || type === "daiKa") && (!circle.branch || circle.branch.active)
@@ -78,6 +81,7 @@ class Game{
 		this.updateCirclesStatus()
 		this.checkPlays()
 		this.updateRollCounter()
+		this.updateDanDojoStatus()
 		// Event operations
 		this.whenFadeoutMusic()
 		if(this.controller.multiplayer !== 2){
@@ -121,8 +125,16 @@ class Game{
 		this.currentMusicKey = key
 		this.musicStartMS = event.ms || 0
 		this.mainMusicPlaying = false
+		if(this.controller.danDojoStatus && event.songIndex != null){
+			this.controller.danDojoStatus.setSegment(event.songIndex, this.globalScore, this.combo)
+		}
 		if(!this.isPaused() && this.controller.multiplayer !== 2){
 			this.playMainMusic(true)
+		}
+	}
+	updateDanDojoStatus(){
+		if(this.controller.danDojoStatus){
+			this.controller.danDojoStatus.update(this.globalScore, this.rules, this.combo)
 		}
 	}
 	getCircles(){

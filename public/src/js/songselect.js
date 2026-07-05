@@ -1139,13 +1139,15 @@ class SongSelect {
 	}
 	diffSelMouse(x, y) {
 		if (this.state.locked === 0) {
+			var currentSong = this.songs[this.selectedSong]
 			if (223 < x && x < 223 + 72 * this.diffOptions.length && 132 < y && y < 436) {
 				return Math.floor((x - 223) / 72)
-			} else if (this.songs[this.selectedSong].maker && this.songs[this.selectedSong].maker.id > 0 && this.songs[this.selectedSong].maker.url && x > 230 && x < 485 && y > 446 && y < 533) {
+			} else if (currentSong.maker && currentSong.maker.id > 0 && currentSong.maker.url && x > 230 && x < 485 && y > 446 && y < 533) {
 				return "maker"
+			} else if (this.isDanDojoSong(currentSong) && 520 < x && x < 1120 && 112 < y && y < 548) {
+				return this.diffOptions.length + 3
 			} else if (550 < x && x < 1050 && 109 < y && y < 538) {
 				var moveBy = Math.floor((x - 550) / ((1050 - 550) / 5)) + this.diffOptions.length
-				var currentSong = this.songs[this.selectedSong]
 				if (
 					this.state.ura
 					&& moveBy === this.diffOptions.length + 3
@@ -1257,6 +1259,9 @@ class SongSelect {
 				this.state.moveHover = null
 				this.state.ura = 0
 				if (this.selectedDiff === this.diffOptions.length + 4) {
+					this.selectedDiff = this.diffOptions.length + 3
+				}
+				if (this.isDanDojoSong(currentSong)) {
 					this.selectedDiff = this.diffOptions.length + 3
 				}
 
@@ -1386,6 +1391,7 @@ class SongSelect {
 			"hash": selectedSong.hash,
 			"lyrics": selectedSong.lyrics,
 			"video": selectedSong.video,
+			"danDojo": selectedSong.dan_dojo || selectedSong.danDojo,
 		}, autoplay, multiplayer, touch)
 	}
 	startWeeklyChallenge(challenge, song) {
@@ -2356,6 +2362,9 @@ class SongSelect {
 						})
 					}
 				}
+				if (!songSel && this.isDanDojoSong(currentSong)) {
+					this.drawDanDojoChallenge(ctx, currentSong, x, y, w, h, ratio, ms)
+				}
 
 				var borders = (this.songAsset.border + this.songAsset.innerBorder) * 2
 				var textW = this.songAsset.width - borders
@@ -3225,6 +3234,191 @@ class SongSelect {
 				}
 			}
 		}
+	}
+
+	getDanDojoInfo(song) {
+		var info = song && (song.danDojo || song.dan_dojo)
+		if (!info || !Array.isArray(info.exams) || !info.exams.length) {
+			return null
+		}
+		return info
+	}
+	isDanDojoSong(song) {
+		return !!this.getDanDojoInfo(song)
+	}
+	getDanExamLabel(exam) {
+		switch (exam.type) {
+			case "g":
+				return "Soul Gauge"
+			case "h":
+				return "Hits"
+			case "c":
+				return "Max Combo"
+			case "r":
+				return "Drumroll"
+			case "jp":
+				return "Good"
+			case "jg":
+				return "OK"
+			case "jb":
+				return "Bad"
+			default:
+				return (exam.type || "Exam").toUpperCase()
+		}
+	}
+	drawDanDojoChallenge(ctx, song, x, y, w, h, ratio, ms) {
+		var info = this.getDanDojoInfo(song)
+		if (!info) {
+			return
+		}
+		var panelX = x + 346
+		var panelY = y + 82
+		var panelW = 708
+		var panelH = 382
+		ctx.save()
+		var grd = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY + panelH)
+		grd.addColorStop(0, "#161616")
+		grd.addColorStop(0.55, "#342621")
+		grd.addColorStop(1, "#6c4214")
+		this.draw.roundedRect({
+			ctx: ctx,
+			x: panelX,
+			y: panelY,
+			w: panelW,
+			h: panelH,
+			radius: 24
+		})
+		ctx.fillStyle = grd
+		ctx.fill()
+		ctx.lineWidth = 6
+		ctx.strokeStyle = "#f3d46c"
+		ctx.stroke()
+		this.draw.layeredText({
+			ctx: ctx,
+			text: "DAN DOJO CHALLENGE",
+			fontSize: 34,
+			fontFamily: this.font,
+			x: panelX + 28,
+			y: panelY + 20,
+			width: panelW - 56
+		}, [
+			{outline: "#000", letterBorder: 8},
+			{fill: "#fff4b5"}
+		])
+		this.draw.layeredText({
+			ctx: ctx,
+			text: "Songs",
+			fontSize: 22,
+			fontFamily: this.font,
+			x: panelX + 32,
+			y: panelY + 78,
+			width: 250
+		}, [
+			{outline: "#000", letterBorder: 5},
+			{fill: "#ffffff"}
+		])
+		var songs = info.songs && info.songs.length ? info.songs : [{title: song.title}]
+		for (var i = 0; i < Math.min(3, songs.length); i++) {
+			var nextSong = songs[i]
+			var rowY = panelY + 112 + i * 48
+			ctx.fillStyle = i % 2 ? "rgba(255, 255, 255, 0.10)" : "rgba(255, 215, 106, 0.16)"
+			this.draw.roundedRect({ctx: ctx, x: panelX + 28, y: rowY - 6, w: 304, h: 38, radius: 10})
+			ctx.fill()
+			this.draw.layeredText({
+				ctx: ctx,
+				text: (i + 1) + ". " + (nextSong.title || song.title),
+				fontSize: 21,
+				fontFamily: this.font,
+				x: panelX + 44,
+				y: rowY,
+				width: 272
+			}, [
+				{outline: "#000", letterBorder: 4},
+				{fill: "#fff"}
+			])
+		}
+		this.draw.layeredText({
+			ctx: ctx,
+			text: "Conditions",
+			fontSize: 22,
+			fontFamily: this.font,
+			x: panelX + 360,
+			y: panelY + 78,
+			width: 300
+		}, [
+			{outline: "#000", letterBorder: 5},
+			{fill: "#ffffff"}
+		])
+		for (var j = 0; j < Math.min(4, info.exams.length); j++) {
+			var exam = info.exams[j]
+			var examY = panelY + 112 + j * 44
+			var compare = exam.compare === "max" ? "<= " : ">= "
+			var threshold = compare + Math.floor(exam.red) + " / " + Math.floor(exam.gold)
+			ctx.fillStyle = "rgba(0, 0, 0, 0.34)"
+			this.draw.roundedRect({ctx: ctx, x: panelX + 356, y: examY - 6, w: 320, h: 34, radius: 10})
+			ctx.fill()
+			this.draw.layeredText({
+				ctx: ctx,
+				text: this.getDanExamLabel(exam),
+				fontSize: 19,
+				fontFamily: this.font,
+				x: panelX + 372,
+				y: examY,
+				width: 142
+			}, [
+				{outline: "#000", letterBorder: 4},
+				{fill: "#fff"}
+			])
+			this.draw.layeredText({
+				ctx: ctx,
+				text: threshold,
+				fontSize: 19,
+				fontFamily: this.font,
+				align: "right",
+				x: panelX + 662,
+				y: examY,
+				width: 132
+			}, [
+				{outline: "#000", letterBorder: 4},
+				{fill: "#fff0a8"}
+			])
+		}
+		var selected = this.selectedDiff === this.diffOptions.length + 3
+		var btnX = panelX + 206
+		var btnY = panelY + 304
+		var btnW = 296
+		var btnH = 58
+		var pulse = selected ? 0.75 + Math.sin(ms / 120) * 0.25 : 0
+		ctx.fillStyle = selected ? "#ffbf35" : "#f08b28"
+		this.draw.roundedRect({ctx: ctx, x: btnX, y: btnY, w: btnW, h: btnH, radius: 18})
+		ctx.fill()
+		ctx.lineWidth = selected ? 7 : 4
+		ctx.strokeStyle = selected ? "rgba(255, 255, 220, " + (0.7 + pulse * 0.3) + ")" : "#4a1f10"
+		ctx.stroke()
+		this.draw.layeredText({
+			ctx: ctx,
+			text: "START CHALLENGE",
+			fontSize: 28,
+			fontFamily: this.font,
+			align: "center",
+			baseline: "middle",
+			x: btnX + btnW / 2,
+			y: btnY + btnH / 2,
+			width: btnW - 30
+		}, [
+			{outline: "#000", letterBorder: 7},
+			{fill: "#fff"}
+		])
+		if (selected && !this.touchEnabled) {
+			this.draw.diffCursor({
+				ctx: ctx,
+				font: this.font,
+				x: btnX + btnW / 2,
+				y: btnY - 32,
+				two: typeof p2 !== "undefined" && p2.session && p2.player === 2
+			})
+		}
+		ctx.restore()
 	}
 
 	getPreviewLoadOptions(loadOnly) {

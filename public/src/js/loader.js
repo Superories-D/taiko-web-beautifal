@@ -1446,6 +1446,9 @@ class Loader{
 				songs.forEach(song => {
 					var directory = gameConfig.songs_baseurl + song.id + "/"
 					song.directory = directory
+					if(song.dan_dojo && !song.danDojo){
+						song.danDojo = song.dan_dojo
+					}
 					var songExt = song.music_type ? song.music_type : "mp3"
 					song.music = new RemoteFile(directory + "main." + songExt)
 					if(song.type === "tja"){
@@ -1538,7 +1541,14 @@ class Loader{
 					// Less than 50 fps with blur enabled
 					disableBlur = true
 				}
-			}), "blurPerformance")
+			}, error => {
+				disableBlur = true
+				console.warn("Blur performance test failed", error)
+			}), "blurPerformance", {
+				critical: false,
+				resourceType: "performance",
+				timeout: 5000
+			})
 			
 			if(gameConfig.accounts){
 				this.addPromise(this.ajax("api/scores/get").then(response => {
@@ -1631,8 +1641,21 @@ class Loader{
 					p2.hash("")
 				}
 				
-				promises.push(this.canvasTest.drawAllImages().then(result => {
+				promises.push(this.withTimeout(this.canvasTest.drawAllImages(), {
+					url: "drawAllImages",
+					resourceType: "performance",
+					stage: "boot-minimal",
+					critical: false
+				}, 5000).then(result => {
 					perf.allImg = result
+				}, error => {
+					this.recordWarmupFailure(this.normalizeResourceError(error, {
+						url: "drawAllImages",
+						stage: "boot-minimal",
+						resourceType: "performance",
+						critical: false
+					}))
+					return null
 				}))
 				
 				if(gameConfig.plugins){

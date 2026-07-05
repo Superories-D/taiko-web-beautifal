@@ -19,6 +19,7 @@ class Scoresheet {
 		for (var i in results) {
 			this.results[player0][i] = results[i] === null ? null : results[i].toString()
 		}
+		this.danDojoResult = controller.getDanDojoResult ? controller.getDanDojoResult(results) : null
 		this.multiplayer = multiplayer
 		this.touchEnabled = touchEnabled
 
@@ -351,10 +352,10 @@ class Scoresheet {
 		}
 
 		var rules = this.controller.game.rules
-		var failedOffset = rules.clearReached(this.results[this.player[0]].gauge) ? 0 : -2000
+		var failedOffset = this.isClearResult(this.player[0], this.results[this.player[0]]) ? 0 : -2000
 		if (players === 2 && failedOffset !== 0) {
 			var p2results = this.results[this.player[1]]
-			if (p2results && this.controller.syncWith.game.rules.clearReached(p2results.gauge)) {
+			if (p2results && this.isClearResult(this.player[1], p2results)) {
 				failedOffset = 0
 			}
 		}
@@ -365,7 +366,7 @@ class Scoresheet {
 				if (!results) {
 					continue
 				}
-				var clear = this.rules[p].clearReached(results.gauge)
+				var clear = this.isClearResult(p, results)
 				if (p === 1 || !this.multiplayer && clear) {
 					ctx.translate(0, 290)
 				}
@@ -625,7 +626,7 @@ class Scoresheet {
 					if (this.tetsuoHanaClass) {
 						this.tetsuoHana.classList.remove(this.tetsuoHanaClass)
 					}
-					this.tetsuoHanaClass = this.rules[this.player[0]].clearReached(this.results[this.player[0]].gauge) ? "dance" : "failed"
+					this.tetsuoHanaClass = this.isClearResult(this.player[0], this.results[this.player[0]]) ? "dance" : "failed"
 					this.tetsuoHana.classList.add(this.tetsuoHanaClass)
 				}
 			}
@@ -664,9 +665,19 @@ class Scoresheet {
 						x: 1215,
 						y: 144,
 						scale: 36 / 42,
-						cleared: this.rules[p].clearReached(results.gauge)
+						cleared: this.isClearResult(p, results)
 					})
 				}
+			})
+			ctx.restore()
+		}
+		if (elapsed >= 900 && this.danDojoResult && !this.multiplayer) {
+			ctx.save()
+			ctx.setTransform(1, 0, 0, 1, 0, 0)
+			this.draw.alpha(Math.min(1, (elapsed - 900) / 500), ctx, ctx => {
+				ctx.scale(ratio, ratio)
+				ctx.translate(frameLeft, frameTop)
+				this.drawDanDojoResultPanel(ctx)
 			})
 			ctx.restore()
 		}
@@ -682,9 +693,7 @@ class Scoresheet {
 					continue
 				}
 				var crownType = null
-				if (this.rules[p].clearReached(results.gauge)) {
-					crownType = results.bad === "0" ? "gold" : "silver"
-				}
+				crownType = this.getCrownType(p, results)
 				if (crownType !== null) {
 					noCrownResultWait = 0;
 					var amount = Math.min(1, (elapsed - 1200) / 450)
@@ -881,6 +890,91 @@ class Scoresheet {
 		ctx.restore()
 	}
 
+	getDanResultForPlayer(p) {
+		return !this.multiplayer && p === this.player[0] ? this.danDojoResult : null
+	}
+	isClearResult(p, results) {
+		var danResult = this.getDanResultForPlayer(p)
+		return danResult ? danResult.passed : this.rules[p].clearReached(results.gauge)
+	}
+	getCrownType(p, results) {
+		var danResult = this.getDanResultForPlayer(p)
+		if (danResult) {
+			return danResult.fullCombo ? "gold" : danResult.passed ? "silver" : null
+		}
+		if (this.rules[p].clearReached(results.gauge)) {
+			return results.bad === "0" ? "gold" : "silver"
+		}
+		return null
+	}
+	drawDanDojoResultPanel(ctx) {
+		var result = this.danDojoResult
+		if (!result) {
+			return
+		}
+		var x = 536
+		var y = 338
+		var w = 724
+		var h = 126
+		var title = result.fullCombo ? "DAN DOJO FULL COMBO" : result.passed ? (result.gold ? "DAN DOJO GOLD PASS" : "DAN DOJO PASS") : "DAN DOJO FAILED"
+		var color = result.fullCombo || result.gold ? "#fff0a8" : result.passed ? "#ff6948" : "#9fdcff"
+		var grd = ctx.createLinearGradient(x, y, x + w, y + h)
+		grd.addColorStop(0, result.passed ? "#331a12" : "#10202d")
+		grd.addColorStop(1, result.passed ? "#7a3b12" : "#263445")
+		this.draw.roundedRect({ctx: ctx, x: x, y: y, w: w, h: h, radius: 22})
+		ctx.fillStyle = grd
+		ctx.fill()
+		ctx.lineWidth = 5
+		ctx.strokeStyle = color
+		ctx.stroke()
+		this.draw.layeredText({
+			ctx: ctx,
+			text: title,
+			fontSize: 30,
+			fontFamily: this.font,
+			x: x + 24,
+			y: y + 16,
+			width: w - 48
+		}, [
+			{outline: "#000", letterBorder: 7},
+			{fill: color}
+		])
+		var items = result.items.slice(0, 4)
+		for (var i = 0; i < items.length; i++) {
+			var item = items[i]
+			var itemX = x + 24 + i * 172
+			var itemY = y + 66
+			var passed = item.redPassed
+			ctx.fillStyle = passed ? "rgba(255, 239, 168, 0.18)" : "rgba(0, 0, 0, 0.22)"
+			this.draw.roundedRect({ctx: ctx, x: itemX, y: itemY, w: 154, h: 42, radius: 10})
+			ctx.fill()
+			this.draw.layeredText({
+				ctx: ctx,
+				text: item.label,
+				fontSize: 15,
+				fontFamily: this.font,
+				x: itemX + 8,
+				y: itemY + 5,
+				width: 138
+			}, [
+				{outline: "#000", letterBorder: 4},
+				{fill: "#ffffff"}
+			])
+			this.draw.layeredText({
+				ctx: ctx,
+				text: item.valueText,
+				fontSize: 20,
+				fontFamily: this.font,
+				align: "right",
+				x: itemX + 144,
+				y: itemY + 21,
+				width: 90
+			}, [
+				{outline: "#000", letterBorder: 4},
+				{fill: passed ? "#fff0a8" : "#d8f2ff"}
+			])
+		}
+	}
 	getNumber(score, start, elapsed) {
 		var numberPos = Math.floor((elapsed - start) / this.frame)
 		if (numberPos < 0) {
@@ -929,10 +1023,11 @@ class Scoresheet {
 			var hash = this.controller.selectedSong.hash
 			var difficulty = this.resultsObj.difficulty
 			var oldScore = scoreStorage.get(hash, difficulty, true)
-			var clearReached = this.controller.game.rules.clearReached(this.resultsObj.gauge)
+			var danResult = this.danDojoResult
+			var clearReached = danResult ? danResult.passed : this.controller.game.rules.clearReached(this.resultsObj.gauge)
 			var crown = ""
 			if (clearReached) {
-				crown = this.resultsObj.bad === 0 ? "gold" : "silver"
+				crown = danResult ? (danResult.fullCombo ? "gold" : "silver") : (this.resultsObj.bad === 0 ? "gold" : "silver")
 			}
 			if (!oldScore || oldScore.points <= this.resultsObj.points) {
 				if (oldScore && (oldScore.crown === "gold" || oldScore.crown === "silver" && !crown)) {

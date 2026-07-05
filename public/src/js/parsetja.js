@@ -72,6 +72,8 @@
 		var courses = {}
 		var currentCourse = {}
 		var courseName = "oni"
+		var currentCourseIsDan = false
+		var activeDanSongIndex = null
 		for(var lineNum = 0; lineNum < this.data.length; lineNum++){
 			var line = this.data[lineNum]
 			
@@ -111,6 +113,12 @@
 					}
 					var nextSong = this.parseNextSong(line.slice(1).replace(/^nextsong\s*/i, ""))
 					if(nextSong.wave){
+						if(currentCourseIsDan){
+							var danDojo = this.ensureDanDojo(courses[courseName])
+							nextSong.songIndex = danDojo.songs.length
+							activeDanSongIndex = nextSong.songIndex
+							danDojo.songs.push(Object.assign({}, nextSong))
+						}
 						if(!courses[courseName].nextSongs){
 							courses[courseName].nextSongs = []
 						}
@@ -118,22 +126,33 @@
 					}
 				}
 				
-			}else if(!inSong){
+			}else if(line.indexOf(":") > 0){
 				
-				if(line.indexOf(":") > 0){
-					
-					var [name, value] = this.split(line, ":")
-					name = name.toLowerCase().trim()
-					value = value.trim()
-					
+				var [name, value] = this.split(line, ":")
+				name = name.toLowerCase().trim()
+				value = value.trim()
+
+				if(inSong){
+					if(this.isDanMetadataName(name)){
+						if(!(courseName in courses)){
+							courses[courseName] = {}
+						}
+						this.applyDanMetadata(courses[courseName], name, value, activeDanSongIndex)
+					}
+				}else{
 					if(name === "course"){
-						value = value.toLowerCase()
-						if(value in this.courseTypes){
-							courseName = this.courseTypes[value]
+						var rawCourseName = value.toLowerCase()
+						currentCourseIsDan = rawCourseName === "dan"
+						activeDanSongIndex = null
+						if(rawCourseName in this.courseTypes){
+							courseName = this.courseTypes[rawCourseName]
 						}else{
-							courseName = value
+							courseName = rawCourseName
 						}
 						hasSong = false
+					}else if(this.isDanMetadataName(name)){
+						this.applyDanMetadata(currentCourse, name, value, null)
+						continue
 					}else if(name === "balloon"){
 						value = value ? value.split(",").map(digit => parseInt(digit)) : []
 					}else if(this.inArray(name, metaNumbers)){
@@ -182,6 +201,56 @@
 		}
 		return nextSong
 	}
+	isDanMetadataName(name){
+		return /^exam\d+$/i.test(name) || name === "dantick" || name === "dantickcolor"
+	}
+	ensureDanDojo(container){
+		if(!container.danDojo){
+			container.danDojo = {
+				enabled: true,
+				exams: [],
+				songs: []
+			}
+		}
+		return container.danDojo
+	}
+	applyDanMetadata(container, name, value, songIndex){
+		var danDojo = this.ensureDanDojo(container)
+		if(/^exam\d+$/i.test(name)){
+			var exam = this.parseDanExam(name, value, songIndex)
+			if(exam){
+				danDojo.exams.push(exam)
+			}
+		}else if(name === "dantick"){
+			danDojo.tick = value.split(",").map(part => parseFloat(part.trim())).filter(value => !isNaN(value))
+		}else if(name === "dantickcolor"){
+			danDojo.tickColor = value
+		}
+	}
+	parseDanExam(name, value, songIndex){
+		var parts = (value || "").split(",").map(part => part.trim())
+		var type = (parts[0] || "").toLowerCase()
+		if(!type){
+			return null
+		}
+		var exam = {
+			id: parseInt(name.replace(/\D/g, "")) || 0,
+			type: type,
+			red: parseFloat(parts[1]),
+			gold: parseFloat(parts[2]),
+			compare: (parts[3] || "m").toLowerCase() === "l" ? "max" : "min",
+			scope: songIndex == null ? "global" : "song",
+			songIndex: songIndex == null ? null : songIndex,
+			raw: name + ":" + value
+		}
+		if(isNaN(exam.red)){
+			exam.red = 0
+		}
+		if(isNaN(exam.gold)){
+			exam.gold = exam.red
+		}
+		return exam
+	}
 	parseCircles(difficulty, lyricsOnly){
 		var meta = this.metadata[difficulty] || {}
 		var ms = (meta.offset || 0) * -1000 + this.offset
@@ -219,6 +288,7 @@
 		var circles = []
 		var circleID = 0
 		var events = []
+		var nextSongIndex = 0
 		var regexAZ = /[A-Z]/
 		var regexSpace = /\s/
 		var regexLinebreak = /\\n/g
@@ -458,6 +528,7 @@
 							var nextSong = this.parseNextSong(value)
 							if(nextSong.wave){
 								nextSong.type = "nextsong"
+								nextSong.songIndex = nextSongIndex++
 								nextSong.ms = ms
 								nextSong.originalMS = ms
 								nextSong.beatMS = 60000 / bpm

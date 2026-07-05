@@ -12,14 +12,30 @@ class Tja:
         self.wave: Optional[str] = None
         self.offset: Optional[float] = None
         self.courses: Dict[str, Dict[str, Optional[int]]] = {}
+        self.dan_dojo: Dict = {"enabled": False, "exams": [], "songs": []}
+        self.is_dan: bool = False
         self._parse()
 
     def _parse(self) -> None:
         lines = self.text.split("\n")
         current_course: Optional[str] = None
+        current_song_index: Optional[int] = None
         for raw in lines:
             line = raw.strip()
             if not line:
+                continue
+            if line.startswith("#"):
+                command = line[1:].strip()
+                if command.upper().startswith("NEXTSONG"):
+                    next_song = self._parse_nextsong(command[8:].strip())
+                    if next_song.get("wave"):
+                        next_song["songIndex"] = len(self.dan_dojo["songs"])
+                        current_song_index = next_song["songIndex"]
+                        if self.is_dan:
+                            self.dan_dojo["enabled"] = True
+                            self.dan_dojo["songs"].append(next_song)
+                elif current_course and (command.startswith("BRANCHSTART") or command.startswith("#BRANCHSTART")):
+                    self.courses[current_course]["branch"] = True
                 continue
             if ":" in line:
                 k, v = line.split(":", 1)
@@ -51,7 +67,10 @@ class Tja:
                         "DAN": "oni",
                         "TOWER": "oni",
                     }
-                    current_course = course_map.get(val.strip().upper())
+                    raw_course = val.strip().upper()
+                    self.is_dan = raw_course == "DAN"
+                    current_song_index = None
+                    current_course = course_map.get(raw_course)
                     if current_course and current_course not in self.courses:
                         self.courses[current_course] = {"stars": None, "branch": False}
                 elif key == "LEVEL" and current_course:
@@ -60,9 +79,68 @@ class Tja:
                     except ValueError:
                         stars = None
                     self.courses[current_course]["stars"] = stars
-            else:
-                if current_course and (line.startswith("BRANCHSTART") or line.startswith("#BRANCHSTART")):
-                    self.courses[current_course]["branch"] = True
+                elif key.startswith("EXAM"):
+                    exam = self._parse_exam(key, val, current_song_index)
+                    if exam:
+                        self.dan_dojo["enabled"] = True
+                        self.dan_dojo["exams"].append(exam)
+                elif key == "DANTICK":
+                    ticks = []
+                    for part in val.split(","):
+                        try:
+                            ticks.append(float(part.strip()))
+                        except ValueError:
+                            pass
+                    self.dan_dojo["enabled"] = True
+                    self.dan_dojo["tick"] = ticks
+                elif key == "DANTICKCOLOR":
+                    self.dan_dojo["enabled"] = True
+                    self.dan_dojo["tickColor"] = val
+
+    @staticmethod
+    def _parse_nextsong(value: str) -> Dict:
+        parts = [part.strip() for part in (value or "").split(",")]
+        if len(parts) > 6:
+            parts = [",".join(parts[:len(parts) - 5])] + parts[len(parts) - 5:]
+        song = {
+            "title": parts[0] if len(parts) > 0 else "",
+            "subtitle": parts[1] if len(parts) > 1 else "",
+            "genre": parts[2] if len(parts) > 2 else "",
+            "wave": parts[3] if len(parts) > 3 else "",
+        }
+        for key, index in (("score", 4), ("bpm", 5)):
+            if len(parts) > index and parts[index] != "":
+                try:
+                    song[key] = float(parts[index])
+                except ValueError:
+                    pass
+        return song
+
+    @staticmethod
+    def _parse_exam(name: str, value: str, song_index: Optional[int]) -> Optional[Dict]:
+        parts = [part.strip() for part in (value or "").split(",")]
+        if not parts or not parts[0]:
+            return None
+        try:
+            red = float(parts[1])
+        except (IndexError, ValueError):
+            red = 0.0
+        try:
+            gold = float(parts[2])
+        except (IndexError, ValueError):
+            gold = red
+        mode = parts[3].lower() if len(parts) > 3 else "m"
+        number = re.sub(r"\D", "", name)
+        return {
+            "id": int(number) if number else 0,
+            "type": parts[0].lower(),
+            "red": red,
+            "gold": gold,
+            "compare": "max" if mode == "l" else "min",
+            "scope": "song" if song_index is not None else "global",
+            "songIndex": song_index,
+            "raw": f"{name}:{value}",
+        }
 
     def to_mongo(self, song_id: str, created_ns: int) -> Dict:
         ext = None
@@ -76,7 +154,7 @@ class Tja:
         courses_out: Dict[str, Optional[Dict[str, Optional[int]]]] = {}
         for name in ["easy", "normal", "hard", "oni", "ura"]:
             courses_out[name] = self.courses.get(name) or None
-        return {
+        output = {
             "id": song_id,
             "type": "tja",
             "title": self.title,
@@ -110,3 +188,6 @@ class Tja:
             "order": song_id,
             "created_ns": created_ns,
         }
+        if self.dan_dojo.get("enabled"):
+            output["dan_dojo"] = self.dan_dojo
+        return output

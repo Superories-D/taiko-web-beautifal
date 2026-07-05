@@ -1,3 +1,178 @@
+class DanDojoStatus{
+	constructor(config){
+		this.config = config || {}
+		this.exams = Array.isArray(this.config.exams) ? this.config.exams.slice() : []
+		this.songs = Array.isArray(this.config.songs) ? this.config.songs.slice() : []
+		this.segmentSnapshots = {}
+		this.segmentMaxCombo = {}
+		this.currentSongIndex = 0
+		this.lastState = null
+	}
+	snapshot(score, currentCombo){
+		score = score || {}
+		return {
+			good: Number(score.good) || 0,
+			ok: Number(score.ok) || 0,
+			bad: Number(score.bad) || 0,
+			maxCombo: Number(score.maxCombo) || 0,
+			drumroll: Number(score.drumroll) || 0,
+			combo: Number(currentCombo) || 0
+		}
+	}
+	setSegment(index, score, currentCombo){
+		if(index == null){
+			return
+		}
+		this.currentSongIndex = index
+		if(!this.segmentSnapshots[index]){
+			this.segmentSnapshots[index] = this.snapshot(score, currentCombo)
+			this.segmentMaxCombo[index] = 0
+		}
+	}
+	updateSegmentCombo(currentCombo){
+		var snapshot = this.segmentSnapshots[this.currentSongIndex]
+		if(!snapshot){
+			return
+		}
+		currentCombo = Number(currentCombo) || 0
+		var localCombo = currentCombo >= snapshot.combo ? currentCombo - snapshot.combo : currentCombo
+		this.segmentMaxCombo[this.currentSongIndex] = Math.max(
+			Number(this.segmentMaxCombo[this.currentSongIndex]) || 0,
+			localCombo
+		)
+	}
+	getExamLabel(exam){
+		switch(exam.type){
+			case "g":
+				return "Soul Gauge"
+			case "h":
+				return "Hits"
+			case "c":
+				return "Max Combo"
+			case "r":
+				return "Drumroll"
+			case "jp":
+				return "Good"
+			case "jg":
+				return "OK"
+			case "jb":
+				return "Bad"
+			default:
+				return (exam.type || "Exam").toUpperCase()
+		}
+	}
+	getSongTitle(index){
+		var song = this.songs[index]
+		return song && song.title || ""
+	}
+	additiveValue(type, score){
+		switch(type){
+			case "h":
+				return (Number(score.good) || 0) + (Number(score.ok) || 0)
+			case "jp":
+				return Number(score.good) || 0
+			case "jg":
+				return Number(score.ok) || 0
+			case "jb":
+				return Number(score.bad) || 0
+			case "r":
+				return Number(score.drumroll) || 0
+			default:
+				return null
+		}
+	}
+	getValue(exam, score, rules){
+		score = score || {}
+		if(exam.type === "g"){
+			return rules && rules.gaugePercent ? rules.gaugePercent(score.gauge) : Number(score.gauge) || 0
+		}
+		if(exam.type === "c"){
+			if(exam.scope === "song" && exam.songIndex != null){
+				return Number(this.segmentMaxCombo[exam.songIndex]) || 0
+			}
+			return Number(score.maxCombo) || 0
+		}
+		var value = this.additiveValue(exam.type, score)
+		if(value == null){
+			value = 0
+		}
+		if(exam.scope === "song" && exam.songIndex != null){
+			var snapshot = this.segmentSnapshots[exam.songIndex]
+			if(snapshot){
+				var baseValue = this.additiveValue(exam.type, snapshot)
+				if(baseValue != null){
+					value -= baseValue
+				}
+			}
+		}
+		return Math.max(0, value)
+	}
+	passes(value, threshold, compare){
+		if(compare === "max"){
+			return value <= threshold
+		}
+		return value >= threshold
+	}
+	progress(value, threshold, compare){
+		if(compare === "max"){
+			if(threshold <= 0){
+				return value <= threshold ? 1 : 0
+			}
+			return Math.max(0, Math.min(1, 1 - Math.max(0, value - threshold) / Math.max(1, threshold)))
+		}
+		if(threshold <= 0){
+			return 1
+		}
+		return Math.max(0, Math.min(1, value / threshold))
+	}
+	formatValue(value, exam){
+		if(exam.type === "g"){
+			return Math.floor(value) + "%"
+		}
+		return Math.floor(value).toString()
+	}
+	update(score, rules, currentCombo){
+		this.updateSegmentCombo(currentCombo)
+		var items = this.exams.map(exam => {
+			var value = this.getValue(exam, score, rules)
+			var redPassed = this.passes(value, exam.red, exam.compare)
+			var goldPassed = this.passes(value, exam.gold, exam.compare)
+			return {
+				id: exam.id,
+				type: exam.type,
+				label: this.getExamLabel(exam),
+				value: value,
+				valueText: this.formatValue(value, exam),
+				red: exam.red,
+				gold: exam.gold,
+				compare: exam.compare,
+				scope: exam.scope,
+				songIndex: exam.songIndex,
+				songTitle: exam.songIndex == null ? "" : this.getSongTitle(exam.songIndex),
+				redPassed: redPassed,
+				goldPassed: goldPassed,
+				progress: this.progress(value, exam.red, exam.compare)
+			}
+		})
+		var passed = items.length > 0 && items.every(item => item.redPassed)
+		var gold = passed && items.every(item => item.goldPassed)
+		var fullCombo = passed && (Number(score && score.bad) || 0) === 0
+		this.lastState = {
+			enabled: items.length > 0,
+			items: items,
+			passed: passed,
+			gold: gold,
+			fullCombo: fullCombo,
+			currentSongIndex: this.currentSongIndex,
+			songs: this.songs
+		}
+		return this.lastState
+	}
+	finalize(score, rules, currentCombo){
+		return this.update(score, rules, currentCombo)
+	}
+}
+
 class Controller{
 	constructor(...args){
 		this.init(...args)
@@ -58,6 +233,16 @@ class Controller{
 			this.parsedSongData = new ParseOsu(songData, selectedSong.difficulty, selectedSong.stars, selectedSong.offset)
 		}
 		this.offset = this.parsedSongData.soundOffset
+		this.danDojo = this.getDanDojoConfig()
+		this.danDojoStatus = null
+		if(this.danDojo){
+			try{
+				this.danDojoStatus = new DanDojoStatus(this.danDojo)
+			}catch(e){
+				console.warn("Dan Dojo status disabled", e)
+				this.danDojo = null
+			}
+		}
 		
 		var maxCombo = this.parsedSongData.circles.filter(circle => ["don", "ka", "daiDon", "daiKa"].indexOf(circle.type) > -1 && (!circle.branch || circle.branch.name == "master")).length
 		if (maxCombo >= 50) {
@@ -125,6 +310,14 @@ class Controller{
 			this.easySettings.abekobe ||
 			this.easySettings.detarame
 		)
+	}
+	getDanDojoConfig(){
+		var meta = this.parsedSongData && this.parsedSongData.metadata && this.parsedSongData.metadata[this.selectedSong.difficulty] || {}
+		var config = this.selectedSong.danDojo || this.selectedSong.dan_dojo || meta.danDojo || meta.dan_dojo
+		if(!config || !Array.isArray(config.exams) || !config.exams.length){
+			return null
+		}
+		return config
 	}
 	run(syncWith){
 		if(syncWith){
@@ -279,9 +472,10 @@ class Controller{
 	}
 	gameEnded(){
 		var score = this.getGlobalScore()
+		var danResult = this.getDanDojoResult(score)
 		var vp
-		if(this.game.rules.clearReached(score.gauge)){
-			if(score.bad === 0){
+		if(danResult ? danResult.passed : this.game.rules.clearReached(score.gauge)){
+			if(danResult ? danResult.fullCombo : score.bad === 0){
 				vp = "fullcombo"
 				this.playSound("v_fullcombo", 1.350)
 			}else{
@@ -437,6 +631,12 @@ class Controller{
 	}
 	getGlobalScore(){
 		return this.game.getGlobalScore()
+	}
+	getDanDojoResult(score){
+		if(!this.danDojoStatus || !this.game || !this.game.rules){
+			return null
+		}
+		return this.danDojoStatus.finalize(score || this.getGlobalScore(), this.game.rules, this.game.getCombo ? this.game.getCombo() : 0)
 	}
 	autoPlay(circle){
 		if(this.multiplayer){

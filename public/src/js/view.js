@@ -329,6 +329,7 @@
 		
 		var score = this.controller.getGlobalScore()
 		var gaugePercent = this.rules.gaugePercent(score.gauge)
+		this.drawDanDojoStatus(ctx, winW, winH)
 		
 		if(this.player === 2){
 			var scoreImg = "bg_score_p2"
@@ -1904,6 +1905,96 @@
 				ctx.fillText(longText[1], textX + endX, textY)
 			}
 		}
+	}
+	drawDanDojoStatus(ctx, winW, winH){
+		var status = this.controller.danDojoStatus && this.controller.danDojoStatus.lastState
+		if(!status || !status.enabled || !status.items.length || this.player === 2){
+			return
+		}
+		var items = status.items.slice(0, 4)
+		var panelW = Math.min(500, Math.max(380, winW * 0.36))
+		var rowH = 32
+		var panelH = 42 + rowH * items.length
+		var x = Math.max(18, winW - panelW - 18)
+		var y = this.portrait ? 106 : 98
+		ctx.save()
+		ctx.globalAlpha = 0.94
+		var grd = ctx.createLinearGradient(x, y, x + panelW, y + panelH)
+		grd.addColorStop(0, "#171717")
+		grd.addColorStop(0.58, "#2a2320")
+		grd.addColorStop(1, "#413118")
+		this.draw.roundedRect({
+			ctx: ctx,
+			x: x,
+			y: y,
+			w: panelW,
+			h: panelH,
+			radius: 12
+		})
+		ctx.fillStyle = grd
+		ctx.fill()
+		ctx.lineWidth = 3
+		ctx.strokeStyle = status.fullCombo ? "#fff0a8" : status.passed ? "#ff5a3a" : "#ffd76a"
+		ctx.stroke()
+		ctx.globalAlpha = 1
+		this.draw.layeredText({
+			ctx: ctx,
+			text: status.fullCombo ? "DAN DOJO FULL COMBO" : status.passed ? "DAN DOJO PASS" : "DAN DOJO",
+			fontSize: 20,
+			fontFamily: this.font,
+			x: x + 18,
+			y: y + 10,
+			width: panelW - 36
+		}, [
+			{outline: "#000", letterBorder: 5},
+			{fill: status.fullCombo ? "#fff0a8" : "#ffffff"}
+		])
+		for(var i = 0; i < items.length; i++){
+			var item = items[i]
+			var rowY = y + 40 + i * rowH
+			var barX = x + 148
+			var barY = rowY + 9
+			var barW = panelW - 268
+			var barH = 12
+			var fillW = Math.round(barW * item.progress)
+			ctx.fillStyle = "rgba(0, 0, 0, 0.52)"
+			this.draw.roundedRect({ctx: ctx, x: barX, y: barY, w: barW, h: barH, radius: 6})
+			ctx.fill()
+			var barFill = ctx.createLinearGradient(barX, barY, barX + barW, barY)
+			barFill.addColorStop(0, item.goldPassed ? "#fff2a8" : item.redPassed ? "#ff8a42" : "#e64a35")
+			barFill.addColorStop(1, item.goldPassed ? "#ffb900" : item.redPassed ? "#ff3d25" : "#a8dcff")
+			this.draw.roundedRect({ctx: ctx, x: barX, y: barY, w: Math.max(6, fillW), h: barH, radius: 6})
+			ctx.fillStyle = barFill
+			ctx.fill()
+			this.draw.layeredText({
+				ctx: ctx,
+				text: item.label,
+				fontSize: 17,
+				fontFamily: this.font,
+				x: x + 16,
+				y: rowY + 3,
+				width: 124
+			}, [
+				{outline: "#000", letterBorder: 4},
+				{fill: "#fff"}
+			])
+			var compare = item.compare === "max" ? "<= " : ">= "
+			var target = compare + Math.floor(item.red) + " / " + Math.floor(item.gold)
+			this.draw.layeredText({
+				ctx: ctx,
+				text: item.valueText + "  " + target,
+				fontSize: 16,
+				fontFamily: this.font,
+				align: "right",
+				x: x + panelW - 18,
+				y: rowY + 4,
+				width: 110
+			}, [
+				{outline: "#000", letterBorder: 4},
+				{fill: item.goldPassed ? "#fff0a8" : item.redPassed ? "#ffffff" : "#e9f6ff"}
+			])
+		}
+		ctx.restore()
 	}
 	fillComboCache(){
 		var fontSize = 58

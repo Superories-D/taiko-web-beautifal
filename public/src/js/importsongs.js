@@ -269,6 +269,17 @@ class ImportSongs{
 					branch: !!meta.branch
 				}
 				coursesAdded = true
+				if(meta.danDojo && meta.danDojo.enabled){
+					songObj.danDojo = meta.danDojo
+					songObj.song_type = "11 Dan Dojo"
+					if("11 dan dojo" in this.categoryAliases){
+						songObj.category_id = this.categoryAliases["11 dan dojo"]
+					}else if("dan dojo" in this.categoryAliases){
+						songObj.category_id = this.categoryAliases["dan dojo"]
+					}else{
+						songObj.category = "11 Dan Dojo"
+					}
+				}
 				if(meta.wave){
 					var musicFile = this.otherFiles[dir + meta.wave.toLowerCase()]
 					if(musicFile){
@@ -284,7 +295,7 @@ class ImportSongs{
 						}
 					})
 				}
-				if(meta.genre){
+				if(meta.genre && !songObj.danDojo){
 					if(meta.genre.toLowerCase() in this.categoryAliases){
 						songObj.category_id = this.categoryAliases[meta.genre.toLowerCase()]
 					}else{

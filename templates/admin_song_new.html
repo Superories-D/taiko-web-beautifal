@@ -5,6 +5,28 @@
 <div class="message">{{ message }}</div>
 {% endfor %}
 <div class="song-form">
+    <form method="post" action="{{config.basedir}}admin/songs/upload-dan-dojo" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-field">
+            <p>Dan Dojo upload</p>
+            <span class="checkbox"><input type="checkbox" name="enabled" id="dan_enabled" checked><label for="dan_enabled"> Enabled</label></span>
+            <label for="dan_category_id">Category</label>
+            <select name="category_id" id="dan_category_id">
+                <option value="0">(song type only)</option>
+                {% for category in categories %}
+                    <option value="{{ category.id }}"{% if category.title == '11 Dan Dojo' %} selected{% endif %}>{{ category.title }}</option>
+                {% endfor %}
+            </select>
+            <label for="dan_file_tja">TJA</label>
+            <input type="file" id="dan_file_tja" name="file_tja" accept=".tja" required>
+            <label for="dan_file_music">Music files</label>
+            <input type="file" id="dan_file_music" name="file_music" accept=".ogg,.mp3,audio/ogg,audio/mpeg" multiple required>
+        </div>
+
+        <button type="submit" class="save-song">Upload Dan Dojo</button>
+    </form>
+
     <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 

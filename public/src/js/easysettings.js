@@ -336,6 +336,11 @@
 
 		var closeButton = overlay.querySelector("#easy-settings-close")
 		var resetButton = overlay.querySelector("#easy-settings-reset")
+		;["touchstart", "touchmove", "touchend"].forEach(function (type) {
+			overlay.addEventListener(type, function (event) {
+				event.stopPropagation()
+			})
+		})
 		closeButton.addEventListener("click", close)
 		resetButton.addEventListener("click", function () {
 			saveSettings(DEFAULT_SETTINGS)

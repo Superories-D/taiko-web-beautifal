@@ -598,6 +598,8 @@
 	flex-direction: column;
 	width: min(calc(100% - 2em), 56em);
 	height: min(84%, 37em);
+	max-height: calc(100% - 1em);
+	min-height: 0;
 	border-radius: 0.72em;
 	border: 0.18em solid #14120d;
 	color: #2b1400;
@@ -641,12 +643,15 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	flex: 0 0 auto;
 	gap: 1em;
 	min-height: 2.6em;
 }
 
 .weekly-challenge-title {
 	display: inline-block;
+	min-width: 0;
+	max-width: calc(100% - 2.6em);
 	padding: 0.16em 0.56em 0.22em;
 	border: 0.1em solid #14120d;
 	border-radius: 0.46em;
@@ -658,6 +663,8 @@
 	font-size: 1.72em;
 	font-weight: 900;
 	line-height: 1;
+	white-space: normal;
+	overflow-wrap: anywhere;
 	text-shadow: 0 0.08em 0 #14120d, 0 0 0.35em rgba(255, 249, 35, 0.68);
 }
 
@@ -687,10 +694,13 @@
 	min-height: 0;
 	flex: 1;
 	margin-top: 0.78em;
+	overflow: hidden;
 }
 
 .weekly-challenge-song,
 .weekly-challenge-board {
+	display: flex;
+	flex-direction: column;
 	min-width: 0;
 	min-height: 0;
 	padding: 0.78em;
@@ -704,6 +714,7 @@
 		inset 0 0.16em 0 rgba(255, 255, 255, 0.82),
 		inset 0 -0.18em 0 rgba(255, 143, 43, 0.24),
 		0 0.18em 0 rgba(0, 0, 0, 0.22);
+	overflow: hidden;
 }
 
 .weekly-challenge-song h2,
@@ -750,17 +761,22 @@
 }
 
 .weekly-challenge-board ol {
+	flex: 1 1 auto;
+	min-height: 0;
 	list-style: none;
 	margin: 0;
 	padding: 0;
-	max-height: calc(100% - 2.1em);
+	max-height: none;
 	overflow-y: auto;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
+	touch-action: pan-y;
 	-ms-overflow-style: none;
 	scrollbar-width: none;
 }
 
 .weekly-challenge-previous ol {
-	max-height: calc(100% - 4em);
+	max-height: none;
 }
 
 .weekly-challenge-board ol::-webkit-scrollbar {
@@ -823,6 +839,7 @@
 #weekly-challenge-start {
 	width: min(100%, 18em);
 	align-self: center;
+	flex: 0 0 auto;
 	margin-top: 0.78em;
 	font-size: 1.08em;
 	font-family: inherit;
@@ -864,6 +881,7 @@
 		inset 0 0.1em 0 rgba(255, 255, 255, 0.45),
 		0 0.12em 0 rgba(0, 0, 0, 0.28);
 	z-index: 2;
+	touch-action: manipulation;
 }
 
 #weekly-challenge-close:hover::before {
@@ -872,16 +890,103 @@
 
 @media (max-width: 820px) {
 	#weekly-challenge {
-		height: min(90%, 44em);
+		width: calc(100% - 1em);
+		height: calc(100% - 1em);
+		padding: 0.72em;
+	}
+
+	.weekly-challenge-header {
+		flex-wrap: wrap;
+		gap: 0.5em;
+		min-height: 0;
+		padding-right: 1.9em;
+	}
+
+	.weekly-challenge-title {
+		max-width: 100%;
+		font-size: 1.36em;
 	}
 
 	.weekly-challenge-content {
 		grid-template-columns: 1fr;
+		align-content: start;
 		overflow-y: auto;
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
+		touch-action: pan-y;
+	}
+
+	.weekly-challenge-song,
+	.weekly-challenge-board {
+		padding: 0.62em;
 	}
 
 	.weekly-challenge-board ol,
 	.weekly-challenge-previous ol {
-		max-height: 13em;
+		max-height: min(12em, 34dvh);
+	}
+
+	#weekly-challenge-start {
+		margin-top: 0.56em;
+		padding: 0.62em;
+	}
+}
+
+@media (max-height: 520px) {
+	#weekly-challenge {
+		width: calc(100% - 0.7em);
+		height: calc(100% - 0.7em);
+		padding: 0.52em;
+	}
+
+	.weekly-challenge-header {
+		gap: 0.4em;
+		min-height: 0;
+		padding-right: 1.9em;
+	}
+
+	.weekly-challenge-title {
+		font-size: 1.2em;
+	}
+
+	.weekly-challenge-status {
+		padding: 0.34em 0.54em;
+	}
+
+	.weekly-challenge-content {
+		gap: 0.45em;
+		margin-top: 0.5em;
+	}
+
+	.weekly-challenge-song,
+	.weekly-challenge-board {
+		padding: 0.48em;
+	}
+
+	.weekly-challenge-song h2,
+	.weekly-challenge-board h2 {
+		margin-bottom: 0.34em;
+		font-size: 0.96em;
+	}
+
+	.weekly-challenge-song-title {
+		font-size: 1.12em;
+	}
+
+	.weekly-challenge-song-meta {
+		margin-top: 0.48em;
+		padding: 0.28em 0.48em;
+	}
+
+	.weekly-challenge-rank,
+	.weekly-challenge-empty {
+		min-height: 2em;
+		margin-bottom: 0.26em;
+		padding: 0.36em 0.44em;
+	}
+
+	#weekly-challenge-start {
+		margin-top: 0.42em;
+		padding: 0.5em;
 	}
 }

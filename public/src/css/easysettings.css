@@ -61,12 +61,15 @@
 	justify-content: center;
 	box-sizing: border-box;
 	padding: clamp(14px, 4vmin, 36px);
+	overflow: auto;
 	background: rgba(16, 7, 22, 0.64);
 	backdrop-filter: blur(0.35em) saturate(1.1);
 	-webkit-backdrop-filter: blur(0.35em) saturate(1.1);
 	z-index: 31;
 	user-select: text;
 	white-space: normal;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
 }
 
 #easy-settings-overlay[hidden]{
@@ -76,7 +79,8 @@
 #easy-settings-panel{
 	box-sizing: border-box;
 	width: min(640px, 100%);
-	max-height: min(82vh, 680px);
+	max-height: min(680px, 100%);
+	min-height: 0;
 	display: flex;
 	flex-direction: column;
 	border-radius: 8px;
@@ -99,6 +103,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	flex: 0 0 auto;
 	gap: 12px;
 	padding: 14px 16px;
 	background: rgba(255, 112, 67, 0.94);
@@ -127,10 +132,15 @@
 }
 
 .easy-settings-body{
+	flex: 1 1 auto;
+	min-height: 0;
 	display: grid;
 	gap: 10px;
 	padding: 16px;
 	overflow: auto;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
+	touch-action: pan-y;
 }
 
 .easy-settings-row,
@@ -188,6 +198,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	flex: 0 0 auto;
 	gap: 12px;
 	padding: 14px 16px;
 	background: rgba(0, 0, 0, 0.42);
@@ -228,6 +239,27 @@
 
 	#easy-settings-reset{
 		width: 100%;
+	}
+}
+
+@media (max-height: 520px){
+	#easy-settings-overlay{
+		padding: 8px;
+	}
+
+	.easy-settings-header,
+	.easy-settings-footer{
+		padding: 10px 12px;
+	}
+
+	.easy-settings-body{
+		gap: 8px;
+		padding: 10px 12px;
+	}
+
+	.easy-settings-row,
+	.easy-settings-toggle{
+		padding: 9px 10px;
 	}
 }
 

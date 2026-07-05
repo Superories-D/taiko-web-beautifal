@@ -20,8 +20,8 @@ class Leaderboard {
 		this.overlay.innerHTML = `
 			<div class="leaderboard-container">
 				<div class="leaderboard-header">
-					<button class="leaderboard-back">${strings.back}</button>
 					<h2 class="leaderboard-title">${strings.leaderboardTitle.replace("%s", songTitle)}</h2>
+					<button class="leaderboard-close" type="button" aria-label="${strings.back}" title="${strings.back}">x</button>
 				</div>
 				<div class="leaderboard-content">
 					<div class="leaderboard-loading">Loading...</div>
@@ -34,15 +34,20 @@ class Leaderboard {
 		// Add styles
 		this.addStyles()
 
-		// Bind events - any click/touch/keypress closes the leaderboard
-		this.clickHandler = () => this.hide()
+		// Bind close only to the explicit close button so mobile scrolling does not dismiss the modal.
+		this.closeHandler = event => {
+			event.preventDefault()
+			event.stopPropagation()
+			this.hide()
+		}
 		this.keyHandler = (e) => {
-			if (this.visible) {
+			if (this.visible && (e.key === "Escape" || e.key === "Esc")) {
 				this.hide()
 			}
 		}
-		this.overlay.addEventListener("click", this.clickHandler)
-		this.overlay.addEventListener("touchend", this.clickHandler)
+		this.closeButton = this.overlay.querySelector(".leaderboard-close")
+		this.closeButton.addEventListener("click", this.closeHandler)
+		this.closeButton.addEventListener("touchend", this.closeHandler)
 		document.addEventListener("keydown", this.keyHandler)
 
 		// Fetch data
@@ -130,14 +135,16 @@ class Leaderboard {
 				justify-content: center;
 				align-items: center;
 				z-index: 1000;
+				box-sizing: border-box;
+				padding: max(10px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px));
 			}
 			.leaderboard-container {
 				background: linear-gradient(135deg, #fff9e6 0%, #ffffff 100%);
 				border-radius: 15px;
 				box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-				width: 90%;
+				width: min(100%, 700px);
 				max-width: 700px;
-				max-height: 80vh;
+				max-height: min(80vh, 100%);
 				overflow: hidden;
 				display: flex;
 				flex-direction: column;
@@ -148,18 +155,29 @@ class Leaderboard {
 				display: flex;
 				align-items: center;
 				gap: 15px;
+				flex: 0 0 auto;
 			}
-			.leaderboard-back {
+			.leaderboard-close {
 				background: #fff;
 				border: none;
-				padding: 8px 16px;
-				border-radius: 20px;
+				display: grid;
+				place-items: center;
+				flex: 0 0 auto;
+				width: 44px;
+				height: 44px;
+				padding: 0;
+				border-radius: 50%;
 				cursor: pointer;
 				font-weight: bold;
+				font-size: 24px;
+				line-height: 1;
 				color: #ff6b6b;
 				transition: transform 0.1s;
+				position: relative;
+				z-index: 2;
+				touch-action: manipulation;
 			}
-			.leaderboard-back:hover {
+			.leaderboard-close:hover {
 				transform: scale(1.05);
 			}
 			.leaderboard-title {
@@ -168,11 +186,17 @@ class Leaderboard {
 				margin: 0;
 				text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
 				flex: 1;
+				min-width: 0;
+				overflow-wrap: anywhere;
 			}
 			.leaderboard-content {
 				padding: 20px;
 				overflow-y: auto;
 				flex: 1;
+				min-height: 0;
+				overscroll-behavior: contain;
+				-webkit-overflow-scrolling: touch;
+				touch-action: pan-y;
 			}
 			.leaderboard-list {
 				list-style: none;
@@ -232,11 +256,39 @@ class Leaderboard {
 				background: #f0f0f0;
 				padding: 15px;
 				text-align: center;
+				flex: 0 0 auto;
 			}
 			.user-rank-text {
 				font-weight: bold;
 				color: #ff6b6b;
 				font-size: 1.2em;
+			}
+			@media (max-width: 520px) {
+				.leaderboard-header {
+					padding: 12px 14px;
+					gap: 10px;
+				}
+				.leaderboard-title {
+					font-size: 1.08em;
+				}
+				.leaderboard-close {
+					width: 44px;
+					height: 44px;
+					font-size: 22px;
+				}
+				.leaderboard-content {
+					padding: 12px;
+				}
+				.leaderboard-item {
+					gap: 8px;
+					padding: 10px 12px;
+				}
+				.leaderboard-rank {
+					width: 42px;
+				}
+				.leaderboard-score {
+					font-size: 1em;
+				}
 			}
 		`
 		document.head.appendChild(style)

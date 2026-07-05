@@ -345,6 +345,9 @@ class Loader{
 						resolve: resolve,
 						reject: reject
 					})
+					if(typeof options.onProgress === "function" && existingTask.progressConsumers.indexOf(options.onProgress) === -1){
+						existingTask.progressConsumers.push(options.onProgress)
+					}
 					this.promoteWorkerTask(existingTask, options)
 					this.workerRun()
 				})
@@ -364,6 +367,7 @@ class Loader{
 					resolve: resolve,
 					reject: reject
 				}],
+				progressConsumers: typeof options.onProgress === "function" ? [options.onProgress] : [],
 				priority: options.priority == null ? "normal" : options.priority,
 				priorityValue: this.getWorkerPriorityValue(options.priority),
 				sequence: ++this.workerSequence,
@@ -386,6 +390,7 @@ class Loader{
 		delete retryOverrides.dedupeKey
 		delete retryOverrides.cancelGroup
 		delete retryOverrides.cancellable
+		delete retryOverrides.onProgress
 		return retryOverrides
 	}
 	getWorkerPriorityValue(priority){
@@ -430,6 +435,9 @@ class Loader{
 		}
 		if(options.cancellable === false){
 			task.cancellable = false
+		}
+		if(typeof options.onProgress === "function" && task.progressConsumers.indexOf(options.onProgress) === -1){
+			task.progressConsumers.push(options.onProgress)
 		}
 		var retryOverrides = this.getWorkerRetryOverrides(options)
 		for(var key in retryOverrides){
@@ -604,6 +612,46 @@ class Loader{
 			this.downloadedBytes += delta
 			this.recordDownloadSample()
 		}
+		this.reportDownloadProgress(task.progressConsumers, {
+			url: task.url,
+			loaded: task.loaded,
+			total: task.total
+		})
+	}
+	reportDownloadProgress(consumers, progress){
+		if(!consumers || !consumers.length){
+			return
+		}
+		consumers.forEach(callback => {
+			if(typeof callback !== "function"){
+				return
+			}
+			try{
+				callback(progress)
+			}catch(error){
+				console.error(error)
+			}
+		})
+	}
+	reportFetchProgress(callback, url, result, total){
+		if(typeof callback !== "function"){
+			return
+		}
+		var loaded = 0
+		if(result){
+			if(result.byteLength != null){
+				loaded = result.byteLength
+			}else if(result.size != null){
+				loaded = result.size
+			}else if(typeof result === "string"){
+				loaded = new TextEncoder().encode(result).byteLength
+			}
+		}
+		this.reportDownloadProgress([callback], {
+			url: new URL(url, location.href).href,
+			loaded: loaded,
+			total: total || loaded
+		})
 	}
 	recordDownloadSample(){
 		var now = performance.now()
@@ -868,6 +916,7 @@ class Loader{
 					httpError.duration = duration
 					throw httpError
 				}
+				var responseTotal = Number(response.headers.get("content-length")) || 0
 				var result = response
 				if(options.responseType === "arraybuffer"){
 					result = await response.arrayBuffer()
@@ -875,6 +924,9 @@ class Loader{
 					result = await response.blob()
 				}else if(options.responseType === "text"){
 					result = await response.text()
+				}
+				if(options.responseType){
+					this.reportFetchProgress(options.onProgress, url, result, responseTotal)
 				}
 				clearTimeout(timer)
 				this.retryingResource = null

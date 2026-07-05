@@ -9,13 +9,15 @@ class LoadSong{
 		this.touchEnabled = touchEnabled
 		this.gameLoadOptions = {
 			priority: "game",
-			cancellable: false
+			cancellable: false,
+			onProgress: progress => this.onLoadProgress(progress)
 		}
 		
 		loader.changePage("loadsong", true)
 		var loadingText = document.getElementById("loading-text")
 		loadingText.appendChild(document.createTextNode(strings.loading))
 		loadingText.setAttribute("alt", strings.loading)
+		this.setupLoadProgress()
 		if(multiplayer){
 			var cancel = document.getElementById("p2-cancel-button")
 			cancel.appendChild(document.createTextNode(strings.cancel))
@@ -104,15 +106,15 @@ class LoadSong{
 					this.addPromise(promise.then(() => {
 						return this.scaleImg(img, filename, prefix, force)
 					}), filename + ".png")
-					this.addPromise(song.songSkin[filename + ".png"].blob().then(blob => {
+					this.addPromise(song.songSkin[filename + ".png"].blob(this.gameLoadOptions).then(blob => {
 						img.src = URL.createObjectURL(blob)
 					}), song.songSkin[filename + ".png"].url)
 				}else{
 					let url = skinBase + filename + ".png"
-					this.addPromise(loader.loadScaledImage(filename, url, {
+					this.addPromise(loader.loadScaledImage(filename, url, this.getProgressLoadOptions({
 						prefix: prefix,
 						force: force
-					}), url)
+					})), url)
 				}
 			}
 		}
@@ -152,7 +154,7 @@ class LoadSong{
 		}
 		if(this.touchEnabled && !assets.image["touch_drum"]){
 			var url = gameConfig.assets_baseurl + "img/touch_drum.png"
-			this.addPromise(loader.loadScaledImage("touch_drum", url), url)
+			this.addPromise(loader.loadScaledImage("touch_drum", url, this.getProgressLoadOptions()), url)
 		}
 		var resultsImg = [
 			"results_flowers",
@@ -163,7 +165,7 @@ class LoadSong{
 		resultsImg.forEach(id => {
 			if(!assets.image[id]){
 				var url = gameConfig.assets_baseurl + "img/" + id + ".png"
-				this.addPromise(loader.loadScaledImage(id, url), url)
+				this.addPromise(loader.loadScaledImage(id, url, this.getProgressLoadOptions()), url)
 			}
 		})
 		if(songObj.volume && songObj.volume !== 1){
@@ -171,6 +173,7 @@ class LoadSong{
 		}
 		Promise.all(this.promises).then(() => {
 			if(!this.error){
+				this.finishLoadProgress()
 				this.setupMultiplayer()
 			}
 		})
@@ -180,6 +183,13 @@ class LoadSong{
 			this.errorMsg(response, url)
 			return Promise.resolve()
 		}))
+	}
+	getProgressLoadOptions(options){
+		return Object.assign({
+			priority: this.gameLoadOptions.priority,
+			cancellable: this.gameLoadOptions.cancellable,
+			onProgress: this.gameLoadOptions.onProgress
+		}, options || {})
 	}
 	getMusicKey(path){
 		return (path || "").replace(/\\/g, "/").split("/").pop().toLowerCase()
@@ -263,6 +273,98 @@ class LoadSong{
 		})
 		return Promise.all(promises)
 	}
+	setupLoadProgress(){
+		this.loadProgressFill = document.getElementById("loading-progress-fill")
+		this.loadProgressDetails = document.getElementById("loading-progress-details")
+		this.loadProgressResources = {}
+		this.loadProgressSamples = []
+		this.loadProgressSpeed = 0
+		this.renderLoadProgress()
+	}
+	onLoadProgress(progress){
+		if(!progress || progress.loaded == null || !this.loadProgressResources){
+			return
+		}
+		var key = progress.url || "song"
+		var loaded = Math.max(0, Number(progress.loaded) || 0)
+		var total = Math.max(0, Number(progress.total) || 0)
+		var resource = this.loadProgressResources[key] || {
+			loaded: 0,
+			total: 0
+		}
+		resource.loaded = Math.max(resource.loaded, loaded)
+		resource.total = Math.max(resource.total, total)
+		this.loadProgressResources[key] = resource
+		this.recordLoadProgressSample()
+		this.renderLoadProgress()
+	}
+	getLoadProgressBytes(){
+		var loaded = 0
+		var total = 0
+		for(var key in this.loadProgressResources){
+			var resource = this.loadProgressResources[key]
+			loaded += resource.loaded || 0
+			total += resource.total || resource.loaded || 0
+		}
+		return {
+			loaded: loaded,
+			total: Math.max(total, loaded)
+		}
+	}
+	recordLoadProgressSample(){
+		var now = performance.now()
+		this.loadProgressSamples.push({
+			at: now,
+			bytes: this.getLoadProgressBytes().loaded
+		})
+		while(this.loadProgressSamples.length > 2 && this.loadProgressSamples[1].at < now - 1500){
+			this.loadProgressSamples.shift()
+		}
+	}
+	getLoadProgressSpeed(){
+		var samples = this.loadProgressSamples
+		if(!samples || samples.length < 2){
+			return this.loadProgressSpeed || 0
+		}
+		var first = samples[0]
+		var last = samples[samples.length - 1]
+		var elapsed = Math.max(1, last.at - first.at)
+		this.loadProgressSpeed = Math.max(0, (last.bytes - first.bytes) * 1000 / elapsed)
+		return this.loadProgressSpeed
+	}
+	formatLoadMegabytes(bytes){
+		bytes = Math.max(0, Number(bytes) || 0)
+		return (bytes / 1024 / 1024).toFixed(2) + " MB"
+	}
+	renderLoadProgress(forceComplete){
+		var progress = this.getLoadProgressBytes()
+		var percent = progress.total ? progress.loaded * 100 / progress.total : 0
+		if(forceComplete){
+			percent = 100
+		}
+		percent = Math.max(0, Math.min(100, percent))
+		if(this.loadProgressFill){
+			this.loadProgressFill.style.width = percent + "%"
+		}
+		if(this.loadProgressDetails){
+			this.loadProgressDetails.textContent =
+				this.formatLoadMegabytes(progress.loaded) + " / " +
+				this.formatLoadMegabytes(progress.total) + " " +
+				this.formatLoadMegabytes(this.getLoadProgressSpeed()) + "/s"
+		}
+	}
+	finishLoadProgress(){
+		if(!this.loadProgressResources){
+			return
+		}
+		for(var key in this.loadProgressResources){
+			var resource = this.loadProgressResources[key]
+			if(resource.total){
+				resource.loaded = Math.max(resource.loaded, resource.total)
+			}
+		}
+		this.renderLoadProgress(true)
+	}
 	errorMsg(error, url){
 		if(!this.error){
 			if(url){
@@ -309,9 +411,9 @@ class LoadSong{
 				if(!(filenameAb in assets.image)){
 					let force = filenameAb.startsWith("bg_song_") && this.touchEnabled
 					var url = gameConfig.assets_baseurl + "img/" + filenameAb + ".png"
-					this.addPromise(loader.loadScaledImage(filenameAb, url, {
+					this.addPromise(loader.loadScaledImage(filenameAb, url, this.getProgressLoadOptions({
 						force: force
-					}), url)
+					})), url)
 				}
 			}
 		}
@@ -413,7 +515,11 @@ class LoadSong{
 	clean(){
 		delete this.promises
 		delete this.songObj
-        delete this.videoElement
+		delete this.loadProgressFill
+		delete this.loadProgressDetails
+		delete this.loadProgressResources
+		delete this.loadProgressSamples
+		delete this.videoElement
 		pageEvents.remove(p2, "message")
 		if(this.cancelButton){
 			pageEvents.remove(this.cancelButton, ["mousedown", "touchstart"])

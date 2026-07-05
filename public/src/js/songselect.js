@@ -3299,6 +3299,12 @@ class SongSelect {
 					return
 				}
 				promise.then(sound => {
+					if (this.closed) {
+						if (sound) {
+							sound.clean()
+						}
+						return
+					}
 					if (currentId === this.previewId || loadOnly) {
 						songObj.preview_sound = sound
 						if (!loadOnly) {
@@ -3314,7 +3320,7 @@ class SongSelect {
 						sound.clean()
 					}
 				}).catch(e => {
-					if (!this.isLoadCancelled(e)) {
+					if (!this.closed && !this.isLoadCancelled(e)) {
 						return Promise.reject(e)
 					}
 				})
@@ -3353,6 +3359,9 @@ class SongSelect {
 		var file = currentSong.chart
 		var importSongs = new ImportSongs(false, assets.otherFiles)
 		return file.read(currentSong.type === "tja" ? "utf-8" : "", loadOptions).then(data => {
+			if (this.closed || this.songs[selectedSong] !== currentSong) {
+				return Promise.reject("cancel")
+			}
 			currentSong.chart = new CachedFile(data, file)
 			return importSongs[currentSong.type === "tja" ? "addTja" : "addOsu"]({
 				file: currentSong.chart,
@@ -3361,6 +3370,9 @@ class SongSelect {
 		}).then(() => {
 			var imported = importSongs.songs[currentSong.id]
 			importSongs.clean()
+			if (this.closed || this.songs[selectedSong] !== currentSong) {
+				return Promise.reject("cancel")
+			}
 			songObj.preview_time = imported.preview
 			var index = assets.songs.findIndex(song => song.id === currentSong.id)
 			if (index !== -1) {
@@ -3606,6 +3618,7 @@ class SongSelect {
 			return
 		}
 		this.closed = true
+		this.cancelPreviewLoads(false)
 		this.keyboard.clean()
 		this.gamepad.clean()
 		this.clearHash()

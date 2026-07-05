@@ -7,6 +7,7 @@ class LoadSong{
 		this.autoPlayEnabled = autoPlayEnabled
 		this.multiplayer = multiplayer
 		this.touchEnabled = touchEnabled
+		this.cancelSongSelectPreviewLoads()
 		this.gameLoadOptions = {
 			priority: "game",
 			cancellable: false,
@@ -30,6 +31,13 @@ class LoadSong{
 			multiplayer: multiplayer,
 			touchEnabled: touchEnabled
 		})
+	}
+	cancelSongSelectPreviewLoads(){
+		if(typeof loader === "undefined" || !loader.cancelWorkerTasks){
+			return
+		}
+		loader.cancelWorkerTasks("song-preview-warmup")
+		loader.cancelWorkerTasks("song-preview")
 	}
 	run(){
 		var song = this.selectedSong

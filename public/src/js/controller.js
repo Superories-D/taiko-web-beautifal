@@ -282,6 +282,10 @@ class Controller{
 		var vp
 		if(this.game.rules.clearReached(score.gauge)){
 			if(score.bad === 0){
+				if(score.ok === 0){
+					this.playSound("v_donder_fullcombo")
+					return
+				}
 				vp = "fullcombo"
 				this.playSound("v_fullcombo", 1.350)
 			}else{

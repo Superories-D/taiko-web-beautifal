@@ -711,7 +711,8 @@ class Scoresheet {
 						if (this.state.screen === "fadeIn" && elapsed >= 1200 && !this.state["fullcomboPlayed" + p]) {
 							this.state["fullcomboPlayed" + p] = true
 							if (crownType === "gold") {
-								this.playSound("v_results_fullcombo" + (p === 1 ? "2" : ""), p)
+								var fullComboSound = String(results.ok) === "0" ? "v_donder_fullcombo" : "v_results_fullcombo" + (p === 1 ? "2" : "")
+								this.playSound(fullComboSound, p)
 							}
 						}
 						if (this.state.screen === "fadeIn" && elapsed >= 1650 && !this.state["crownPlayed" + p]) {

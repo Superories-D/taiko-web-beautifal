@@ -138,6 +138,7 @@ var assets = {
 		"se_results_countup.ogg",
 		"se_results_crown.ogg",
 
+		"v_donder_fullcombo.ogg",
 		"v_fullcombo.ogg",
 		"v_renda.ogg",
 		"v_results_fullcombo.ogg",

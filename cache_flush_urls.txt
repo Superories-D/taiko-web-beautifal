@@ -20,6 +20,7 @@ https://taiko.asia/src/js/view.js
 https://taiko.asia/src/js/scoresheet.js
 https://taiko.asia/src/js/soundbuffer.js
 https://taiko.asia/src/js/uploadmodal.js
+https://taiko.asia/assets/audio/v_donder_fullcombo.ogg
 https://www.taiko.asia/
 https://www.taiko.asia/ja
 https://www.taiko.asia/en
@@ -42,3 +43,4 @@ https://www.taiko.asia/src/js/view.js
 https://www.taiko.asia/src/js/scoresheet.js
 https://www.taiko.asia/src/js/soundbuffer.js
 https://www.taiko.asia/src/js/uploadmodal.js
+https://www.taiko.asia/assets/audio/v_donder_fullcombo.ogg

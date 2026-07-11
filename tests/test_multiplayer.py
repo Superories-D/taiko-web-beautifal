@@ -1,4 +1,5 @@
 import pathlib
+import socket
 import sys
 import unittest
 from unittest.mock import patch
@@ -6,17 +7,6 @@ from unittest.mock import patch
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import multiplayer
-
-
-class FakeResponse:
-    def __init__(self, status_code=200, body=None):
-        self.status_code = status_code
-        self.body = body if body is not None else {'status': 'ok', 'connections': 0, 'accepting_connections': True}
-
-    def json(self):
-        if isinstance(self.body, Exception):
-            raise self.body
-        return self.body
 
 
 class MultiplayerNodeTests(unittest.TestCase):
@@ -35,21 +25,32 @@ class MultiplayerNodeTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(multiplayer.MultiplayerServerValidationError):
                 multiplayer.normalise_websocket_url(value)
 
-    @patch('multiplayer.assert_public_resolution')
-    @patch('multiplayer.requests.get')
-    def test_health_requires_a_valid_ok_response(self, request_get, _resolution):
-        request_get.return_value = FakeResponse()
+    @patch('multiplayer.assert_public_resolution', return_value=['203.0.113.10'])
+    @patch('multiplayer.fetch_health_json')
+    def test_health_requires_a_valid_ok_response(self, fetch_health, _resolution):
+        fetch_health.return_value = (200, {'status': 'ok', 'connections': 0, 'accepting_connections': True})
         self.assertTrue(multiplayer.probe_health('wss://play.example.com')['online'])
 
-        request_get.return_value = FakeResponse(body={'status': 'starting'})
+        fetch_health.return_value = (200, {'status': 'starting'})
         result = multiplayer.probe_health('wss://play.example.com')
         self.assertFalse(result['online'])
         self.assertIn('invalid response', result['error'])
 
-        request_get.return_value = FakeResponse(body={'status': 'ok'})
+        fetch_health.return_value = (200, {'status': 'ok'})
         result = multiplayer.probe_health('wss://play.example.com')
         self.assertFalse(result['online'])
         self.assertIn('connection count', result['error'])
+
+        fetch_health.assert_called_with('https://play.example.com/health', '203.0.113.10', (1.5, 2.5))
+
+    @patch('multiplayer.socket.getaddrinfo')
+    def test_dns_resolution_rejects_any_private_answer(self, getaddrinfo):
+        getaddrinfo.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', 0))
+        ]
+        with self.assertRaises(multiplayer.MultiplayerServerValidationError):
+            multiplayer.assert_public_resolution('https://play.example.com/health')
 
     def test_assignment_is_stable_and_uses_all_healthy_nodes(self):
         servers = [

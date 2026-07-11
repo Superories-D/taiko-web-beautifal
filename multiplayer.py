@@ -2,11 +2,13 @@
 
 import hashlib
 import ipaddress
+import json
 import socket
+import ssl
 import time
 from urllib.parse import urlsplit, urlunsplit
 
-import requests
+import urllib3
 
 
 class MultiplayerServerValidationError(ValueError):
@@ -68,10 +70,65 @@ def assert_public_resolution(url):
         raise MultiplayerServerValidationError('The server hostname could not be resolved.') from exc
     if not addresses:
         raise MultiplayerServerValidationError('The server hostname did not resolve to an address.')
+    public_addresses = []
     for address in addresses:
         resolved = ipaddress.ip_address(address[4][0])
         if not resolved.is_global:
             raise MultiplayerServerValidationError('The server hostname resolved to a non-public address.')
+        if resolved.compressed not in public_addresses:
+            public_addresses.append(resolved.compressed)
+    return public_addresses
+
+
+def fetch_health_json(health_url, resolved_ip, timeout):
+    """Fetch /health through a DNS-pinned public IP with normal TLS hostname checks."""
+    parsed = urlsplit(health_url)
+    port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+    request_timeout = urllib3.Timeout(connect=timeout[0], read=timeout[1])
+    headers = {
+        'Host': parsed.netloc,
+        'Accept': 'application/json',
+        'User-Agent': 'Taiko-Web-Multiplayer-Health/1.0'
+    }
+    pool_options = {
+        'timeout': request_timeout,
+        'retries': False,
+        'maxsize': 1,
+        'block': True
+    }
+    if parsed.scheme == 'https':
+        pool = urllib3.HTTPSConnectionPool(
+            resolved_ip,
+            port,
+            assert_hostname=parsed.hostname,
+            server_hostname=parsed.hostname,
+            ssl_context=ssl.create_default_context(),
+            **pool_options
+        )
+    else:
+        pool = urllib3.HTTPConnectionPool(resolved_ip, port, **pool_options)
+
+    response = None
+    try:
+        response = pool.request(
+            'GET',
+            parsed.path or '/health',
+            headers=headers,
+            redirect=False,
+            preload_content=False
+        )
+        body = response.read(65537)
+        if len(body) > 65536:
+            raise MultiplayerServerValidationError('Health endpoint response is too large.')
+        try:
+            data = json.loads(body.decode('utf-8'))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            data = None
+        return response.status, data
+    finally:
+        if response is not None:
+            response.release_conn()
+        pool.close()
 
 
 def probe_health(websocket_url, timeout=(1.5, 2.5)):
@@ -79,20 +136,11 @@ def probe_health(websocket_url, timeout=(1.5, 2.5)):
     started = time.monotonic()
     try:
         health_url = health_url_for_websocket(websocket_url)
-        assert_public_resolution(health_url)
-        response = requests.get(
-            health_url,
-            timeout=timeout,
-            allow_redirects=False,
-            headers={'User-Agent': 'Taiko-Web-Multiplayer-Health/1.0'}
-        )
+        resolved_addresses = assert_public_resolution(health_url)
+        status_code, data = fetch_health_json(health_url, resolved_addresses[0], timeout)
         elapsed_ms = round((time.monotonic() - started) * 1000)
-        if response.status_code != 200:
-            return {'online': False, 'latency_ms': elapsed_ms, 'error': 'Health endpoint returned HTTP {}.'.format(response.status_code)}
-        try:
-            data = response.json()
-        except ValueError:
-            data = None
+        if status_code != 200:
+            return {'online': False, 'latency_ms': elapsed_ms, 'error': 'Health endpoint returned HTTP {}.'.format(status_code)}
         if not isinstance(data, dict) or data.get('status') != 'ok':
             return {'online': False, 'latency_ms': elapsed_ms, 'error': 'Health endpoint returned an invalid response.'}
         connections = data.get('connections')
@@ -112,7 +160,7 @@ def probe_health(websocket_url, timeout=(1.5, 2.5)):
             'accepting_connections': accepting_connections is not False,
             'error': None
         }
-    except (MultiplayerServerValidationError, requests.RequestException) as exc:
+    except (MultiplayerServerValidationError, urllib3.exceptions.HTTPError, OSError, ssl.SSLError) as exc:
         elapsed_ms = round((time.monotonic() - started) * 1000)
         return {'online': False, 'latency_ms': elapsed_ms, 'error': str(exc) or 'Health check failed.'}
 

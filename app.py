@@ -2,6 +2,7 @@
 
 import base64
 import bcrypt
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import ipaddress
 try:
@@ -22,6 +23,7 @@ from datetime import datetime, timedelta
 
 import pathlib
 import shutil
+import threading
 from flask_limiter import Limiter
 
 import flask
@@ -292,6 +294,47 @@ app.config['WTF_CSRF_CHECK_DEFAULT'] = False
 csrf = CSRFProtect(app)
 
 db = client[take_config('MONGO', required=True)['database']]
+
+
+def ensure_unique_single_field_index(collection, field):
+    """Upgrade a legacy non-unique index without making app startup fragile."""
+    index_name = '{}_1'.format(field)
+    try:
+        existing = next(
+            (index for index in collection.list_indexes() if index.get('name') == index_name),
+            None
+        )
+        if existing and bool(existing.get('unique')):
+            return True
+
+        duplicate = next(collection.aggregate([
+            {'$match': {field: {'$exists': True, '$ne': None}}},
+            {'$group': {'_id': '${}'.format(field), 'count': {'$sum': 1}}},
+            {'$match': {'count': {'$gt': 1}}},
+            {'$limit': 1}
+        ]), None)
+        if duplicate:
+            app.logger.warning(
+                'Cannot make %s.%s unique because duplicate value %r exists; continuing with the legacy index.',
+                collection.name,
+                field,
+                duplicate.get('_id')
+            )
+            return False
+
+        if existing:
+            collection.drop_index(index_name)
+        collection.create_index(field, name=index_name, unique=True)
+        return True
+    except PyMongoError:
+        app.logger.exception(
+            'Unable to ensure unique index %s.%s; continuing startup without the migration.',
+            collection.name,
+            field
+        )
+        return False
+
+
 db.users.create_index('username', unique=True)
 db.songs.create_index('id', unique=True)
 db.songs.create_index('hash')
@@ -311,12 +354,12 @@ db.site_messages.create_index([('active', 1), ('created_at', -1)])
 db.site_message_reads.create_index([('username', 1), ('message_id', 1)], unique=True)
 db.site_message_reads.create_index('message_id')
 db.weekly_challenges.create_index('challenge_id', unique=True)
-db.weekly_challenges.create_index('date_key', unique=True)
+ensure_unique_single_field_index(db.weekly_challenges, 'date_key')
 db.weekly_challenges.create_index('week_key')
 db.weekly_challenge_scores.create_index([('week_key', 1), ('username', 1)], unique=True)
 db.weekly_challenge_scores.create_index([('week_key', 1), ('score_value', -1), ('updated_at', 1)])
 db.weekly_challenge_scores.create_index('week_start')
-db.multiplayer_servers.create_index('node_id', unique=True)
+ensure_unique_single_field_index(db.multiplayer_servers, 'node_id')
 db.multiplayer_servers.create_index([('enabled', 1), ('node_id', 1)])
 
 VISIT_RETENTION_DAYS = 400
@@ -342,7 +385,12 @@ MULTIPLAYER_NODE_URL_MAX_LENGTH = 500
 MULTIPLAYER_CLIENT_ID_MAX_LENGTH = 128
 MULTIPLAYER_DEFAULT_MAX_CONNECTIONS = 100
 MULTIPLAYER_MAX_CONNECTIONS = 100000
+MULTIPLAYER_MAX_SERVERS = 32
+MULTIPLAYER_HEALTH_CACHE_SECONDS = 5
 MULTIPLAYER_NODE_ID_RE = re.compile(r'^[a-f0-9]{12}$')
+MULTIPLAYER_HEALTH_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix='multiplayer-health')
+MULTIPLAYER_HEALTH_LOCKS = {}
+MULTIPLAYER_HEALTH_LOCKS_GUARD = threading.Lock()
 
 
 def ensure_visit_record_indexes():
@@ -1252,6 +1300,23 @@ def before_request_func():
         session.clear()
 
 
+@app.after_request
+def secure_response_headers(response):
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+
+    admin_prefix = site_path('admin')
+    sensitive_paths = {
+        site_path('1128admin1128'),
+        site_path('api/multiplayer/select')
+    }
+    if request.path == admin_prefix or request.path.startswith(admin_prefix + '/') or request.path in sensitive_paths:
+        response.headers['Cache-Control'] = 'private, no-store, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
+
 def get_config(credentials=False):
     config_out = {
         'basedir': basedir,
@@ -1864,15 +1929,61 @@ def serialise_multiplayer_server(server):
     }
 
 
-def check_multiplayer_server(server):
-    result = multiplayer.probe_health(server.get('ws_url'))
-    result['checked_at'] = datetime.utcnow()
-    db.multiplayer_servers.update_one({'_id': server['_id']}, {'$set': {
-        'last_health': result,
-        'updated_at': datetime.utcnow()
-    }})
-    server['last_health'] = result
-    return result
+def multiplayer_health_cache_key(server):
+    return 'multiplayer-health:{}:{}'.format(server.get('node_id'), server.get('ws_url'))
+
+
+def multiplayer_health_lock(node_id):
+    with MULTIPLAYER_HEALTH_LOCKS_GUARD:
+        return MULTIPLAYER_HEALTH_LOCKS.setdefault(node_id, threading.Lock())
+
+
+def get_cached_multiplayer_health(cache_key):
+    try:
+        return app.cache.get(cache_key)
+    except Exception:
+        app.logger.warning('Multiplayer health cache read failed; probing directly.', exc_info=True)
+        return None
+
+
+def clear_multiplayer_health_cache(server):
+    try:
+        app.cache.delete(multiplayer_health_cache_key(server))
+    except Exception:
+        app.logger.warning('Multiplayer health cache delete failed.', exc_info=True)
+
+
+def forget_multiplayer_health_lock(node_id):
+    with MULTIPLAYER_HEALTH_LOCKS_GUARD:
+        MULTIPLAYER_HEALTH_LOCKS.pop(node_id, None)
+
+
+def check_multiplayer_server(server, force=False):
+    cache_key = multiplayer_health_cache_key(server)
+    if not force:
+        cached = get_cached_multiplayer_health(cache_key)
+        if cached is not None:
+            server['last_health'] = cached
+            return cached
+
+    with multiplayer_health_lock(server.get('node_id')):
+        if not force:
+            cached = get_cached_multiplayer_health(cache_key)
+            if cached is not None:
+                server['last_health'] = cached
+                return cached
+
+        result = multiplayer.probe_health(server.get('ws_url'))
+        result['checked_at'] = datetime.utcnow()
+        db.multiplayer_servers.update_one({'_id': server['_id']}, {'$set': {
+            'last_health': result
+        }})
+        try:
+            app.cache.set(cache_key, result, timeout=MULTIPLAYER_HEALTH_CACHE_SECONDS)
+        except Exception:
+            app.logger.warning('Multiplayer health cache write failed.', exc_info=True)
+        server['last_health'] = result
+        return result
 
 
 def next_multiplayer_node_id():
@@ -1965,6 +2076,9 @@ def route_admin_multiplayer():
 @app.route(basedir + 'admin/multiplayer', methods=['POST'])
 @admin_required(level=50)
 def route_admin_multiplayer_post():
+    if db.multiplayer_servers.count_documents({}) >= MULTIPLAYER_MAX_SERVERS:
+        flash('Error: The multiplayer server limit ({}) has been reached.'.format(MULTIPLAYER_MAX_SERVERS), 'error')
+        return redirect(basedir + 'admin/multiplayer')
     try:
         server = multiplayer_server_form_data()
         server.update({
@@ -1983,7 +2097,7 @@ def route_admin_multiplayer_post():
         })
         inserted = db.multiplayer_servers.insert_one(server)
         server['_id'] = inserted.inserted_id
-        check_multiplayer_server(server)
+        check_multiplayer_server(server, force=True)
         flash('Multiplayer server added and checked.')
     except (multiplayer.MultiplayerServerValidationError, PyMongoError) as exc:
         flash('Error: {}'.format(exc), 'error')
@@ -1996,8 +2110,19 @@ def route_admin_multiplayer_edit(node_id):
     node_id = multiplayer_node_id_or_404(node_id)
     try:
         data = multiplayer_server_form_data()
-        if not db.multiplayer_servers.find_one({'node_id': node_id}, {'_id': True}):
+        server = db.multiplayer_servers.find_one({'node_id': node_id})
+        if not server:
             abort(404)
+        clear_multiplayer_health_cache(server)
+        data['last_health'] = {
+            'online': False,
+            'latency_ms': None,
+            'connections': None,
+            'reported_max_connections': None,
+            'accepting_connections': None,
+            'error': None,
+            'checked_at': None
+        }
         db.multiplayer_servers.update_one({'node_id': node_id}, {'$set': data})
         flash('Multiplayer server updated.')
     except multiplayer.MultiplayerServerValidationError as exc:
@@ -2012,7 +2137,7 @@ def route_admin_multiplayer_test(node_id):
     server = db.multiplayer_servers.find_one({'node_id': node_id})
     if not server:
         abort(404)
-    result = check_multiplayer_server(server)
+    result = check_multiplayer_server(server, force=True)
     if result.get('online'):
         connections = result.get('connections')
         capacity = server.get('max_connections', MULTIPLAYER_DEFAULT_MAX_CONNECTIONS)
@@ -2030,6 +2155,7 @@ def route_admin_multiplayer_toggle(node_id):
     server = db.multiplayer_servers.find_one({'node_id': node_id})
     if not server:
         abort(404)
+    clear_multiplayer_health_cache(server)
     enabled = not bool(server.get('enabled'))
     db.multiplayer_servers.update_one({'_id': server['_id']}, {'$set': {
         'enabled': enabled,
@@ -2044,6 +2170,11 @@ def route_admin_multiplayer_toggle(node_id):
 @admin_required(level=50)
 def route_admin_multiplayer_remove(node_id):
     node_id = multiplayer_node_id_or_404(node_id)
+    server = db.multiplayer_servers.find_one({'node_id': node_id})
+    if not server:
+        abort(404)
+    clear_multiplayer_health_cache(server)
+    forget_multiplayer_health_lock(node_id)
     result = db.multiplayer_servers.delete_one({'node_id': node_id})
     if not result.deleted_count:
         abort(404)
@@ -2468,11 +2599,15 @@ def route_api_multiplayer_select():
     query = {'enabled': True}
     if requested_node_id:
         query['node_id'] = requested_node_id
-    servers = list(db.multiplayer_servers.find(query).sort('node_id', 1))
+    servers = list(
+        db.multiplayer_servers.find(query)
+        .sort('node_id', 1)
+        .limit(MULTIPLAYER_MAX_SERVERS)
+    )
     healthy_servers = []
     capacity_reached = False
-    for server in servers:
-        health = check_multiplayer_server(server)
+    health_results = list(MULTIPLAYER_HEALTH_EXECUTOR.map(check_multiplayer_server, servers))
+    for server, health in zip(servers, health_results):
         max_connections = safe_int_value(server.get('max_connections'), MULTIPLAYER_DEFAULT_MAX_CONNECTIONS)
         connections = health.get('connections')
         is_full = (

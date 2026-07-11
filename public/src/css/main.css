@@ -16,6 +16,35 @@
 	flex-direction: column;
 	justify-content: space-between;
 }
+
+#multiplayer-unavailable-notice{
+	position: fixed;
+	z-index: 2000;
+	left: 50%;
+	bottom: max(20px, 4vh);
+	max-width: min(620px, calc(100vw - 32px));
+	padding: 14px 18px;
+	border: 3px solid #7f1d1d;
+	border-radius: 10px;
+	background: rgba(127, 29, 29, 0.96);
+	box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
+	color: #fff;
+	font-family: var(--ui-font, sans-serif);
+	font-size: clamp(14px, 2.2vmin, 18px);
+	line-height: 1.4;
+	text-align: center;
+	transform: translate(-50%, 130%);
+	opacity: 0;
+	pointer-events: none;
+	transition: transform .2s ease, opacity .2s ease;
+}
+
+#multiplayer-unavailable-notice.visible{
+	transform: translate(-50%, 0);
+	opacity: 1;
+	pointer-events: auto;
+	cursor: pointer;
+}
 .stroke-sub::before{
 	content: attr(alt);
 	position: absolute;

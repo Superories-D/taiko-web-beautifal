@@ -1461,7 +1461,7 @@ class SongSelect {
 		}, 500)
 	}
 	toSession() {
-		if (p2.socket.readyState !== 1 || assets.customSongs) {
+		if (!p2.socket || p2.socket.readyState !== 1 || assets.customSongs) {
 			return
 		}
 		if (p2.session) {

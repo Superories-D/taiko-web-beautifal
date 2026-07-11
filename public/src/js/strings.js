@@ -497,6 +497,27 @@ var translations = {
 		tw: "網上對打",
 		ko: "온라인 대전"
 	},
+	multiplayerUnavailable: {
+		ja: "現在利用できるオンライン対戦サーバーはありません。しばらくしてからもう一度お試しください。",
+		en: "Multiplayer is currently unavailable. Please try again later.",
+		cn: "当前没有可用的联机服务器，请稍后再试。",
+		tw: "目前沒有可用的連線伺服器，請稍後再試。",
+		ko: "현재 사용할 수 있는 온라인 대전 서버가 없습니다. 잠시 후 다시 시도하세요."
+	},
+	multiplayerRoomUnavailable: {
+		ja: "この招待ルームのサーバーは現在利用できません。ルームの作成者に確認してください。",
+		en: "This invitation's server is unavailable. Please contact the room host.",
+		cn: "该邀请房间所在的服务器不可用，请联系房主后重试。",
+		tw: "此邀請房間的伺服器不可用，請聯絡房主後再試。",
+		ko: "이 초대방의 서버를 사용할 수 없습니다. 방장에게 문의하세요."
+	},
+	multiplayerFull: {
+		ja: "オンライン対戦サーバーが満員です。しばらくしてからもう一度お試しください。",
+		en: "All multiplayer servers are full. Please try again later.",
+		cn: "联机服务器已满员，请稍后再试。",
+		tw: "連線伺服器已滿員，請稍後再試。",
+		ko: "온라인 대전 서버가 가득 찼습니다. 잠시 후 다시 시도하세요."
+	},
 	easy: {
 		ja: "かんたん",
 		en: "Easy",

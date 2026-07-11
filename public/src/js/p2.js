@@ -4,6 +4,13 @@ class P2Connection{
 	}
 	init(){
 		this.closed = true
+		this.connecting = false
+		this.socket = null
+		this.pendingMessages = []
+		this.connectionAttempt = 0
+		this.serverId = null
+		this.requestedNodeId = null
+		this.requireSingleServer = false
 		this.lastMessages = {}
 		this.otherConnected = false
 		this.name = null
@@ -13,6 +20,69 @@ class P2Connection{
 		this.currentHash = ""
 		this.disabled = 0
 		pageEvents.add(window, "hashchange", this.onhashchange.bind(this))
+	}
+	setRequestedNode(nodeId){
+		this.requestedNodeId = /^[a-f0-9]{12}$/i.test(nodeId || "") ? nodeId.toLowerCase() : null
+		this.requireSingleServer = false
+	}
+	setLegacyInvite(){
+		this.requestedNodeId = null
+		this.requireSingleServer = true
+	}
+	getClientId(){
+		var key = "multiplayer-client-id"
+		var clientId = localStorage.getItem(key)
+		if(!clientId){
+			if(window.crypto && window.crypto.randomUUID){
+				clientId = window.crypto.randomUUID()
+			}else{
+				clientId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)
+			}
+			localStorage.setItem(key, clientId)
+		}
+		return clientId
+	}
+	selectorUrl(){
+		var basedir = gameConfig.basedir || "/"
+		if(!basedir.endsWith("/")){
+			basedir += "/"
+		}
+		return basedir + "api/multiplayer/select"
+	}
+	resolveServer(){
+		var params = new URLSearchParams({client_id: this.getClientId()})
+		if(this.requestedNodeId){
+			params.set("node_id", this.requestedNodeId)
+		}else if(this.requireSingleServer){
+			params.set("legacy_invite", "1")
+		}
+		return fetch(this.selectorUrl() + "?" + params.toString(), {
+			credentials: "same-origin",
+			cache: "no-store"
+		}).then(response => {
+			return response.json().catch(() => ({})).then(data => {
+				if(!response.ok || !data || data.status !== "ok" || !data.server || !data.server.id || !data.server.ws_url){
+					throw new Error((data && data.message) || "multiplayer_unavailable")
+				}
+				return data.server
+			})
+		})
+	}
+	showUnavailableNotice(reason){
+		var message = reason === "multiplayer_node_unavailable" ? strings.multiplayerRoomUnavailable :
+			reason === "multiplayer_full" ? strings.multiplayerFull : strings.multiplayerUnavailable
+		var notice = document.getElementById("multiplayer-unavailable-notice")
+		if(!notice){
+			notice = document.createElement("div")
+			notice.id = "multiplayer-unavailable-notice"
+			notice.setAttribute("role", "alert")
+			notice.addEventListener("click", () => notice.classList.remove("visible"))
+			document.body.appendChild(notice)
+		}
+		notice.textContent = message
+		notice.classList.add("visible")
+		clearTimeout(this.unavailableTimer)
+		this.unavailableTimer = setTimeout(() => notice.classList.remove("visible"), 7000)
 	}
 	addEventListener(type, callback){
 		var addedType = this.allEvents.get(type)
@@ -29,47 +99,73 @@ class P2Connection{
 		}
 	}
 	open(){
-		if(this.closed && !this.disabled){
-			this.closed = false
-			var wsProtocol = location.protocol == "https:" ? "wss:" : "ws:"
-			this.socket = new WebSocket(gameConfig.multiplayer_url ? gameConfig.multiplayer_url : wsProtocol + "//" + location.host + location.pathname + "p2")
+		if(!this.closed || this.disabled || this.connecting){
+			return
+		}
+		this.closed = false
+		this.connecting = true
+		var attempt = ++this.connectionAttempt
+		this.resolveServer().then(server => {
+			if(this.closed || attempt !== this.connectionAttempt){
+				return
+			}
+			this.serverId = server.id
+			this.socket = new WebSocket(server.ws_url)
+			pageEvents.add(this.socket, "close", event => {
+				if(event.code === 1013){
+					this.showUnavailableNotice("multiplayer_full")
+				}
+			})
 			pageEvents.race(this.socket, "open", "close").then(response => {
+				if(attempt !== this.connectionAttempt){
+					return
+				}
 				if(response.type === "open"){
 					return this.openEvent()
 				}
 				return this.closeEvent()
 			})
 			pageEvents.add(this.socket, "message", this.messageEvent.bind(this))
-		}
+		}, error => {
+			if(attempt === this.connectionAttempt){
+				this.showUnavailableNotice(error && error.message)
+				pageEvents.send("p2-unavailable", error && error.message)
+				this.pendingMessages = []
+				this.requestedNodeId = null
+				this.requireSingleServer = false
+				this.closeEvent()
+			}
+		})
 	}
 	openEvent(){
+		this.connecting = false
+		var messages = this.pendingMessages.splice(0)
+		messages.forEach(message => this.send(message.type, message.value))
 		var addedType = this.allEvents.get("open")
 		if(addedType){
 			addedType.forEach(callback => callback())
 		}
 	}
 	close(){
-		if(!this.closed){
-			this.closed = true
-			if(this.socket){
-				this.socket.close()
-			}
+		this.connectionAttempt++
+		this.connecting = false
+		this.closed = true
+		if(this.socket){
+			this.socket.close()
 		}
 	}
 	closeEvent(){
-		this.removeEventListener(onmessage)
+		var wasActive = !this.closed || this.connecting
+		this.connecting = false
+		this.closed = true
+		this.socket = null
 		this.otherConnected = false
 		this.session = false
 		if(this.hashLock){
 			this.hash("")
 			this.hashLock = false
 		}
-		if(!this.closed){
-			setTimeout(() => {
-				if(this.socket.readyState !== this.socket.OPEN){
-					this.open()
-				}
-			}, 500)
+		if(wasActive){
 			pageEvents.send("p2-disconnected")
 		}
 		var addedType = this.allEvents.get("close")
@@ -78,17 +174,22 @@ class P2Connection{
 		}
 	}
 	send(type, value){
-		if(this.socket.readyState === this.socket.OPEN){
+		if(this.socket && this.socket.readyState === this.socket.OPEN){
 			if(typeof value === "undefined"){
 				this.socket.send(JSON.stringify({type: type}))
 			}else{
 				this.socket.send(JSON.stringify({type: type, value: value}))
 			}
-		}else{
-			pageEvents.once(this, "open").then(() => {
-				this.send(type, value)
-			})
+		}else if(!this.disabled){
+			this.pendingMessages.push({type: type, value: value})
+			this.open()
 		}
+	}
+	inviteHash(code){
+		if(this.serverId && /^[a-f0-9]{12}$/i.test(this.serverId)){
+			return "p2=" + this.serverId + ":" + code
+		}
+		return code
 	}
 	messageEvent(event){
 		try{
@@ -263,6 +364,7 @@ class P2Connection{
 	}
 	disable(){
 		this.disabled++
+		this.pendingMessages = []
 		this.close()
 	}
 }

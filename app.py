@@ -10,6 +10,7 @@ except ModuleNotFoundError:
     raise FileNotFoundError('No such file or directory: \'config.py\'. Copy the example config file config.example.py to config.py')
 import json
 import math
+import multiplayer
 import re
 import requests
 import schema
@@ -315,6 +316,8 @@ db.weekly_challenges.create_index('week_key')
 db.weekly_challenge_scores.create_index([('week_key', 1), ('username', 1)], unique=True)
 db.weekly_challenge_scores.create_index([('week_key', 1), ('score_value', -1), ('updated_at', 1)])
 db.weekly_challenge_scores.create_index('week_start')
+db.multiplayer_servers.create_index('node_id', unique=True)
+db.multiplayer_servers.create_index([('enabled', 1), ('node_id', 1)])
 
 VISIT_RETENTION_DAYS = 400
 VISIT_RETENTION_SECONDS = VISIT_RETENTION_DAYS * 24 * 60 * 60
@@ -334,6 +337,12 @@ TOP_SONGS_REFRESH_LOCK_SECONDS = max(60, env_int('TAIKO_WEB_TOP_SONGS_REFRESH_LO
 TOP_SONGS_SORT_MAX_TIME_MS = max(1000, env_int('TAIKO_WEB_TOP_SONGS_SORT_MAX_TIME_MS', 2000))
 TOP_SONGS_BACKFILL_MAX_TIME_MS = max(1000, env_int('TAIKO_WEB_TOP_SONGS_BACKFILL_MAX_TIME_MS', 5000))
 REMOTE_REQUEST_TIMEOUT = (3.05, 15)
+MULTIPLAYER_NODE_NAME_MAX_LENGTH = 80
+MULTIPLAYER_NODE_URL_MAX_LENGTH = 500
+MULTIPLAYER_CLIENT_ID_MAX_LENGTH = 128
+MULTIPLAYER_DEFAULT_MAX_CONNECTIONS = 100
+MULTIPLAYER_MAX_CONNECTIONS = 100000
+MULTIPLAYER_NODE_ID_RE = re.compile(r'^[a-f0-9]{12}$')
 
 
 def ensure_visit_record_indexes():
@@ -1253,7 +1262,6 @@ def get_config(credentials=False):
         'custom_js': take_config('CUSTOM_JS'),
         'plugins': take_config('PLUGINS') and [x for x in take_config('PLUGINS') if x['url']],
         'preview_type': take_config('PREVIEW_TYPE') or 'mp3',
-        'multiplayer_url': take_config('MULTIPLAYER_URL'),
         'features': {
             'site_messages': FEATURE_SITE_MESSAGES,
             'top_songs': FEATURE_TOP_SONGS
@@ -1821,6 +1829,84 @@ def get_current_admin(min_level=50):
     return None
 
 
+def multiplayer_node_id_or_404(value):
+    if not isinstance(value, str) or not MULTIPLAYER_NODE_ID_RE.fullmatch(value):
+        abort(404)
+    return value
+
+
+def serialise_multiplayer_server(server):
+    last_health = dict(server.get('last_health') or {})
+    max_connections = safe_int_value(server.get('max_connections'), MULTIPLAYER_DEFAULT_MAX_CONNECTIONS)
+    max_connections = max(1, min(max_connections, MULTIPLAYER_MAX_CONNECTIONS))
+    connections = last_health.get('connections')
+    at_capacity = isinstance(connections, int) and connections >= max_connections
+    checked_at = last_health.get('checked_at')
+    if isinstance(checked_at, datetime):
+        last_health['checked_at'] = checked_at.strftime('%Y-%m-%d %H:%M:%S UTC')
+    return {
+        'node_id': server.get('node_id'),
+        'name': server.get('name'),
+        'ws_url': server.get('ws_url'),
+        'health_url': server.get('health_url'),
+        'enabled': bool(server.get('enabled')),
+        'max_connections': max_connections,
+        'at_capacity': at_capacity,
+        'last_health': {
+            'online': bool(last_health.get('online')),
+            'latency_ms': last_health.get('latency_ms'),
+            'connections': connections,
+            'reported_max_connections': last_health.get('reported_max_connections'),
+            'accepting_connections': last_health.get('accepting_connections'),
+            'error': last_health.get('error'),
+            'checked_at': last_health.get('checked_at')
+        }
+    }
+
+
+def check_multiplayer_server(server):
+    result = multiplayer.probe_health(server.get('ws_url'))
+    result['checked_at'] = datetime.utcnow()
+    db.multiplayer_servers.update_one({'_id': server['_id']}, {'$set': {
+        'last_health': result,
+        'updated_at': datetime.utcnow()
+    }})
+    server['last_health'] = result
+    return result
+
+
+def next_multiplayer_node_id():
+    for _ in range(10):
+        node_id = secrets.token_hex(6)
+        if not db.multiplayer_servers.find_one({'node_id': node_id}, {'_id': True}):
+            return node_id
+    raise RuntimeError('Could not allocate a multiplayer node ID.')
+
+
+def multiplayer_server_form_data():
+    name = (request.form.get('name') or '').strip()
+    raw_url = (request.form.get('ws_url') or '').strip()
+    if not name:
+        raise multiplayer.MultiplayerServerValidationError('A server name is required.')
+    if len(name) > MULTIPLAYER_NODE_NAME_MAX_LENGTH:
+        raise multiplayer.MultiplayerServerValidationError('The server name is too long.')
+    if len(raw_url) > MULTIPLAYER_NODE_URL_MAX_LENGTH:
+        raise multiplayer.MultiplayerServerValidationError('The WebSocket URL is too long.')
+    max_connections = safe_int_value(request.form.get('max_connections'))
+    if max_connections is None or not 1 <= max_connections <= MULTIPLAYER_MAX_CONNECTIONS:
+        raise multiplayer.MultiplayerServerValidationError('The connection limit must be between 1 and {}.'.format(MULTIPLAYER_MAX_CONNECTIONS))
+    ws_url = multiplayer.normalise_websocket_url(raw_url)
+    return {
+        'name': name,
+        'ws_url': ws_url,
+        'health_url': multiplayer.health_url_for_websocket(ws_url),
+        'enabled': bool(request.form.get('enabled')),
+        'max_connections': max_connections,
+        'updated_at': datetime.utcnow(),
+        'updated_by': session.get('username')
+    }
+
+
 @app.route(basedir + '1128admin1128', methods=['GET', 'POST'])
 @limiter.limit("10 per minute", methods=["POST"])
 def route_secret_admin_login():
@@ -1864,6 +1950,105 @@ def route_admin_overview():
     user = db.users.find_one({'username': session['username']})
     return render_template('admin_overview.html',
         stats=get_admin_overview_stats(), admin=user, config=get_config())
+
+
+@app.route(basedir + 'admin/multiplayer')
+@admin_required(level=50)
+def route_admin_multiplayer():
+    servers = [
+        serialise_multiplayer_server(server)
+        for server in db.multiplayer_servers.find({}).sort([('name', 1), ('node_id', 1)])
+    ]
+    return render_template('admin_multiplayer.html', servers=servers, config=get_config())
+
+
+@app.route(basedir + 'admin/multiplayer', methods=['POST'])
+@admin_required(level=50)
+def route_admin_multiplayer_post():
+    try:
+        server = multiplayer_server_form_data()
+        server.update({
+            'node_id': next_multiplayer_node_id(),
+            'created_at': datetime.utcnow(),
+            'created_by': session.get('username'),
+            'last_health': {
+                'online': False,
+                'latency_ms': None,
+                'connections': None,
+                'reported_max_connections': None,
+                'accepting_connections': None,
+                'error': None,
+                'checked_at': None
+            }
+        })
+        inserted = db.multiplayer_servers.insert_one(server)
+        server['_id'] = inserted.inserted_id
+        check_multiplayer_server(server)
+        flash('Multiplayer server added and checked.')
+    except (multiplayer.MultiplayerServerValidationError, PyMongoError) as exc:
+        flash('Error: {}'.format(exc), 'error')
+    return redirect(basedir + 'admin/multiplayer')
+
+
+@app.route(basedir + 'admin/multiplayer/<node_id>/edit', methods=['POST'])
+@admin_required(level=50)
+def route_admin_multiplayer_edit(node_id):
+    node_id = multiplayer_node_id_or_404(node_id)
+    try:
+        data = multiplayer_server_form_data()
+        if not db.multiplayer_servers.find_one({'node_id': node_id}, {'_id': True}):
+            abort(404)
+        db.multiplayer_servers.update_one({'node_id': node_id}, {'$set': data})
+        flash('Multiplayer server updated.')
+    except multiplayer.MultiplayerServerValidationError as exc:
+        flash('Error: {}'.format(exc), 'error')
+    return redirect(basedir + 'admin/multiplayer')
+
+
+@app.route(basedir + 'admin/multiplayer/<node_id>/test', methods=['POST'])
+@admin_required(level=50)
+def route_admin_multiplayer_test(node_id):
+    node_id = multiplayer_node_id_or_404(node_id)
+    server = db.multiplayer_servers.find_one({'node_id': node_id})
+    if not server:
+        abort(404)
+    result = check_multiplayer_server(server)
+    if result.get('online'):
+        connections = result.get('connections')
+        capacity = server.get('max_connections', MULTIPLAYER_DEFAULT_MAX_CONNECTIONS)
+        connection_text = 'unknown users' if connections is None else '{}/{} users'.format(connections, capacity)
+        flash('Server is online ({} ms, {}).'.format(result.get('latency_ms'), connection_text))
+    else:
+        flash('Server is offline: {}'.format(result.get('error') or 'unknown error'), 'error')
+    return redirect(basedir + 'admin/multiplayer')
+
+
+@app.route(basedir + 'admin/multiplayer/<node_id>/toggle', methods=['POST'])
+@admin_required(level=50)
+def route_admin_multiplayer_toggle(node_id):
+    node_id = multiplayer_node_id_or_404(node_id)
+    server = db.multiplayer_servers.find_one({'node_id': node_id})
+    if not server:
+        abort(404)
+    enabled = not bool(server.get('enabled'))
+    db.multiplayer_servers.update_one({'_id': server['_id']}, {'$set': {
+        'enabled': enabled,
+        'updated_at': datetime.utcnow(),
+        'updated_by': session.get('username')
+    }})
+    flash('Multiplayer server {}.'.format('enabled' if enabled else 'disabled'))
+    return redirect(basedir + 'admin/multiplayer')
+
+
+@app.route(basedir + 'admin/multiplayer/<node_id>/remove', methods=['POST'])
+@admin_required(level=50)
+def route_admin_multiplayer_remove(node_id):
+    node_id = multiplayer_node_id_or_404(node_id)
+    result = db.multiplayer_servers.delete_one({'node_id': node_id})
+    if not result.deleted_count:
+        abort(404)
+    flash('Multiplayer server removed.')
+    return redirect(basedir + 'admin/multiplayer')
 
 
 @app.route(basedir + 'admin/top-songs/refresh', methods=['POST'])
@@ -2267,6 +2452,66 @@ def route_api_categories():
 def route_api_config():
     config = get_config(credentials=True)
     return jsonify(config)
+
+
+@app.route(basedir + 'api/multiplayer/select')
+@limiter.limit('60 per minute')
+def route_api_multiplayer_select():
+    requested_node_id = request.args.get('node_id', '').strip().lower()
+    client_id = request.args.get('client_id', '').strip()
+    legacy_invite = request.args.get('legacy_invite') == '1'
+    if len(client_id) > MULTIPLAYER_CLIENT_ID_MAX_LENGTH:
+        return api_error('invalid_multiplayer_client'), 400
+    if requested_node_id and not MULTIPLAYER_NODE_ID_RE.fullmatch(requested_node_id):
+        return api_error('invalid_multiplayer_node'), 400
+
+    query = {'enabled': True}
+    if requested_node_id:
+        query['node_id'] = requested_node_id
+    servers = list(db.multiplayer_servers.find(query).sort('node_id', 1))
+    healthy_servers = []
+    capacity_reached = False
+    for server in servers:
+        health = check_multiplayer_server(server)
+        max_connections = safe_int_value(server.get('max_connections'), MULTIPLAYER_DEFAULT_MAX_CONNECTIONS)
+        connections = health.get('connections')
+        is_full = (
+            health.get('accepting_connections') is False or
+            (isinstance(connections, int) and connections >= max_connections)
+        )
+        if health.get('online') and is_full:
+            capacity_reached = True
+        elif health.get('online'):
+            healthy_servers.append(server)
+
+    if requested_node_id:
+        selected = healthy_servers[0] if healthy_servers else None
+    elif legacy_invite:
+        selected = healthy_servers[0] if len(healthy_servers) == 1 else None
+    else:
+        selected = multiplayer.select_server(healthy_servers, client_id)
+    if not selected:
+        response = jsonify({
+            'status': 'unavailable',
+            'message': (
+                'multiplayer_node_unavailable' if requested_node_id else
+                'multiplayer_full' if capacity_reached else
+                'multiplayer_unavailable'
+            )
+        })
+        response.status_code = 503
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+
+    response = jsonify({
+        'status': 'ok',
+        'server': {
+            'id': selected['node_id'],
+            'ws_url': selected['ws_url']
+        }
+    })
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @app.route(basedir + 'api/register', methods=['POST'])

@@ -1648,7 +1648,14 @@ class Loader{
 						songId = number
 						readyEvent = "song-id"
 					}
-				}else if(location.hash.length === 6){
+				}else if(/^#p2=[a-f0-9]{12}:[bcdfghjklmnpqrstvwxyz]{5}$/i.test(location.hash) || location.hash.length === 6){
+					var inviteMatch = location.hash.match(/^#p2=([a-f0-9]{12}):([bcdfghjklmnpqrstvwxyz]{5})$/i)
+					var inviteCode = inviteMatch ? inviteMatch[2].toLowerCase() : location.hash.slice(1).toLowerCase()
+					if(inviteMatch){
+						p2.setRequestedNode(inviteMatch[1])
+					}else{
+						p2.setLegacyInvite()
+					}
 					p2.hashLock = true
 					promises.push(new Promise(resolve => {
 						p2.open()
@@ -1665,12 +1672,12 @@ class Loader{
 							}
 						})
 						p2.send("invite", {
-							id: location.hash.slice(1).toLowerCase(),
+							id: inviteCode,
 							name: account.loggedIn ? account.displayName : null,
 							don: account.loggedIn ? account.don : null
 						})
 						setTimeout(() => {
-							if(p2.socket.readyState !== 1){
+							if(!p2.socket || p2.socket.readyState !== 1){
 								p2.hash("")
 								p2.hashLock = false
 								resolve()

@@ -1,0 +1,64 @@
+{% extends 'admin.html' %}
+{% block content %}
+<div class="admin-page-header">
+    <div>
+        <h1>Multiplayer servers</h1>
+        <p class="admin-kicker">Players are connected directly to a healthy server.</p>
+    </div>
+</div>
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div class="message{% if category == 'error' %} message-error{% endif %}">{{ message }}</div>
+{% endfor %}
+
+<div class="song-form">
+    <form method="post" action="{{ config.basedir }}admin/multiplayer">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-field">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" maxlength="80" required placeholder="Singapore node">
+            <label for="ws_url">WebSocket URL</label>
+            <input type="url" id="ws_url" name="ws_url" maxlength="500" required placeholder="wss://multiplayer.example.com">
+            <label for="max_connections">Online limit</label>
+            <input type="number" id="max_connections" name="max_connections" min="1" max="100000" value="100" required>
+            <label class="checkbox"><input type="checkbox" name="enabled" checked> Enabled</label>
+        </div>
+        <button type="submit" class="save-song">Add server</button>
+    </form>
+</div>
+
+{% if servers %}
+<div class="admin-table-wrap">
+    <table class="admin-table">
+        <thead><tr><th>Name</th><th>Node ID</th><th>WebSocket</th><th>Online limit</th><th>Health</th><th>Last check</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for server in servers %}
+        <tr>
+            <td>
+                <form method="post" action="{{ config.basedir }}admin/multiplayer/{{ server.node_id }}/edit">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="text" name="name" maxlength="80" required value="{{ server.name }}">
+                    <input type="url" name="ws_url" maxlength="500" required value="{{ server.ws_url }}">
+                    <input type="number" name="max_connections" min="1" max="100000" required value="{{ server.max_connections }}">
+                    <label class="checkbox"><input type="checkbox" name="enabled"{% if server.enabled %} checked{% endif %}> Enabled</label>
+                    <button type="submit">Save</button>
+                </form>
+            </td>
+            <td><code>{{ server.node_id }}</code></td>
+            <td><code>{{ server.ws_url }}</code><small>{{ server.health_url }}</small></td>
+            <td>{{ server.max_connections }}{% if server.last_health.reported_max_connections is not none %}<small>Node reports {{ server.last_health.reported_max_connections }}</small>{% endif %}</td>
+            <td>{% if server.last_health.online and server.at_capacity %}Full{% elif server.last_health.online and server.last_health.accepting_connections is false %}Paused{% elif server.last_health.online %}Online{% elif server.last_health.checked_at %}Offline{% else %}Not checked{% endif %}</td>
+            <td>{% if server.last_health.checked_at %}{{ server.last_health.checked_at }}{% if server.last_health.connections is not none %}<small>{{ server.last_health.connections }}/{{ server.max_connections }} users</small>{% endif %}{% if server.last_health.latency_ms is not none %}<small>{{ server.last_health.latency_ms }} ms</small>{% endif %}{% if server.last_health.error %}<small>{{ server.last_health.error }}</small>{% endif %}{% else %}--{% endif %}</td>
+            <td>
+                <form method="post" action="{{ config.basedir }}admin/multiplayer/{{ server.node_id }}/test" class="admin-message-action"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Test</button></form>
+                <form method="post" action="{{ config.basedir }}admin/multiplayer/{{ server.node_id }}/toggle" class="admin-message-action"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">{% if server.enabled %}Disable{% else %}Enable{% endif %}</button></form>
+                <form method="post" action="{{ config.basedir }}admin/multiplayer/{{ server.node_id }}/remove" class="admin-message-action"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Remove</button></form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="admin-message empty-message">No multiplayer servers have been configured.</div>
+{% endif %}
+{% endblock %}

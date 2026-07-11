@@ -29,8 +29,9 @@ class Session{
 		p2.hashLock = true
 		pageEvents.add(p2, "message", response => {
 			if(response.type === "invite"){
-				this.sessionInvite.innerText = location.origin + location.pathname + "#" + response.value
-				p2.hash(response.value)
+				var inviteHash = p2.inviteHash(response.value)
+				this.sessionInvite.innerText = location.origin + location.pathname + "#" + inviteHash
+				p2.hash(inviteHash)
 			}else if(response.type === "songsel"){
 				p2.clearMessage("users")
 				this.onEnd(true)

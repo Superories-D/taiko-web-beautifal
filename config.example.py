@@ -7,9 +7,6 @@ ASSETS_BASEURL = '/assets/'
 # The full URL base song URL, with trailing slash.
 SONGS_BASEURL = '/songs/'
 
-# Multiplayer websocket URL. Defaults to /p2 if blank.
-MULTIPLAYER_URL = ''
-
 # Send static files for custom error pages
 ERROR_PAGES = {
     404: ''

@@ -299,9 +299,10 @@ csrf = CSRFProtect(app)
 db = client[take_config('MONGO', required=True)['database']]
 
 
-def ensure_unique_single_field_index(collection, field):
-    """Upgrade a legacy non-unique index without making app startup fragile."""
-    index_name = '{}_1'.format(field)
+def ensure_unique_index(collection, fields):
+    """Upgrade a legacy index without making app startup fragile."""
+    fields = [(field, direction) for field, direction in fields]
+    index_name = '_'.join('{}_{}'.format(field, direction) for field, direction in fields)
     try:
         existing = next(
             (index for index in collection.list_indexes() if index.get('name') == index_name),
@@ -310,32 +311,44 @@ def ensure_unique_single_field_index(collection, field):
         if existing and bool(existing.get('unique')):
             return True
 
+        required_fields = {
+            field: {'$exists': True, '$ne': None}
+            for field, _direction in fields
+        }
+        group_key = {
+            field: '${}'.format(field)
+            for field, _direction in fields
+        }
         duplicate = next(collection.aggregate([
-            {'$match': {field: {'$exists': True, '$ne': None}}},
-            {'$group': {'_id': '${}'.format(field), 'count': {'$sum': 1}}},
+            {'$match': required_fields},
+            {'$group': {'_id': group_key, 'count': {'$sum': 1}}},
             {'$match': {'count': {'$gt': 1}}},
             {'$limit': 1}
         ]), None)
         if duplicate:
             app.logger.warning(
-                'Cannot make %s.%s unique because duplicate value %r exists; continuing with the legacy index.',
+                'Cannot make %s index %s unique because duplicate key %r exists; continuing with the legacy index.',
                 collection.name,
-                field,
+                index_name,
                 duplicate.get('_id')
             )
             return False
 
         if existing:
             collection.drop_index(index_name)
-        collection.create_index(field, name=index_name, unique=True)
+        collection.create_index(fields, name=index_name, unique=True)
         return True
     except PyMongoError:
         app.logger.exception(
             'Unable to ensure unique index %s.%s; continuing startup without the migration.',
             collection.name,
-            field
+            index_name
         )
         return False
+
+
+def ensure_unique_single_field_index(collection, field):
+    return ensure_unique_index(collection, [(field, 1)])
 
 
 db.users.create_index('username', unique=True)
@@ -359,7 +372,7 @@ db.site_message_reads.create_index('message_id')
 db.weekly_challenges.create_index('challenge_id', unique=True)
 ensure_unique_single_field_index(db.weekly_challenges, 'date_key')
 db.weekly_challenges.create_index('week_key')
-db.weekly_challenge_scores.create_index([('week_key', 1), ('username', 1)], unique=True)
+ensure_unique_index(db.weekly_challenge_scores, [('week_key', 1), ('username', 1)])
 db.weekly_challenge_scores.create_index([('week_key', 1), ('score_value', -1), ('updated_at', 1)])
 db.weekly_challenge_scores.create_index('week_start')
 ensure_unique_single_field_index(db.multiplayer_servers, 'node_id')

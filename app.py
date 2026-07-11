@@ -285,7 +285,10 @@ if redis_available:
     app.cache = Cache(app, config=redis_config)
 else:
     app.config['SESSION_TYPE'] = 'filesystem'
-    app.config['SESSION_FILE_DIR'] = str(APP_ROOT / 'flask_session')
+    app.config['SESSION_FILE_DIR'] = str(path_from_env(
+        'TAIKO_WEB_SESSION_FILE_DIR',
+        APP_ROOT / 'flask_session'
+    ))
     app.cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache'})
 sess = Session()
 sess.init_app(app)

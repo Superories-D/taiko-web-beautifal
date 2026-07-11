@@ -495,17 +495,15 @@ class LoadSong{
 		}
 	}
 	startMultiplayer(repeat){
-		if(document.hasFocus()){
-			p2.send("gamestart")
-		}else{
-			if(!repeat){
-				assets.sounds["v_sanka"].play()
-				pageEvents.send("load-song-unfocused")
-			}
-			setTimeout(() => {
-				this.startMultiplayer(true)
-			}, 100)
+		if(!repeat && !document.hasFocus()){
+			assets.sounds["v_sanka"].play()
+			pageEvents.send("load-song-unfocused")
 		}
+		p2.send("gamestart")
+		clearTimeout(this.multiplayerReadyTimer)
+		this.multiplayerReadyTimer = setTimeout(() => {
+			this.startMultiplayer(true)
+		}, 1500)
 	}
 	cancelLoad(event){
 		if(event.type === "mousedown"){
@@ -521,6 +519,8 @@ class LoadSong{
 		pageEvents.send("load-song-cancel")
 	}
 	clean(){
+		clearTimeout(this.multiplayerReadyTimer)
+		delete this.multiplayerReadyTimer
 		delete this.promises
 		delete this.songObj
 		delete this.loadProgressFill

@@ -822,10 +822,35 @@ prompt_admin_credentials() {
 }
 
 ensure_admin_user() {
-  local count
-  count=$(admin_user_count 2>/dev/null | tail -n 1 || true)
+  local attempt count output
+  output=""
+  count=""
+
+  # Compose reports success as soon as the containers have started.  On a
+  # large existing database Gunicorn may still be creating/checking indexes,
+  # so importing app.py immediately can race application startup.  Retry the
+  # read instead of turning a healthy deployment into a failed setup run.
+  attempt=1
+  while [ "$attempt" -le 12 ]; do
+    output=$(admin_user_count 2>&1 || true)
+    count=$(printf '%s\n' "$output" | tail -n 1)
+    if printf '%s' "$count" | grep -Eq '^[0-9]+$'; then
+      break
+    fi
+    if [ "$attempt" -lt 12 ]; then
+      log "Application is not ready for the administrator check yet (${attempt}/12); retrying in 5 seconds."
+      sleep 5
+    fi
+    attempt=$((attempt + 1))
+  done
+
   if ! printf '%s' "$count" | grep -Eq '^[0-9]+$'; then
-    echo "Could not check administrator accounts."
+    echo "Could not check administrator accounts after 12 attempts."
+    [ -n "$output" ] && printf '%s\n' "$output" >&2
+    if command -v docker >/dev/null 2>&1; then
+      echo "Recent taiko-web-app logs:" >&2
+      docker logs --tail 100 taiko-web-app >&2 2>/dev/null || true
+    fi
     exit 1
   fi
   if [ "$count" -gt 0 ]; then

@@ -4,8 +4,10 @@ services:
       context: .
     container_name: taiko-web-app
     depends_on:
-      - mongo
-      - redis
+      mongo:
+        condition: service_started
+      redis:
+        condition: service_healthy
     environment:
       PYTHONUNBUFFERED: "1"
       TAIKO_WEB_MONGO_HOST: mongo:27017
@@ -36,5 +38,11 @@ services:
     container_name: taiko-web-redis
     image: redis:7-alpine
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
     volumes:
       - ${TAIKO_WEB_DATA_DIR:-/srv/taiko-web-data}/redis:/data

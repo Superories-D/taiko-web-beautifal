@@ -214,6 +214,10 @@ limiter = Limiter(
     # storage_uri="memory://",
     # Redis
     storage_uri=limiter_storage_uri,
+    # A transient Redis/Docker DNS outage must not turn every rate-limited
+    # endpoint (including login) into HTTP 500. Limits temporarily fall back
+    # to per-worker memory until Redis is reachable again.
+    in_memory_fallback_enabled=True,
     # Redis cluster
     # storage_uri="redis+cluster://localhost:7000,localhost:7001,localhost:70002",
     # Memcached

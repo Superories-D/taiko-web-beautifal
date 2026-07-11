@@ -154,6 +154,14 @@ class Game{
 				if(circle.daiFailed && (ms >= circle.daiFailed.ms + this.rules.daiLeniency || ms > endTime)){
 					this.checkScore(circle, circle.daiFailed.check)
 				}else if(ms > endTime){
+					if(this.controller.multiplayer === 2 && p2.waitForJudgement(ms, endTime)){
+						nextSet = true
+						this.currentCircle = i
+						if(index++ > 1){
+							break
+						}
+						continue
+					}
 					if(!this.controller.autoPlayEnabled){
 						if(drumrollNotes){
 							if(circle.section && circle.timesHit === 0){
@@ -163,7 +171,8 @@ class Game{
 							this.updateCurrentCircle()
 							if(this.controller.multiplayer === 1){
 								var value = {
-									pace: (ms - circle.ms - this.controller.audioLatency) / circle.timesHit
+									pace: (ms - circle.ms - this.controller.audioLatency) / circle.timesHit,
+									state: this.getSyncState()
 								}
 								if(type === "drumroll" || type === "daiDrumroll"){
 									value.kaAmount = circle.timesKa / circle.timesHit
@@ -306,7 +315,8 @@ class Game{
 		this.updateGlobalScore(0, 1)
 		if(this.controller.multiplayer === 1){
 			p2.send("note", {
-				score: -1
+				score: -1,
+				state: this.getSyncState()
 			})
 		}
 	}
@@ -443,7 +453,8 @@ class Game{
 				var value = {
 					score: score,
 					ms: circle.ms - currentTime - this.controller.audioLatency,
-					dai: typeDai ? (keyDai ? 2 : 1) : 0
+					dai: typeDai ? (keyDai ? 2 : 1) : 0,
+					state: this.getSyncState()
 				}
 				if((!keysDon || !typeDon) && (!keysKa || !typeKa)){
 					value.reverse = true
@@ -469,16 +480,15 @@ class Game{
 		return true
 	}
 	checkBalloon(circle){
+		var completed = false
+		var completedPace = null
 		if(circle.timesHit >= circle.requiredHits - 1){
 			var score = 5000
 			this.updateCurrentCircle()
 			circle.hit()
 			circle.played(score)
-			if(this.controller.multiplayer == 1){
-				p2.send("drumroll", {
-					pace: (this.elapsedTime - circle.ms + this.controller.audioLatency) / circle.timesHit
-				})
-			}
+			completed = true
+			completedPace = (this.elapsedTime - circle.ms + this.controller.audioLatency) / circle.timesHit
 		}else{
 			var score = 300
 			circle.hit()
@@ -487,6 +497,12 @@ class Game{
 		this.sectionDrumroll++
 		this.globalScore.points += score
 		this.view.setDarkBg(false)
+		if(completed && this.controller.multiplayer === 1){
+			p2.send("drumroll", {
+				pace: completedPace,
+				state: this.getSyncState()
+			})
+		}
 	}
 	checkDrumroll(circle, keysKa){
 		var ms = this.elapsedTime
@@ -751,6 +767,18 @@ class Game{
 	}
 	getGlobalScore(){
 		return this.globalScore
+	}
+	getSyncState(){
+		return {
+			points: this.globalScore.points,
+			good: this.globalScore.good,
+			ok: this.globalScore.ok,
+			bad: this.globalScore.bad,
+			maxCombo: this.globalScore.maxCombo,
+			drumroll: this.globalScore.drumroll,
+			gauge: this.globalScore.gauge,
+			combo: this.combo
+		}
 	}
 	updateGlobalScore(score, multiplier, gogoTime){
 		// Circle score

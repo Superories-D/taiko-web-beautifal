@@ -7,6 +7,10 @@ class P2Connection{
 		this.connecting = false
 		this.socket = null
 		this.pendingMessages = []
+		this.remoteSequence = 0
+		this.networkRtt = 200
+		this.networkJitter = 50
+		this.pingTimer = null
 		this.connectionAttempt = 0
 		this.serverId = null
 		this.requestedNodeId = null
@@ -139,6 +143,7 @@ class P2Connection{
 	}
 	openEvent(){
 		this.connecting = false
+		this.startLatencyProbe()
 		var messages = this.pendingMessages.splice(0)
 		messages.forEach(message => this.send(message.type, message.value))
 		var addedType = this.allEvents.get("open")
@@ -153,12 +158,14 @@ class P2Connection{
 		if(this.socket){
 			this.socket.close()
 		}
+		this.stopLatencyProbe()
 	}
 	closeEvent(){
 		var wasActive = !this.closed || this.connecting
 		this.connecting = false
 		this.closed = true
 		this.socket = null
+		this.stopLatencyProbe()
 		this.otherConnected = false
 		this.session = false
 		if(this.hashLock){
@@ -185,6 +192,61 @@ class P2Connection{
 			this.open()
 		}
 	}
+	startLatencyProbe(){
+		this.stopLatencyProbe()
+		var probe = () => {
+			if(this.socket && this.socket.readyState === this.socket.OPEN){
+				this.socket.send(JSON.stringify({
+					type: "syncping",
+					value: {sentAt: Date.now()}
+				}))
+			}
+		}
+		probe()
+		this.pingTimer = setInterval(probe, 5000)
+	}
+	stopLatencyProbe(){
+		if(this.pingTimer){
+			clearInterval(this.pingTimer)
+			this.pingTimer = null
+		}
+	}
+	updateLatency(value){
+		if(!value || !Number.isFinite(value.sentAt)){
+			return
+		}
+		var sample = Math.max(0, Math.min(5000, Date.now() - value.sentAt))
+		var difference = Math.abs(sample - this.networkRtt)
+		this.networkRtt = this.networkRtt * 0.75 + sample * 0.25
+		this.networkJitter = this.networkJitter * 0.75 + difference * 0.25
+	}
+	judgementGrace(){
+		return Math.round(Math.max(350, Math.min(1500,
+			this.networkRtt * 1.5 + this.networkJitter * 3 + 100
+		)))
+	}
+	waitForJudgement(ms, endTime){
+		return this.otherConnected && ms <= endTime + this.judgementGrace()
+	}
+	applyScoreState(mekadon, state){
+		if(!state || !mekadon || !mekadon.game){
+			return
+		}
+		var game = mekadon.game
+		var score = game.globalScore
+		var fields = ["points", "good", "ok", "bad", "maxCombo", "drumroll", "gauge"]
+		fields.forEach(field => {
+			if(Number.isFinite(state[field])){
+				score[field] = state[field]
+			}
+		})
+		if(Number.isFinite(state.combo)){
+			game.combo = state.combo
+			if(game.view){
+				game.view.updateCombo(game.combo)
+			}
+		}
+	}
 	inviteHash(code){
 		if(this.serverId && /^[a-f0-9]{12}$/i.test(this.serverId)){
 			return "p2=" + this.serverId + ":" + code
@@ -196,6 +258,16 @@ class P2Connection{
 			var response = JSON.parse(event.data)
 		}catch(e){
 			var response = {}
+		}
+		if(response.type === "syncpong"){
+			this.updateLatency(response.value)
+			return
+		}
+		if(Number.isFinite(response.seq)){
+			if(response.seq <= this.remoteSequence){
+				return
+			}
+			this.remoteSequence = response.seq
 		}
 		this.lastMessages[response.type] = response
 		var addedType = this.allEvents.get("message")
@@ -222,6 +294,8 @@ class P2Connection{
 			case "gamestart":
 				this.otherConnected = true
 				this.notes = []
+				this.remoteSequence = 0
+				this.pendingScoreState = null
 				this.drumrollPace = 45
 				this.dai = 2
 				this.kaAmount = 0
@@ -252,15 +326,20 @@ class P2Connection{
 				}
 				break
 			case "note":
-				this.notes.push(response.value)
-				if(response.value.dai){
-					this.dai = response.value.dai
+				if(response.value && typeof response.value === "object"){
+					this.notes.push(response.value)
+					if(response.value.dai){
+						this.dai = response.value.dai
+					}
 				}
 				break
 			case "drumroll":
-				this.drumrollPace = response.value.pace
-				if("kaAmount" in response.value){
-					this.kaAmount = response.value.kaAmount
+				if(response.value && typeof response.value === "object"){
+					this.drumrollPace = response.value.pace
+					this.pendingScoreState = response.value.state || null
+					if("kaAmount" in response.value){
+						this.kaAmount = response.value.kaAmount
+					}
 				}
 				break
 			case "branch":
@@ -325,6 +404,10 @@ class P2Connection{
 		history.replaceState("", "", location.pathname + (string ? "#" + string : ""))
 	}
 	play(circle, mekadon){
+		if(this.pendingScoreState){
+			this.applyScoreState(mekadon, this.pendingScoreState)
+			this.pendingScoreState = null
+		}
 		if(this.otherConnected || this.notes.length > 0){
 			var type = circle.type
 			var drumrollNotes = type === "balloon" || type === "drumroll" || type === "daiDrumroll"
@@ -347,10 +430,12 @@ class P2Connection{
 					}
 					if(mekadon.playAt(circle, note.ms, note.score, dai, note.reverse)){
 						this.notes.shift()
+						this.applyScoreState(mekadon, note.state)
 					}
 				}else{
 					if(mekadon.miss(circle)){
 						this.notes.shift()
+						this.applyScoreState(mekadon, note.state)
 					}
 				}
 			}

@@ -483,6 +483,9 @@ Environment=TAIKO_WEB_MONGO_HOST=127.0.0.1:27017
 Environment=TAIKO_WEB_REDIS_HOST=127.0.0.1
 Environment=REDIS_URI=redis://127.0.0.1:6379/0
 Environment=TAIKO_WEB_NOTICE_UPLOADS_DIR=$DATA_DIR/notice_uploads
+Environment=TAIKO_WEB_SITE_ORIGIN=${TAIKO_WEB_SITE_ORIGIN:-https://taiko.asia}
+Environment=TAIKO_WEB_SESSION_COOKIE_SECURE=${TAIKO_WEB_SESSION_COOKIE_SECURE:-1}
+EnvironmentFile=-$INSTALL_DIR/.env
 ExecStart=$INSTALL_DIR/.venv/bin/gunicorn -c gunicorn.conf.py app:app
 Restart=always
 User=$APP_USER

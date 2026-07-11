@@ -193,6 +193,9 @@
 	touch-action: manipulation;
 	transition: transform 0.12s ease, background-color 0.12s ease;
 }
+#site-message-button[hidden]{
+	display: none !important;
+}
 .touch-fullscreen-enabled #site-message-button{
 	right: max(14vmin, 96px);
 }

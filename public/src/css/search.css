@@ -668,6 +668,18 @@
 	text-shadow: 0 0.08em 0 #14120d, 0 0 0.35em rgba(255, 249, 35, 0.68);
 }
 
+.weekly-challenge-reset {
+	margin-left: auto;
+	padding: 0.34em 0.58em;
+	border: 0.1em solid #6f3415;
+	border-radius: 0.42em;
+	background: rgba(255, 255, 255, 0.9);
+	color: #4b210f;
+	font-size: 0.88em;
+	font-weight: 800;
+	white-space: nowrap;
+}
+
 .weekly-challenge-status {
 	flex: 1;
 	max-width: 26em;
@@ -905,6 +917,10 @@
 	.weekly-challenge-title {
 		max-width: 100%;
 		font-size: 1.36em;
+	}
+
+	.weekly-challenge-reset {
+		margin-left: 0;
 	}
 
 	.weekly-challenge-content {

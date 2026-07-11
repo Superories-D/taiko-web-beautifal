@@ -636,8 +636,8 @@ class SongSelect {
 	}
 
 	setSelectedSong(songIdx, drawBg = true) {
-		if (songIdx < 0) {
-			return;
+		if (!Number.isInteger(songIdx) || songIdx < 0 || songIdx >= this.songs.length) {
+			return false
 		}
 
 		if (drawBg) {
@@ -650,6 +650,16 @@ class SongSelect {
 		}
 
 		this.selectedSong = songIdx
+		return true
+	}
+
+	isPlayableSong(song) {
+		return !!(
+			song &&
+			!song.action &&
+			song.courses &&
+			this.difficultyId.some(difficulty => song.courses[difficulty])
+		)
 	}
 
 	getEasySettings() {
@@ -944,6 +954,9 @@ class SongSelect {
 		this.topSongsButton.hidden = !visible || !this.topSongsEnabled
 		this.weeklyChallengeButton.hidden = !challengeVisible
 		this.easySettingsButton.hidden = !visible
+		if (this.siteMessages && this.siteMessages.button) {
+			this.siteMessages.button.hidden = !visible
+		}
 		this.songSelect.classList.toggle("search-button-visible", visible)
 		this.songSelect.classList.toggle("top10-button-visible", visible && this.topSongsEnabled)
 		this.songSelect.classList.toggle("weekly-challenge-visible", challengeVisible)
@@ -1273,9 +1286,15 @@ class SongSelect {
 			} else if (currentSong.action === "back") {
 				this.toTitleScreen()
 			} else if (currentSong.action === "random") {
-				do {
-					var i = Math.floor(Math.random() * this.songs.length)
-				} while (!this.songs[i].courses)
+				var candidates = this.songs
+					.map((song, index) => ({song: song, index: index}))
+					.filter(candidate => this.isPlayableSong(candidate.song))
+				if (!candidates.length) {
+					this.playSound("se_cancel")
+					return
+				}
+				var selected = candidates[Math.floor(Math.random() * candidates.length)]
+				var i = selected.index
 				this.setSelectedSong(i)
 				this.lastRandom = true
 				this.playBgm(false)
@@ -3414,7 +3433,7 @@ class SongSelect {
 		var categoryName = ""
 		var originalCategory = ""
 		if (song.category_id !== null && song.category_id !== undefined) {
-			var category = assets.categories.find(cat => cat.id === song.category_id)
+			var category = assets.categories.find(cat => String(cat.id) === String(song.category_id))
 			if (category) {
 				var categoryName = this.getLocalTitle(category.title, category.title_lang)
 				var originalCategory = category.title
@@ -3818,18 +3837,23 @@ class SongSelect {
 		if (!confirm("Are you sure you want to remove this song?")) {
 			return;
 		}
-		fetch("/api/remove", {
+		loader.getCsrfToken().then(token => fetch("api/remove", {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
+				"X-CSRFToken": token
 			},
 			body: JSON.stringify({
 				id: this.songs[this.selectedSong].id,
 			})
-		})
-			.then((res) => res.text())
+		}))
+			.then((res) => {
+				if (!res.ok) throw new Error("HTTP " + res.status)
+				return res.text()
+			})
 			.then((text) => {
 				alert(text);
-			});
+			})
+			.catch(error => alert(String(error.message || error)))
 	}
 }

@@ -1,6 +1,9 @@
 # The base URL for Taiko Web, with trailing slash.
 BASEDIR = '/'
 
+# Canonical public origin for SEO links. Prefer TAIKO_WEB_SITE_ORIGIN in production.
+SITE_ORIGIN = None
+
 # The full URL base asset URL, with trailing slash.
 ASSETS_BASEURL = '/assets/'
 
@@ -51,6 +54,10 @@ REDIS = {
 
 # Secret key used for sessions.
 SECRET_KEY = 'change-me'
+
+# Optional Bearer token for the privileged /api/upload endpoint.
+# Prefer TAIKO_WEB_UPLOAD_TOKEN so the token never enters source control.
+UPLOAD_TOKEN = None
 
 # Git repository base URL.
 URL = 'https://github.com/bui/taiko-web/'

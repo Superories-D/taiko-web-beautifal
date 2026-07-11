@@ -537,7 +537,7 @@ class LoadSong{
 	
 	static insertBackgroundVideo(songId) {
         const video = document.createElement("video");
-        video.src = `songs/${songId}/main.mp4`; 
+        video.src = `${gameConfig.songs_baseurl}${songId}/main.mp4`;
         video.autoplay = true;
         video.muted = true;  // 可选：静音
         video.style.objectFit = 'cover';

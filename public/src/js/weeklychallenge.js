@@ -10,6 +10,9 @@ class WeeklyChallenge {
 		this.challengePreview = null
 		this.challengePreviewId = 0
 		this.restoreAudio = null
+		this.fetchId = 0
+		this.countdownTimer = null
+		this.serverClockOffset = 0
 	}
 	display() {
 		if (this.opened) {
@@ -44,16 +47,35 @@ class WeeklyChallenge {
 		this.startButton.setAttribute("alt", text.start)
 	}
 	fetchData() {
-		fetch("api/weekly-challenge/leaderboards").then(response => response.json()).then(data => {
+		var fetchId = ++this.fetchId
+		if (this.fetchController) this.fetchController.abort()
+		var controller = new AbortController()
+		this.fetchController = controller
+		var timeout = setTimeout(() => controller.abort(), 12000)
+		fetch("api/weekly-challenge/leaderboards", {
+			cache: "no-store",
+			signal: controller.signal
+		}).then(response => {
+			if (!response.ok) throw new Error("HTTP " + response.status)
+			return response.json()
+		}).then(data => {
+			if (!this.opened || fetchId !== this.fetchId) return
 			if (data.status !== "ok") {
 				this.setStatus(this.errorText(data.message), true)
 				return
 			}
+			var serverNow = Date.parse(data.server_now)
+			this.serverClockOffset = Number.isFinite(serverNow) ? serverNow - Date.now() : 0
 			this.data = data
 			this.render()
 			this.startChallengePreview(data.current)
-		}).catch(() => {
+		}).catch(error => {
+			if (!this.opened || fetchId !== this.fetchId) return
+			console.error("Weekly challenge load failed:", error)
 			this.setStatus(strings.errorOccured, true)
+		}).finally(() => {
+			clearTimeout(timeout)
+			if (this.fetchController === controller) this.fetchController = null
 		})
 	}
 	errorText(message) {
@@ -70,6 +92,7 @@ class WeeklyChallenge {
 			return
 		}
 		this.renderSong(current)
+		this.startCountdown(current.week_ends_at)
 		this.renderBoard(".weekly-challenge-current-list", current.leaderboard)
 		this.renderPrevious(this.data.previous)
 		if (account.loggedIn) {
@@ -79,6 +102,31 @@ class WeeklyChallenge {
 			this.setStatus(strings.weeklyChallenge.loginRequired)
 			this.startButton.disabled = true
 		}
+	}
+	startCountdown(endsAt) {
+		this.stopCountdown()
+		var end = Date.parse(endsAt)
+		var element = this.div.querySelector(":scope .weekly-challenge-reset")
+		if (!Number.isFinite(end) || !element) return
+		var update = () => {
+			var remaining = Math.max(0, end - (Date.now() + this.serverClockOffset))
+			var seconds = Math.floor(remaining / 1000)
+			var days = Math.floor(seconds / 86400)
+			var hours = Math.floor(seconds % 86400 / 3600)
+			var minutes = Math.floor(seconds % 3600 / 60)
+			var secs = seconds % 60
+			element.textContent = "UTC " + days + "d " + [hours, minutes, secs].map(value => String(value).padStart(2, "0")).join(":")
+			if (remaining === 0) {
+				this.stopCountdown()
+				this.fetchData()
+			}
+		}
+		this.countdownTimer = setInterval(update, 1000)
+		update()
+	}
+	stopCountdown() {
+		if (this.countdownTimer) clearInterval(this.countdownTimer)
+		this.countdownTimer = null
 	}
 	renderSong(challenge) {
 		var song = challenge.song
@@ -248,6 +296,10 @@ class WeeklyChallenge {
 			return
 		}
 		this.opened = false
+		this.fetchId++
+		if (this.fetchController) this.fetchController.abort()
+		this.fetchController = null
+		this.stopCountdown()
 		if (byUser) {
 			this.songSelect.playSound("se_cancel")
 		}
@@ -444,9 +496,13 @@ class WeeklyChallenge {
 			return Promise.resolve(null)
 		}
 		var run = WeeklyChallenge.getRun()
+		var clearRun = false
+		var controller = new AbortController()
+		var timeout = setTimeout(() => controller.abort(), 12000)
 		return loader.getCsrfToken().then(token => {
 			return fetch("api/weekly-challenge/submit", {
 				method: "POST",
+				signal: controller.signal,
 				headers: {
 					"Content-Type": "application/json",
 					"X-CSRFToken": token
@@ -463,10 +519,21 @@ class WeeklyChallenge {
 					drumroll: result.drumroll
 				})
 			})
-		}).then(response => response.json()).catch(error => {
+		}).then(response => {
+			if (!response.ok) throw new Error("HTTP " + response.status)
+			return response.json()
+		}).then(data => {
+			if (data.status !== "ok") {
+				if (data.message === "challenge_not_active") clearRun = true
+				throw new Error(data.message || "submit_failed")
+			}
+			clearRun = true
+			return data
+		}).catch(error => {
 			console.error("Weekly challenge submit failed:", error)
 		}).finally(() => {
-			WeeklyChallenge.clearRun()
+			clearTimeout(timeout)
+			if (clearRun) WeeklyChallenge.clearRun()
 		})
 	}
 }

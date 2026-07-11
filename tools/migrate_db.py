@@ -13,7 +13,7 @@ import config
 
 client = MongoClient(config.MONGO['host'])
 db = client[config.MONGO['database']]
-sqdb = sqlite3.connect('taiko.db')
+sqdb = sqlite3.connect(os.path.join(parent_dir, 'taiko.db'))
 sqdb.row_factory = sqlite3.Row
 curs = sqdb.cursor()
 MIGRATION_ID = 'sqlite_to_mongodb_initial_import'
@@ -127,4 +127,7 @@ if __name__ == '__main__':
     migrate_makers()
     migrate_categories()
     migrate_song_skins()
-    db.migrations.insert_one({'id': MIGRATION_ID, 'appliedAt': datetime.datetime.utcnow()})
+    db.migrations.insert_one({
+        'id': MIGRATION_ID,
+        'appliedAt': datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    })

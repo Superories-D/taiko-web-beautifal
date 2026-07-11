@@ -1,13 +1,13 @@
 """
 Tab bar for switching difficulties (Courses).
 """
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QLabel, QTextEdit
-from PySide6.QtCore import Signal
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QLabel, QTextEdit
+from PyQt5.QtCore import pyqtSignal
 from models import Song, Course, COURSE_NAMES
 
 
 class CourseTabs(QWidget):
-    courseChanged = Signal(Course)
+    courseChanged = pyqtSignal(Course)
 
     def __init__(self, parent=None):
         super().__init__(parent)

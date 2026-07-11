@@ -1,3 +1,4 @@
+{% set asset_version = version.asset_version or version.commit_short %}
 <!DOCTYPE html>
 <html lang="{{seo.html_lang}}">
 
@@ -35,13 +36,13 @@
 	<link rel="icon" href="{{config.assets_baseurl}}img/favicon-32.png" type="image/png" sizes="32x32">
 	<link rel="icon" href="{{config.assets_baseurl}}img/favicon-16.png" type="image/png" sizes="16x16">
 	<link rel="apple-touch-icon" href="{{config.assets_baseurl}}img/apple-touch-icon.png">
-	<link rel="manifest" href="{{config.basedir}}manifest.json">
+	<link rel="manifest" href="{{config.basedir}}manifest.json?{{asset_version}}">
 
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap">
 
-	<link rel="stylesheet" href="{{config.basedir}}src/css/loader.css?{{version.commit_short}}">
+	<link rel="stylesheet" href="{{config.basedir}}src/css/loader.css?{{asset_version}}">
 
 	<script type="application/ld+json">
 	{
@@ -57,10 +58,10 @@
 	}
 	</script>
 
-	<script src="{{config.basedir}}src/js/assets.js?{{version.commit_short}}"></script>
-	<script src="{{config.basedir}}src/js/strings.js?{{version.commit_short}}"></script>
-	<script src="{{config.basedir}}src/js/pageevents.js?{{version.commit_short}}"></script>
-	<script src="{{config.basedir}}src/js/loader.js?{{version.commit_short}}"></script>
+	<script src="{{config.basedir}}src/js/assets.js?{{asset_version}}"></script>
+	<script src="{{config.basedir}}src/js/strings.js?{{asset_version}}"></script>
+	<script src="{{config.basedir}}src/js/pageevents.js?{{asset_version}}"></script>
+	<script src="{{config.basedir}}src/js/loader.js?{{asset_version}}"></script>
 	<script src="{{config.basedir}}src/js/lib/jszip.js"></script>
 </head>
 
@@ -82,8 +83,8 @@
 			2.0.7</a>
 		{% endif %}
 	</div>
-	<script src="{{config.basedir}}src/js/browsersupport.js?{{version.commit_short}}"></script>
-	<script src="{{config.basedir}}src/js/main.js?{{version.commit_short}}"></script>
+	<script src="{{config.basedir}}src/js/browsersupport.js?{{asset_version}}"></script>
+	<script src="{{config.basedir}}src/js/main.js?{{asset_version}}"></script>
 	<noscript>
 		<div data-nosnippet id="unsupportedBrowser">
 			<div id="unsupportedWarn">!</div>

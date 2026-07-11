@@ -2,7 +2,10 @@ __pycache__/
 *.pyc
 .DS_Store
 .venv/
+.env
 .taiko-secret-key
+.admin_bootstrap.json
+flask_session/
 build/
 dist/
 

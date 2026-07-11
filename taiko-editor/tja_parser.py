@@ -25,7 +25,7 @@ COURSE_MAP = {
 def parse_tja(text: str) -> Song:
     """Parse TJA file text into a Song model."""
     song = Song()
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    lines = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
     current_course_name = "oni"
     current_course: Optional[Course] = None

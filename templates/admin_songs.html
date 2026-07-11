@@ -28,7 +28,7 @@
         {% for song in group.songs %}
             {% set song_title = song.title_lang.en if song.title_lang.en and song.title_lang.en != song.title else song.title %}
             {% if song.id is not none %}
-            <a href="{{config.basedir}}admin/songs/{{ song.id }}" class="song-row{% if not song.enabled %} is-disabled{% endif %}">
+            <a href="{{config.basedir}}admin/songs/{{ song.id }}" class="song-row{% if not song.enabled %} is-disabled{% elif not song.storage_available %} is-missing-storage{% endif %}">
             {% else %}
             <div class="song-row is-disabled">
             {% endif %}
@@ -42,7 +42,7 @@
                     {% endif %}
                 </span>
                 <span class="song-row-meta">
-                    {% if song.enabled %}Enabled{% else %}Hidden{% endif %}
+                    {% if not song.storage_available %}Missing files{% elif song.enabled %}Enabled{% else %}Hidden{% endif %}
                 </span>
             {% if song.id is not none %}
             </a>

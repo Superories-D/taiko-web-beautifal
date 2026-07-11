@@ -401,7 +401,10 @@ class BpmPanel(QWidget):
 class EditorWindow(QMainWindow):
     """主编辑器窗口"""
 
-    UPLOAD_URL = "https://taiko.asia/api/upload"
+    UPLOAD_URL = os.environ.get(
+        "TAIKO_EDITOR_UPLOAD_URL",
+        "https://taiko.asia/api/upload"
+    )
 
     def __init__(self):
         super().__init__()
@@ -1055,7 +1058,15 @@ class EditorWindow(QMainWindow):
                     'file_music': ('music.ogg', fm.read(), 'audio/ogg'),
                 }
                 data = {'song_type': song_type}
-                resp = requests.post(self.UPLOAD_URL, files=files, data=data, timeout=60)
+                token = os.environ.get('TAIKO_EDITOR_UPLOAD_TOKEN')
+                headers = {'Authorization': 'Bearer ' + token} if token else {}
+                resp = requests.post(
+                    self.UPLOAD_URL,
+                    files=files,
+                    data=data,
+                    headers=headers,
+                    timeout=60
+                )
             if resp.status_code < 200 or resp.status_code >= 300:
                 self._upload_signals.finished.emit(False, f'HTTP {resp.status_code}')
                 return

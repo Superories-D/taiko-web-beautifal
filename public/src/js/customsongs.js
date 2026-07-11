@@ -345,7 +345,7 @@ class CustomSongs{
 		this.locked = true
 		this.loading(true)
 		if(!gpicker){
-			var gpickerPromise = loader.loadScript("/src/js/gpicker.js").then(() => {
+			var gpickerPromise = loader.loadScript(gameConfig.basedir + "src/js/gpicker.js").then(() => {
 				gpicker = new Gpicker()
 			})
 		}else{

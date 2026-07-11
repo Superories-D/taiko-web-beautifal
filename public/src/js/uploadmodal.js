@@ -86,11 +86,17 @@ class UploadModal {
 		this.submitButton.disabled = true
 
 		try {
-			var response = await fetch("/api/user-upload", {
+			var csrfToken = await loader.getCsrfToken()
+			var controller = new AbortController()
+			var timeout = setTimeout(() => controller.abort(), 120000)
+			var response = await fetch("api/user-upload", {
 				method: "POST",
+				headers: {"X-CSRFToken": csrfToken},
+				signal: controller.signal,
 				body: new FormData(this.form)
 			})
 			var rawText = await response.text()
+			clearTimeout(timeout)
 			var data = {}
 			try {
 				data = rawText ? JSON.parse(rawText) : {}
@@ -105,10 +111,12 @@ class UploadModal {
 			this.populateTypes()
 			this.songSelect.playSound("se_don")
 		} catch (error) {
+			if (typeof timeout !== "undefined") clearTimeout(timeout)
 			this.status.textContent = "Upload failed."
 			this.error.textContent = String(error.message || error)
 			this.songSelect.playSound("se_cancel")
 		} finally {
+			if (typeof timeout !== "undefined") clearTimeout(timeout)
 			this.submitButton.disabled = false
 		}
 	}

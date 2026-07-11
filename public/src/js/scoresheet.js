@@ -992,17 +992,27 @@ class Scoresheet {
 		displayName = displayName.trim().slice(0, 20) || "Anonymous"
 		localStorage.setItem("leaderboardName", displayName)
 
-		fetch("api/leaderboard/submit", {
+		var controller = new AbortController()
+		var timeout = setTimeout(() => controller.abort(), 12000)
+		loader.getCsrfToken().then(token => fetch("api/leaderboard/submit", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			signal: controller.signal,
+			headers: {
+				"Content-Type": "application/json",
+				"X-CSRFToken": token
+			},
 			body: JSON.stringify({
 				hash: hash,
 				difficulty: difficulty,
 				score: score,
 				display_name: displayName
 			})
-		}).then(response => response.json())
+		})).then(response => {
+			if (!response.ok) throw new Error("HTTP " + response.status)
+			return response.json()
+		})
 			.then(data => {
+				if (data.status !== "ok") throw new Error(data.message || "submit_failed")
 				if (data.status === "ok") {
 					var rankMsg = ""
 					if (data.in_top_100) {
@@ -1012,7 +1022,12 @@ class Scoresheet {
 					}
 					alert(rankMsg)
 				}
-			}).catch(() => {})
+			}).catch(error => {
+				console.error("Leaderboard submit failed:", error)
+				alert(strings.errorOccured || "Submit failed")
+			}).finally(() => {
+				clearTimeout(timeout)
+			})
 	}
 
 	clean() {

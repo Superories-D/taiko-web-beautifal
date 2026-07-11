@@ -5,7 +5,7 @@ import pathlib
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 APP_ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(APP_ROOT) not in sys.path:
@@ -137,7 +137,7 @@ def reparse_song(song, songs_dir, source):
     update = {field: parsed.get(field) for field in PARSED_FIELDS}
     if parsed.get("dan_dojo"):
         update["dan_dojo"] = parsed["dan_dojo"]
-    update["reparsed_at"] = datetime.utcnow()
+    update["reparsed_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
     update["reparse_source"] = source
 
     for field in PRESERVED_FIELDS:

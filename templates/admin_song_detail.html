@@ -11,6 +11,9 @@
 {% for cat, message in get_flashed_messages(with_categories=true) %}
 <div class="message{% if cat %} message-{{cat}}{% endif %}">{{ message }}</div>
 {% endfor %}
+{% if not song.storage_available %}
+<div class="message message-error">This song is not public because its chart or audio file is missing.</div>
+{% endif %}
 <div class="admin-song-stats">
     <h2>Play statistics</h2>
     <div class="admin-stats-grid admin-stats-grid-compact">
@@ -124,9 +127,9 @@
         <div class="form-field">
             <p><label for="category_id">Category</label></p>
             <select name="category_id" id="category_id">
-                <option value="0">(none)</option>
+                <option value="">(none)</option>
                 {% for category in categories %}
-                    <option value="{{ category.id }}"{% if song.category_id == category.id %} selected{% endif %}>{{ category.title }}</option>
+                    <option value="{{ category.id }}"{% if song.category_id|string == category.id|string %} selected{% endif %}>{{ category.title }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -155,9 +158,9 @@
         <div class="form-field">
             <p><label for="skin_id">Skin</label></p>
             <select name="skin_id" id="skin_id">
-                <option value="0">(none)</option>
+                <option value="">(none)</option>
                 {% for skin in song_skins %}
-                    <option value="{{ skin.id }}"{% if song.skin_id == skin.id %} selected{% endif %}>{{ skin.name }}</option>
+                    <option value="{{ skin.id }}"{% if song.skin_id|string == skin.id|string %} selected{% endif %}>{{ skin.name }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -175,9 +178,9 @@
         <div class="form-field">
             <p><label for="maker_id">Maker</label></p>
             <select name="maker_id" id="maker_id">
-                <option value="0">(none)</option>
+                <option value="">(none)</option>
                 {% for maker in makers %}
-                    <option value="{{ maker.id }}"{% if song.maker_id == maker.id %} selected{% endif %}>{{ maker.name }}</option>
+                    <option value="{{ maker.id }}"{% if song.maker_id|string == maker.id|string %} selected{% endif %}>{{ maker.name }}</option>
                 {% endfor %}
             </select>
         </div>

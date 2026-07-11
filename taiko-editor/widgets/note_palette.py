@@ -1,14 +1,14 @@
 """
 Toolbar for selecting note types.
 """
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QToolButton, QButtonGroup
-from PySide6.QtGui import QIcon, QPainter, QColor
-from PySide6.QtCore import Qt, QSize, Signal
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QToolButton, QButtonGroup
+from PyQt5.QtGui import QIcon, QPainter, QColor
+from PyQt5.QtCore import Qt, QSize, pyqtSignal
 from models import NoteType
 
 
 class NotePalette(QWidget):
-    noteTypeChanged = Signal(NoteType)
+    noteTypeChanged = pyqtSignal(NoteType)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -53,7 +53,7 @@ class NotePalette(QWidget):
 
     def _create_icon(self, nt: NoteType) -> QIcon:
         # Draw simple colored circle on pixmap
-        from PySide6.QtGui import QPixmap
+        from PyQt5.QtGui import QPixmap
         pix = QPixmap(32, 32)
         pix.fill(Qt.transparent)
         painter = QPainter(pix)

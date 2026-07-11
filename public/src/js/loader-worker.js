@@ -152,9 +152,6 @@ async function readResponse(response, id, type, refreshTimeout, clearRequestTime
 	var total = Number(response.headers.get("content-length")) || 0
 	if(!response.body || !response.body.getReader){
 		var fallback
-		if(clearRequestTimeout){
-			clearRequestTimeout()
-		}
 		if(type === "arraybuffer"){
 			fallback = await response.arrayBuffer()
 		}else if(type === "blob"){
@@ -166,6 +163,11 @@ async function readResponse(response, id, type, refreshTimeout, clearRequestTime
 			throw createCancelError(response.url)
 		}
 		var loaded = fallback.byteLength || fallback.size || new TextEncoder().encode(fallback).byteLength
+		if(!loaded){
+			var emptyError = new Error("Empty response: " + response.url)
+			emptyError.code = "RESOURCE_EMPTY"
+			throw emptyError
+		}
 		self.postMessage({
 			id: id,
 			progress: true,
@@ -207,6 +209,11 @@ async function readResponse(response, id, type, refreshTimeout, clearRequestTime
 	}
 
 	var data
+	if(!loaded){
+		var emptyError = new Error("Empty response: " + response.url)
+		emptyError.code = "RESOURCE_EMPTY"
+		throw emptyError
+	}
 	if(type === "blob"){
 		data = new Blob(chunks, {
 			type: response.headers.get("content-type") || "application/octet-stream"

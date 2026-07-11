@@ -4,7 +4,7 @@ from typing import Dict, Optional
 
 class Tja:
     def __init__(self, text: str):
-        self.text = text
+        self.text = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
         self.title: Optional[str] = None
         self.subtitle: Optional[str] = None
         self.title_ja: Optional[str] = None
@@ -12,14 +12,24 @@ class Tja:
         self.wave: Optional[str] = None
         self.offset: Optional[float] = None
         self.courses: Dict[str, Dict[str, Optional[int]]] = {}
+        self.invalid_courses = []
+        self.invalid_numeric_fields = []
         self._parse()
 
     def _parse(self) -> None:
         lines = self.text.split("\n")
-        current_course: Optional[str] = None
+        current_course: Optional[str] = "oni"
         for raw in lines:
             line = raw.strip()
+            comment_index = line.find("//")
+            if comment_index >= 0 and not line.upper().startswith("MAKER:"):
+                line = line[:comment_index].strip()
             if not line:
+                continue
+            upper_line = line.upper()
+            if upper_line in ("#START", "#START P1"):
+                if current_course and current_course not in self.courses:
+                    self.courses[current_course] = {"stars": None, "branch": False}
                 continue
             if ":" in line:
                 k, v = line.split(":", 1)
@@ -30,9 +40,9 @@ class Tja:
                 elif key == "TITLEJA":
                     self.title_ja = val or None
                 elif key == "SUBTITLE":
-                    self.subtitle = val or None
+                    self.subtitle = val[2:] if val[:2] in ("--", "++") else val or None
                 elif key == "SUBTITLEJA":
-                    self.subtitle_ja = val or None
+                    self.subtitle_ja = val[2:] if val[:2] in ("--", "++") else val or None
                 elif key == "WAVE":
                     self.wave = val or None
                 elif key == "OFFSET":
@@ -40,18 +50,26 @@ class Tja:
                         self.offset = float(val)
                     except ValueError:
                         self.offset = None
+                        self.invalid_numeric_fields.append("OFFSET")
                 elif key == "COURSE":
                     course_map = {
                         "EASY": "easy",
+                        "0": "easy",
                         "NORMAL": "normal",
+                        "1": "normal",
                         "HARD": "hard",
+                        "2": "hard",
                         "ONI": "oni",
+                        "3": "oni",
                         "EDIT": "ura",
                         "URA": "ura",
+                        "4": "ura",
                         "DAN": "oni",
                         "TOWER": "oni",
                     }
                     current_course = course_map.get(val.strip().upper())
+                    if current_course is None:
+                        self.invalid_courses.append(val)
                     if current_course and current_course not in self.courses:
                         self.courses[current_course] = {"stars": None, "branch": False}
                 elif key == "LEVEL" and current_course:
@@ -59,6 +77,7 @@ class Tja:
                         stars = int(re.split(r"\s+", val)[0])
                     except ValueError:
                         stars = None
+                        self.invalid_numeric_fields.append("LEVEL")
                     self.courses[current_course]["stars"] = stars
             else:
                 if current_course and (line.startswith("BRANCHSTART") or line.startswith("#BRANCHSTART")):

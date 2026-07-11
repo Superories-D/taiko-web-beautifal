@@ -4,6 +4,22 @@
 
 https://git.20091128.xyz/AnthonyDuan/taiko-web-without-tjaf/src/branch/main/
 
+## Production security settings
+
+Keep these values in the deployment environment or the ignored `.env` file, not in Git:
+
+```bash
+TAIKO_WEB_SECRET_KEY=<at-least-32-random-characters>
+TAIKO_WEB_SITE_ORIGIN=https://taiko.asia
+TAIKO_WEB_SESSION_COOKIE_SECURE=1
+TAIKO_WEB_UPLOAD_TOKEN=<random-bearer-token>
+```
+
+`TAIKO_WEB_UPLOAD_TOKEN` authorizes the privileged `/api/upload` endpoint used by
+the desktop editor. Set the same value as `TAIKO_EDITOR_UPLOAD_TOKEN` on the
+editor machine. The public `/api/user-upload` endpoint remains rate limited and
+uses a browser CSRF token.
+
 ## 功能概述
 
 - 移除了对 `tjaf` 外部库的依赖，改用项目内置 TJA 解析实现（`tjaf.py`）

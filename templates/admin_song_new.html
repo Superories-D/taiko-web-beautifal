@@ -66,7 +66,7 @@
         <div class="form-field">
             <p><label for="category_id">Category</label></p>
             <select name="category_id" id="category_id">
-                <option value="0">(none)</option>
+                <option value="">(none)</option>
                 {% for category in categories %}
                     <option value="{{ category.id }}">{{ category.title }}</option>
                 {% endfor %}
@@ -97,7 +97,7 @@
         <div class="form-field">
             <p><label for="skin_id">Skin</label></p>
             <select name="skin_id" id="skin_id">
-                <option value="0">(none)</option>
+                <option value="">(none)</option>
                 {% for skin in song_skins %}
                     <option value="{{ skin.id }}">{{ skin.name }}</option>
                 {% endfor %}
@@ -117,7 +117,7 @@
         <div class="form-field">
             <p><label for="maker_id">Maker</label></p>
             <select name="maker_id" id="maker_id">
-                <option value="0">(none)</option>
+                <option value="">(none)</option>
                 {% for maker in makers %}
                     <option value="{{ maker.id }}">{{ maker.name }}</option>
                 {% endfor %}

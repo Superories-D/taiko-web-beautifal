@@ -1,7 +1,7 @@
 """
 Properties inspector panel.
 """
-from PySide6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QGroupBox, QFormLayout, 
     QSpinBox
 )

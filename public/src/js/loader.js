@@ -1306,16 +1306,24 @@ class Loader{
 	}
 	recordVisit(){
 		try{
-			fetch("api/visits/record", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json"
-				},
-				body: JSON.stringify({
-					visitor_id: this.getVisitorId()
-				}),
-				keepalive: true
-			}).catch(() => {})
+			fetch("api/csrftoken", {cache: "no-store"})
+				.then(response => {
+					if(!response.ok) throw new Error("HTTP " + response.status)
+					return response.json()
+				})
+				.then(data => {
+					if(data.status !== "ok" || !data.token) throw new Error("invalid_csrf")
+					return fetch("api/visits/record", {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							"X-CSRFToken": data.token
+						},
+						body: JSON.stringify({visitor_id: this.getVisitorId()}),
+						keepalive: true
+					})
+				})
+				.catch(() => {})
 		}catch(e){}
 	}
 	run(){
@@ -1333,7 +1341,8 @@ class Loader{
 		this.loaderRetry = document.querySelector("#loader .loader-retry")
 		this.startDownloadSpeedMeter()
 		
-		this.queryString = gameConfig._version.commit_short ? "?" + gameConfig._version.commit_short : ""
+		var assetVersion = gameConfig._version.asset_version || gameConfig._version.commit_short
+		this.queryString = assetVersion ? "?" + encodeURIComponent(assetVersion) : ""
 		this.recordVisit()
 		
 		if(gameConfig.custom_js){

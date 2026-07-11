@@ -4,6 +4,7 @@ class Search{
 	}
 	init(songSelect){
 		this.songSelect = songSelect
+		this.touchEnabled = !!songSelect.touchEnabled
 		this.opened = false
 		this.enabled = true
 		this.filterAliases = {
@@ -678,9 +679,12 @@ class Search{
 	}
 	
 	onClick(e){
-		if((e.target.id === "song-search-container" || e.target.id === "song-search-close") && e.which === 1){
+		var primary = e.type === "touchstart" || e.which === 1
+		if((e.target.id === "song-search-container" || e.target.id === "song-search-close") && primary){
+			e.preventDefault()
 			this.remove(true)
-		}else if(e.which === 1){
+		}else if(primary){
+			e.preventDefault()
 			var songEl = e.target.closest(".song-search-result")
 			if(songEl){
 				var songId = songEl.dataset.songId

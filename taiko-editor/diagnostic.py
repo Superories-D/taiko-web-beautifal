@@ -8,16 +8,15 @@ print(f"Platform: {sys.platform}")
 print(f"CWD: {os.getcwd()}")
 
 try:
-    import PySide6
-    print(f"PySide6 Version: {PySide6.__version__}")
-    print(f"PySide6 Location: {os.path.dirname(PySide6.__file__)}")
+    import PyQt5
+    print(f"PyQt5 Location: {os.path.dirname(PyQt5.__file__)}")
 except ImportError as e:
-    print(f"CRITICAL: PySide6 package import failed: {e}")
+    print(f"CRITICAL: PyQt5 package import failed: {e}")
 
 print("-" * 20)
 
 try:
-    from PySide6 import QtCore
+    from PyQt5 import QtCore
     print("SUCCESS: QtCore imported")
 except ImportError as e:
     print(f"FAILURE: QtCore import failed: {e}")
@@ -27,7 +26,7 @@ except ImportError as e:
 print("-" * 20)
 
 try:
-    from PySide6 import QtWidgets
+    from PyQt5 import QtWidgets
     print("SUCCESS: QtWidgets imported")
 except ImportError as e:
     print(f"FAILURE: QtWidgets import failed: {e}")

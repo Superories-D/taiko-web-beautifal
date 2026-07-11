@@ -1,11 +1,10 @@
 """
 Metdata editor panel.
 """
-from PySide6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QFormLayout, QLineEdit, 
     QDoubleSpinBox, QGroupBox, QLabel
 )
-from PySide6.QtCore import Signal
 from models import Song
 
 

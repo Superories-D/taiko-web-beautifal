@@ -60,6 +60,14 @@
         <strong>{{ stats.enabled_song_count }}</strong>
     </div>
     <div class="admin-stat-card">
+        <span>Playable songs</span>
+        <strong>{{ stats.playable_song_count }}</strong>
+    </div>
+    <div class="admin-stat-card{% if stats.missing_song_file_count %} has-error{% endif %}">
+        <span>Missing files</span>
+        <strong>{{ stats.missing_song_file_count }}</strong>
+    </div>
+    <div class="admin-stat-card">
         <span>Users</span>
         <strong>{{ stats.user_count }}</strong>
     </div>

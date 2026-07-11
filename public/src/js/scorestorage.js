@@ -282,6 +282,14 @@ class ScoreStorage{
 					if(request.status !== 200){
 						return Promise.reject()
 					}
+					try{
+						var data = JSON.parse(request.responseText)
+					}catch(error){
+						return Promise.reject(error)
+					}
+					if(data.status !== "ok"){
+						return Promise.reject(new Error(data.message || "score_save_failed"))
+					}
 				}).catch(() => {
 					if(retry){
 						this.scoreSaveFailed = true

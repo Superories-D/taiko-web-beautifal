@@ -204,6 +204,7 @@
 		const initialPosts = {{ posts|tojson }}
 		const apiUrl = "{{config.basedir}}api/board/posts"
 		const homeUrl = "{{config.basedir}}"
+		const csrfToken = {{ csrf_token()|tojson }}
 		const postsEl = document.getElementById("posts")
 		const form = document.getElementById("board-form")
 		const nameInput = document.getElementById("name")
@@ -409,6 +410,7 @@
 			refresh.disabled = true
 			try {
 				const response = await fetch(apiUrl)
+				if (!response.ok) throw new Error("load_failed")
 				const data = await response.json()
 				if (data.status !== "ok") throw new Error(data.message || "load_failed")
 				renderPosts(data.posts)
@@ -427,12 +429,16 @@
 			try {
 				const response = await fetch(apiUrl, {
 					method: "POST",
-					headers: {"Content-Type": "application/json"},
+					headers: {
+						"Content-Type": "application/json",
+						"X-CSRFToken": csrfToken
+					},
 					body: JSON.stringify({
 						name: nameInput.value,
 						message: messageInput.value
 					})
 				})
+				if (!response.ok) throw new Error("submit_failed")
 				const data = await response.json()
 				if (data.status !== "ok") {
 					throw new Error(data.message || "submit_failed")

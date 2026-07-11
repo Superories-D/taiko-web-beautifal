@@ -514,6 +514,14 @@ h2 {
     font-size: 32px;
 }
 
+.admin-stat-card.has-error {
+    border-color: #b42318;
+}
+
+.admin-stat-card.has-error strong {
+    color: #b42318;
+}
+
 .admin-table {
     background: var(--admin-panel);
     color: var(--admin-text);
@@ -726,6 +734,14 @@ h2 {
 .song-row.is-disabled {
     color: var(--admin-muted);
     background: #fafafa;
+}
+
+.song-row.is-missing-storage {
+    background: #fff1ef;
+}
+
+.song-row.is-missing-storage .song-row-meta {
+    color: #b42318;
 }
 
 .song-row-id {

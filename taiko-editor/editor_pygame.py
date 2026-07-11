@@ -1,6 +1,6 @@
 """
 Main Editor Application (Pygame Version).
-Replaces the PySide6 implementation.
+Alternative to the PyQt5 implementation.
 """
 import sys
 import os

@@ -17,10 +17,11 @@ import secrets
 import os
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pathlib
 import shutil
+from urllib.parse import quote, urlsplit
 from flask_limiter import Limiter
 
 import flask
@@ -29,13 +30,14 @@ import tjaf
 # ----
 
 from functools import wraps
-from flask import Flask, g, jsonify, render_template, request, abort, redirect, session, flash, make_response, send_from_directory
+from flask import Flask, jsonify, render_template, request, abort, redirect, session, flash, make_response, send_from_directory
 from flask_caching import Cache
 from flask_session import Session
 from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError
-from ffmpy import FFmpeg
+from cachelib.file import FileSystemCache
+from ffmpy import FFmpeg, FFRuntimeError
 from bson import ObjectId
-from pymongo import MongoClient, UpdateOne
+from pymongo import MongoClient, ReturnDocument, UpdateOne
 from pymongo.errors import DuplicateKeyError, PyMongoError
 from redis import Redis
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -43,6 +45,13 @@ from werkzeug.utils import secure_filename
 
 
 APP_ROOT = pathlib.Path(__file__).resolve().parent
+PUBLIC_DIR = APP_ROOT / 'public'
+FRONTEND_ASSET_VERSION = os.environ.get('TAIKO_WEB_ASSET_VERSION', '20260711.1')
+
+
+def utc_now():
+    """Return a naive UTC datetime for MongoDB compatibility."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def path_from_env(name, default):
@@ -74,6 +83,41 @@ def env_int(name, default):
         return int(os.environ.get(name, default))
     except (TypeError, ValueError):
         return default
+
+
+def normalize_basedir(value):
+    value = str(value or '/').strip().replace('\\', '/')
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        raise ValueError('BASEDIR must be a URL path without a host, query, or fragment')
+    parts = [part for part in parsed.path.split('/') if part]
+    if any(part in ('.', '..') for part in parts):
+        raise ValueError('BASEDIR cannot contain relative path segments')
+    return '/' if not parts else '/{}/'.format('/'.join(parts))
+
+
+def normalize_site_origin(value):
+    value = str(value or '').strip().rstrip('/')
+    if not value:
+        return ''
+    parsed = urlsplit(value)
+    if parsed.scheme not in ('http', 'https') or not parsed.netloc:
+        raise ValueError('TAIKO_WEB_SITE_ORIGIN must be an http(s) origin')
+    if parsed.path not in ('', '/') or parsed.query or parsed.fragment:
+        raise ValueError('TAIKO_WEB_SITE_ORIGIN cannot contain a path, query, or fragment')
+    return '{}://{}'.format(parsed.scheme, parsed.netloc)
+
+
+def redis_uri_from_config(redis_options):
+    host = str(redis_options.get('CACHE_REDIS_HOST') or '127.0.0.1')
+    if ':' in host and not host.startswith('['):
+        host = '[{}]'.format(host)
+    port = int(redis_options.get('CACHE_REDIS_PORT') or 6379)
+    database = redis_options.get('CACHE_REDIS_DB')
+    database = 0 if database is None else int(database)
+    password = redis_options.get('CACHE_REDIS_PASSWORD')
+    credentials = ':{}@'.format(quote(str(password), safe='')) if password else ''
+    return 'redis://{}{}:{}/{}'.format(credentials, host, port, database)
 
 
 def load_or_create_secret_key():
@@ -154,11 +198,9 @@ CUSTOM_CATEGORY = {
 
 redis_config = dict(take_config('REDIS', required=True))
 redis_config['CACHE_REDIS_HOST'] = os.environ.get("TAIKO_WEB_REDIS_HOST") or redis_config['CACHE_REDIS_HOST']
-redis_client = Redis(
-    host=redis_config['CACHE_REDIS_HOST'],
-    port=redis_config['CACHE_REDIS_PORT'],
-    password=redis_config['CACHE_REDIS_PASSWORD'],
-    db=redis_config['CACHE_REDIS_DB'],
+redis_uri = os.environ.get('REDIS_URI') or redis_uri_from_config(redis_config)
+redis_client = Redis.from_url(
+    redis_uri,
     socket_connect_timeout=1,
     socket_timeout=1
 )
@@ -167,12 +209,7 @@ try:
     redis_available = True
 except Exception:
     redis_available = False
-redis_db = redis_config['CACHE_REDIS_DB'] if redis_config['CACHE_REDIS_DB'] is not None else 0
-limiter_storage_uri = os.environ.get("REDIS_URI") or (
-    "redis://{}:{}/{}".format(redis_config['CACHE_REDIS_HOST'], redis_config['CACHE_REDIS_PORT'], redis_db)
-    if redis_available else
-    "memory://"
-)
+limiter_storage_uri = redis_uri if redis_available else "memory://"
 
 # Only these reverse proxies may supply the client IP used for rate limiting.
 CLOUDFLARE_PROXY_NETWORKS = tuple(
@@ -224,8 +261,14 @@ limiter = Limiter(
     strategy="fixed-window", # or "moving-window"
 )
 
-client = MongoClient(host=os.environ.get("TAIKO_WEB_MONGO_HOST") or take_config('MONGO', required=True)['host'])
-basedir = take_config('BASEDIR') or '/'
+mongo_config = take_config('MONGO', required=True)
+client = MongoClient(host=os.environ.get("TAIKO_WEB_MONGO_HOST") or mongo_config['host'])
+basedir = normalize_basedir(
+    os.environ.get('TAIKO_WEB_BASEDIR') or take_config('BASEDIR') or '/'
+)
+site_origin = normalize_site_origin(
+    os.environ.get('TAIKO_WEB_SITE_ORIGIN') or take_config('SITE_ORIGIN')
+)
 SEO_DEFAULT_LANG = 'ja'
 SEO_LANGUAGES = {
     'ja': {
@@ -276,13 +319,22 @@ SEO_LANG_ALIASES = {
 }
 
 app.secret_key = load_or_create_secret_key()
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = env_flag('TAIKO_WEB_SESSION_COOKIE_SECURE', False)
 if redis_available:
     app.config['SESSION_TYPE'] = 'redis'
     app.config['SESSION_REDIS'] = redis_client
-    app.cache = Cache(app, config=redis_config)
+    app.cache = Cache(app, config={
+        'CACHE_TYPE': 'RedisCache',
+        'CACHE_REDIS_URL': redis_uri
+    })
 else:
-    app.config['SESSION_TYPE'] = 'filesystem'
-    app.config['SESSION_FILE_DIR'] = str(APP_ROOT / 'flask_session')
+    app.config['SESSION_TYPE'] = 'cachelib'
+    app.config['SESSION_CACHELIB'] = FileSystemCache(
+        cache_dir=str(APP_ROOT / 'flask_session'),
+        threshold=500
+    )
     app.cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache'})
 sess = Session()
 sess.init_app(app)
@@ -290,14 +342,64 @@ app.jinja_env.globals.setdefault('csrf_token', generate_csrf)
 app.config['WTF_CSRF_CHECK_DEFAULT'] = False
 csrf = CSRFProtect(app)
 
-db = client[take_config('MONGO', required=True)['database']]
-db.users.create_index('username', unique=True)
+db = client[os.environ.get('TAIKO_WEB_MONGO_DATABASE') or mongo_config['database']]
+
+
+def create_index_safely(collection, keys, **kwargs):
+    try:
+        return collection.create_index(keys, **kwargs)
+    except PyMongoError as error:
+        app.logger.warning(
+            'Could not create MongoDB index on %s (%s): %s',
+            collection.name,
+            keys,
+            error
+        )
+        return None
+
+
+def drop_legacy_unique_index(collection, expected_keys):
+    try:
+        for name, details in collection.index_information().items():
+            if details.get('key') == expected_keys and details.get('unique'):
+                collection.drop_index(name)
+    except PyMongoError as error:
+        app.logger.warning(
+            'Could not replace legacy MongoDB index on %s: %s',
+            collection.name,
+            error
+        )
+
+
+create_index_safely(db.users, 'username', unique=True)
+create_index_safely(
+    db.users,
+    'username_lower',
+    unique=True,
+    partialFilterExpression={'username_lower': {'$type': 'string'}}
+)
 db.songs.create_index('id', unique=True)
 db.songs.create_index('hash')
+create_index_safely(
+    db.songs,
+    'hash',
+    unique=True,
+    partialFilterExpression={'hash': {'$type': 'string', '$gt': ''}},
+    name='song_hash_unique'
+)
 db.songs.create_index('title')
 db.songs.create_index('song_type')
 db.scores.create_index('username')
-db.scores.create_index([('username', 1), ('hash', 1)])
+create_index_safely(
+    db.scores,
+    [('username', 1), ('hash', 1)],
+    unique=True,
+    partialFilterExpression={
+        'username': {'$type': 'string'},
+        'hash': {'$type': 'string'}
+    },
+    name='score_username_hash_unique'
+)
 db.play_records.create_index('song_hash')
 db.play_records.create_index('played_at')
 db.play_records.create_index([('song_hash', 1), ('played_at', -1)])
@@ -309,12 +411,48 @@ db.leaderboard.create_index('username')
 db.site_messages.create_index([('active', 1), ('created_at', -1)])
 db.site_message_reads.create_index([('username', 1), ('message_id', 1)], unique=True)
 db.site_message_reads.create_index('message_id')
-db.weekly_challenges.create_index('challenge_id', unique=True)
-db.weekly_challenges.create_index('date_key', unique=True)
-db.weekly_challenges.create_index('week_key')
-db.weekly_challenge_scores.create_index([('week_key', 1), ('username', 1)], unique=True)
-db.weekly_challenge_scores.create_index([('week_key', 1), ('score_value', -1), ('updated_at', 1)])
+drop_legacy_unique_index(db.weekly_challenges, [('date_key', 1)])
+drop_legacy_unique_index(
+    db.weekly_challenge_scores,
+    [('week_key', 1), ('username', 1)]
+)
+create_index_safely(
+    db.weekly_challenges,
+    'challenge_id',
+    unique=True,
+    partialFilterExpression={'challenge_id': {'$type': 'string'}}
+)
+create_index_safely(db.weekly_challenges, 'date_key')
+create_index_safely(db.weekly_challenges, 'week_key')
+create_index_safely(
+    db.weekly_challenges,
+    [('week_key', 1), ('canonical', 1)],
+    unique=True,
+    partialFilterExpression={'canonical': True},
+    name='canonical_week_key_unique'
+)
+create_index_safely(
+    db.weekly_challenge_scores,
+    [('challenge_id', 1), ('username', 1)],
+    unique=True,
+    partialFilterExpression={
+        'challenge_id': {'$type': 'string'},
+        'username': {'$type': 'string'}
+    },
+    name='challenge_username_unique'
+)
+create_index_safely(
+    db.weekly_challenge_scores,
+    [('challenge_id', 1), ('score_value', -1), ('updated_at', 1)]
+)
 db.weekly_challenge_scores.create_index('week_start')
+create_index_safely(
+    db.seq,
+    'name',
+    unique=True,
+    partialFilterExpression={'name': {'$type': 'string'}}
+)
+db.board_posts.create_index([('created_at', -1)])
 
 VISIT_RETENTION_DAYS = 400
 VISIT_RETENTION_SECONDS = VISIT_RETENTION_DAYS * 24 * 60 * 60
@@ -327,7 +465,7 @@ ADMIN_STATS_MAX_TIME_MS = max(500, env_int('TAIKO_WEB_ADMIN_STATS_MAX_TIME_MS', 
 TOP_SONGS_CACHE_KEY = 'public_top_songs'
 TOP_SONGS_REFRESH_LOCK_KEY = 'public_top_songs_refresh_lock'
 TOP_SONGS_BACKFILL_KEY = 'song_play_counts_backfilled'
-TOP_SONGS_CACHE_SCHEMA_VERSION = 2
+TOP_SONGS_CACHE_SCHEMA_VERSION = 3
 TOP_SONGS_CACHE_DAYS = max(1, env_int('TAIKO_WEB_TOP_SONGS_CACHE_DAYS', 1))
 TOP_SONGS_CACHE_MAX_ROWS = max(10, min(env_int('TAIKO_WEB_TOP_SONGS_CACHE_ROWS', 50), 200))
 TOP_SONGS_REFRESH_LOCK_SECONDS = max(60, env_int('TAIKO_WEB_TOP_SONGS_REFRESH_LOCK_SECONDS', 900))
@@ -430,6 +568,36 @@ def is_allowed_site_message_image(filename):
     return pathlib.Path(filename or '').suffix.lower() in SITE_MESSAGE_IMAGE_EXTENSIONS
 
 
+def site_message_image_signature_matches(data, suffix):
+    if suffix in ('.jpg', '.jpeg'):
+        return data.startswith(b'\xff\xd8\xff')
+    if suffix == '.png':
+        return data.startswith(b'\x89PNG\r\n\x1a\n')
+    if suffix == '.gif':
+        return data.startswith((b'GIF87a', b'GIF89a'))
+    if suffix == '.webp':
+        return len(data) >= 12 and data.startswith(b'RIFF') and data[8:12] == b'WEBP'
+    return False
+
+
+def local_site_message_image_path(image_url):
+    prefix = site_path('notice_uploads/')
+    if not isinstance(image_url, str) or not image_url.startswith(prefix):
+        return None
+    filename = image_url[len(prefix):]
+    if not re.fullmatch(r'[a-f0-9]{32}\.(?:jpg|jpeg|png|gif|webp)', filename):
+        return None
+    root = NOTICE_UPLOADS_DIR.resolve()
+    path = (root / filename).resolve()
+    return path if path.parent == root else None
+
+
+def remove_site_message_image(image_url):
+    path = local_site_message_image_path(image_url)
+    if path:
+        path.unlink(missing_ok=True)
+
+
 def save_site_message_image(upload):
     if not upload or not upload.filename:
         return None
@@ -438,21 +606,32 @@ def save_site_message_image(upload):
     if not filename or not is_allowed_site_message_image(filename):
         raise ValueError('Unsupported image type. Please upload jpg, png, gif, or webp.')
 
-    upload.stream.seek(0, os.SEEK_END)
-    size = upload.stream.tell()
-    upload.stream.seek(0)
-    if size > SITE_MESSAGE_MAX_IMAGE_BYTES:
+    data = upload.stream.read(SITE_MESSAGE_MAX_IMAGE_BYTES + 1)
+    if not data:
+        raise ValueError('Image is empty.')
+    if len(data) > SITE_MESSAGE_MAX_IMAGE_BYTES:
         raise ValueError('Image is too large. Please keep it under 5 MB.')
 
     NOTICE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     suffix = pathlib.Path(filename).suffix.lower()
+    if not site_message_image_signature_matches(data, suffix):
+        raise ValueError('Image content does not match its file extension.')
     stored_name = '{}{}'.format(uuid.uuid4().hex, suffix)
-    upload.save(str(NOTICE_UPLOADS_DIR / stored_name))
+    target = NOTICE_UPLOADS_DIR / stored_name
+    temporary = NOTICE_UPLOADS_DIR / '.notice-{}.tmp'.format(uuid.uuid4().hex)
+    try:
+        with temporary.open('xb') as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
     return site_path('notice_uploads/{}'.format(stored_name))
 
 
 def utc_period_starts(now=None):
-    now = now or datetime.utcnow()
+    now = now or utc_now()
     return {
         'hour': now - timedelta(hours=1),
         'day': now.replace(hour=0, minute=0, second=0, microsecond=0),
@@ -525,7 +704,7 @@ def top_songs_cache_stale(cache_doc, now=None):
     updated_at = cache_doc.get('updated_at')
     if not isinstance(rows, list) or not updated_at:
         return True
-    now = now or datetime.utcnow()
+    now = now or utc_now()
     return updated_at <= now - timedelta(days=TOP_SONGS_CACHE_DAYS)
 
 
@@ -534,7 +713,7 @@ def get_top_songs_cache_doc():
 
 
 def acquire_top_songs_refresh_lock():
-    now = datetime.utcnow()
+    now = utc_now()
     token = uuid.uuid4().hex
     lock_until = now + timedelta(seconds=TOP_SONGS_REFRESH_LOCK_SECONDS)
     try:
@@ -569,7 +748,7 @@ def release_top_songs_refresh_lock(token):
 
 
 def top_songs_refreshing(now=None):
-    now = now or datetime.utcnow()
+    now = now or utc_now()
     lock = db.top_song_cache.find_one({'_id': TOP_SONGS_REFRESH_LOCK_KEY}) or {}
     return bool(lock.get('locked_until') and lock.get('locked_until') > now)
 
@@ -591,7 +770,7 @@ def mark_song_play_counts_backfilled(status):
         {'_id': TOP_SONGS_BACKFILL_KEY},
         {'$set': {
             'status': status,
-            'updated_at': datetime.utcnow()
+            'updated_at': utc_now()
         }},
         upsert=True
     )
@@ -670,14 +849,15 @@ def find_enabled_song_by_identity(song_hash):
     numeric_id = safe_int_value(song_hash)
     if numeric_id is not None:
         song_ids.append(numeric_id)
-    return db.songs.find_one({
+    song = db.songs.find_one({
         'enabled': True,
         '$or': [
             {'hash': song_hash},
             {'id': {'$in': song_ids}},
             {'title': song_hash}
         ]
-    }, {'_id': True})
+    })
+    return song if song and public_song_files_available(song) else None
 
 
 def build_public_top_songs_cache_rows(limit=TOP_SONGS_CACHE_MAX_ROWS):
@@ -711,7 +891,10 @@ def build_public_top_songs_cache_rows(limit=TOP_SONGS_CACHE_MAX_ROWS):
             'subtitle': True,
             'subtitle_lang': True,
             'category_id': True,
-            'song_type': True
+            'song_type': True,
+            'type': True,
+            'music_type': True,
+            'courses': True
         }
     ))
     identity_maps = build_song_identity_maps(songs)
@@ -720,7 +903,7 @@ def build_public_top_songs_cache_rows(limit=TOP_SONGS_CACHE_MAX_ROWS):
     for item in count_docs:
         song_hash = item.get('song_hash')
         song = resolve_song_identity(song_hash, identity_maps)
-        if not song:
+        if not song or not public_song_files_available(song):
             continue
 
         rows.append({
@@ -762,7 +945,7 @@ def refresh_top_songs_cache(force=False, requested_by=None, allow_backfill=True)
         elif not song_play_counts_backfill_done():
             if play_records_exist():
                 if song_play_counts_empty():
-                    now = datetime.utcnow()
+                    now = utc_now()
                     rows = cache_doc.get('rows') if isinstance(cache_doc.get('rows'), list) else []
                     db.top_song_cache.update_one(
                         {'_id': TOP_SONGS_CACHE_KEY},
@@ -783,7 +966,7 @@ def refresh_top_songs_cache(force=False, requested_by=None, allow_backfill=True)
                 mark_song_play_counts_backfilled('empty')
 
         rows = build_public_top_songs_cache_rows(TOP_SONGS_CACHE_MAX_ROWS)
-        now = datetime.utcnow()
+        now = utc_now()
         refresh_ms = int((time.monotonic() - started) * 1000)
         db.top_song_cache.update_one(
             {'_id': TOP_SONGS_CACHE_KEY},
@@ -808,7 +991,7 @@ def refresh_top_songs_cache(force=False, requested_by=None, allow_backfill=True)
             'backfill_status': backfill_status
         }
     except PyMongoError as exc:
-        now = datetime.utcnow()
+        now = utc_now()
         message = str(exc)[:240]
         db.top_song_cache.update_one(
             {'_id': TOP_SONGS_CACHE_KEY},
@@ -863,7 +1046,7 @@ def record_song_play_count(song_hash, played_at):
         if result.upserted_id is not None:
             mark_top_songs_cache_stale()
     except PyMongoError:
-        pass
+        app.logger.exception('Failed to update aggregate play count for %s', song_hash)
 
 
 def get_public_songs_cache_version():
@@ -878,7 +1061,7 @@ def mark_top_songs_cache_stale():
     cache_doc = get_top_songs_cache_doc()
     if not cache_doc:
         return
-    stale_at = datetime.utcnow() - timedelta(days=TOP_SONGS_CACHE_DAYS + 1)
+    stale_at = utc_now() - timedelta(days=TOP_SONGS_CACHE_DAYS + 1)
     db.top_song_cache.update_one(
         {'_id': TOP_SONGS_CACHE_KEY},
         {'$set': {
@@ -999,9 +1182,18 @@ def get_public_top_songs(limit=10):
 
 def get_admin_overview_stats():
     periods = utc_period_starts()
+    enabled_songs = list(db.songs.find(
+        {'enabled': True},
+        {'id': True, 'type': True, 'music_type': True, 'courses': True}
+    ))
+    playable_song_count = sum(
+        1 for song in enabled_songs if public_song_files_available(song)
+    )
     return {
         'song_count': db.songs.count_documents({}),
-        'enabled_song_count': db.songs.count_documents({'enabled': True}),
+        'enabled_song_count': len(enabled_songs),
+        'playable_song_count': playable_song_count,
+        'missing_song_file_count': len(enabled_songs) - playable_song_count,
         'user_count': db.users.count_documents({}),
         'message_count': db.site_messages.count_documents({}),
         'play_counts': total_period_counts(db.play_records, 'played_at', periods),
@@ -1102,7 +1294,7 @@ def board_post_is_allowed(post):
 
 
 def board_cutoff():
-    return datetime.utcnow() - timedelta(days=BOARD_RETENTION_DAYS)
+    return utc_now() - timedelta(days=BOARD_RETENTION_DAYS)
 
 
 def delete_old_board_posts():
@@ -1148,15 +1340,17 @@ def api_error(message):
 def generate_hash(id, form):
     md5 = hashlib.md5(usedforsecurity=False)
     if form.get('type') == 'tja':
-        urls = ['%s%s/main.tja' % (take_config('SONGS_BASEURL', required=True), id)]
+        chart_names = ['main.tja']
     else:
-        urls = []
+        chart_names = []
         for diff in ['easy', 'normal', 'hard', 'oni', 'ura']:
             if form.get('course_' + diff):
-                urls.append('%s%s/%s.osu' % (take_config('SONGS_BASEURL', required=True), id, diff))
+                chart_names.append('%s.osu' % diff)
 
-    for url in urls:
-        if url.startswith("http://") or url.startswith("https://"):
+    base_url = take_config('SONGS_BASEURL', required=True)
+    for chart_name in chart_names:
+        if base_url.startswith(("http://", "https://")):
+            url = '{}/{}/{}'.format(base_url.rstrip('/'), id, chart_name)
             try:
                 resp = requests.get(url, timeout=REMOTE_REQUEST_TIMEOUT)
             except requests.RequestException as exc:
@@ -1165,13 +1359,14 @@ def generate_hash(id, form):
                 raise HashException('Invalid response from %s (status code %s)' % (resp.url, resp.status_code))
             md5.update(resp.content)
         else:
-            if url.startswith(basedir):
-                url = url[len(basedir):]
-            path = os.path.normpath(os.path.join("public", url))
-            if not os.path.isfile(path):
-                raise HashException("File not found: %s" % (os.path.abspath(path)))
-            with open(path, "rb") as file:
-                md5.update(file.read())
+            try:
+                song_directory = song_storage_child(str(id))
+            except ValueError as error:
+                raise HashException('Invalid song path') from error
+            path = song_directory / chart_name
+            if not path.is_file():
+                raise HashException("File not found: %s" % path)
+            md5.update(path.read_bytes())
 
     return base64.b64encode(md5.digest())[:-2].decode('utf-8')
 
@@ -1222,12 +1417,61 @@ def handle_rate_limit(e):
     return e
 
 
+@app.after_request
+def add_security_headers(response):
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    response.headers.setdefault(
+        'Permissions-Policy',
+        'camera=(), geolocation=(), microphone=()'
+    )
+    endpoint = request.endpoint or ''
+    if (
+        endpoint == 'route_api_config' or
+        endpoint == 'route_csrftoken' or
+        endpoint == 'route_secret_admin_login' or
+        endpoint.startswith('route_api_account_') or
+        endpoint in {
+            'route_api_register',
+            'route_api_login',
+            'route_api_logout',
+            'route_api_scores_save',
+            'route_api_scores_get'
+        } or
+        endpoint.startswith('route_api_weekly_challenge_') or
+        endpoint.startswith('route_admin_')
+    ):
+        response.headers['Cache-Control'] = 'private, no-store'
+        response.headers['CDN-Cache-Control'] = 'no-store'
+        response.vary.add('Cookie')
+    return response
+
+
+def configured_upload_token():
+    return os.environ.get('TAIKO_WEB_UPLOAD_TOKEN') or take_config('UPLOAD_TOKEN') or ''
+
+
+def request_uses_upload_token():
+    configured = configured_upload_token()
+    authorization = request.headers.get('Authorization') or ''
+    scheme, separator, supplied = authorization.partition(' ')
+    return bool(
+        configured and
+        separator and
+        scheme.lower() == 'bearer' and
+        secrets.compare_digest(supplied.strip(), str(configured))
+    )
+
+
 @app.before_request
 def before_request_func():
     endpoint = request.endpoint or ''
     if (
         request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and
-        (endpoint == 'route_secret_admin_login' or endpoint.startswith('route_admin_'))
+        endpoint and not (
+            endpoint == 'api_upload_file' and request_uses_upload_token()
+        )
     ):
         csrf.protect()
 
@@ -1244,10 +1488,25 @@ def before_request_func():
 
 
 def get_config(credentials=False):
+    def resource_base(value, fallback):
+        value = str(value or fallback).strip()
+        if value.startswith(('http://', 'https://')):
+            return value.rstrip('/') + '/'
+        path = '/' + value.strip('/') + '/'
+        if basedir != '/' and not path.startswith(basedir):
+            path = basedir + path.lstrip('/')
+        return path
+
     config_out = {
         'basedir': basedir,
-        'songs_baseurl': take_config('SONGS_BASEURL', required=True),
-        'assets_baseurl': take_config('ASSETS_BASEURL', required=True),
+        'songs_baseurl': resource_base(
+            take_config('SONGS_BASEURL', required=True),
+            'songs'
+        ),
+        'assets_baseurl': resource_base(
+            take_config('ASSETS_BASEURL', required=True),
+            'assets'
+        ),
         'email': take_config('EMAIL'),
         'accounts': take_config('ACCOUNTS'),
         'custom_js': take_config('CUSTOM_JS'),
@@ -1259,13 +1518,9 @@ def get_config(credentials=False):
             'top_songs': FEATURE_TOP_SONGS
         }
     }
-    relative_urls = ['songs_baseurl', 'assets_baseurl']
-    for name in relative_urls:
-        if not config_out[name].startswith("/") and not config_out[name].startswith("http://") and not config_out[name].startswith("https://"):
-            config_out[name] = basedir + config_out[name]
     if credentials:
         google_credentials = take_config('GOOGLE_CREDENTIALS') or {}
-        min_level = google_credentials.get('min_level') or 0
+        min_level = max(50, safe_int_value(google_credentials.get('min_level'), 50))
         if not session.get('username'):
             user_level = 0
         else:
@@ -1278,20 +1533,23 @@ def get_config(credentials=False):
                 'gdrive_enabled': False
             }
 
-    if not config_out.get('songs_baseurl'):
-        config_out['songs_baseurl'] = ''.join([request.host_url, 'songs']) + '/'
-    if not config_out.get('assets_baseurl'):
-        config_out['assets_baseurl'] = ''.join([request.host_url, 'assets']) + '/'
-
     config_out['_version'] = get_version()
     return config_out
 
 def get_version():
-    version = {'commit': None, 'commit_short': '', 'version': None, 'url': take_config('URL')}
-    if os.path.isfile('version.json'):
+    version = {
+        'commit': None,
+        'commit_short': '',
+        'version': None,
+        'asset_version': FRONTEND_ASSET_VERSION,
+        'url': take_config('URL')
+    }
+    version_path = APP_ROOT / 'version.json'
+    if version_path.is_file():
         try:
-            ver = json.load(open('version.json', 'r'))
-        except ValueError:
+            with version_path.open('r', encoding='utf-8') as version_file:
+                ver = json.load(version_file)
+        except (OSError, ValueError):
             print('Invalid version.json file')
             return version
 
@@ -1312,7 +1570,8 @@ def localized_index_path(lang):
 
 
 def absolute_site_url(path):
-    return request.url_root.rstrip('/') + path
+    origin = site_origin or request.url_root.rstrip('/')
+    return origin + '/' + path.lstrip('/')
 
 
 def resolve_seo_lang(lang):
@@ -1358,6 +1617,41 @@ def get_user_display_name(user, fallback=None):
     if not user:
         return fallback or ''
     return user.get('display_name') or user.get('username') or fallback or ''
+
+
+def find_user_by_username(username):
+    username = str(username or '').strip()
+    if not username:
+        return None
+    username_lower = username.lower()
+    user = db.users.find_one({'username_lower': username_lower})
+    if user:
+        return user
+
+    user = db.users.find_one({
+        'username': re.compile(r'^{}$'.format(re.escape(username)), re.IGNORECASE)
+    })
+    if user and not user.get('username_lower'):
+        try:
+            db.users.update_one(
+                {
+                    '_id': user['_id'],
+                    '$or': [
+                        {'username_lower': {'$exists': False}},
+                        {'username_lower': None},
+                        {'username_lower': ''}
+                    ]
+                },
+                {'$set': {'username_lower': username_lower}}
+            )
+            user['username_lower'] = username_lower
+        except DuplicateKeyError:
+            app.logger.warning(
+                'Legacy username case conflict detected for account %s',
+                user.get('_id')
+            )
+            return None
+    return user
 
 
 def check_user_password(user, password):
@@ -1420,13 +1714,68 @@ def safe_float_value(value, default=None):
     if value in (None, ''):
         return default
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return default
+    return number if math.isfinite(number) else default
 
 
 def safe_lang_map(value):
     return value if isinstance(value, dict) else {}
+
+
+def songs_use_local_storage():
+    base_url = take_config('SONGS_BASEURL') or ''
+    return not base_url.startswith(('http://', 'https://'))
+
+
+def public_song_files_available(song):
+    if not songs_use_local_storage():
+        return True
+
+    song_id = song.get('id') if isinstance(song, dict) else None
+    if song_id in (None, ''):
+        return False
+
+    root = SONGS_DIR.resolve()
+    song_dir = (root / str(song_id)).resolve()
+    if song_dir.parent != root or not song_dir.is_dir():
+        return False
+
+    music_type = str(song.get('music_type') or 'mp3').lower()
+    if not re.fullmatch(r'[a-z0-9]+', music_type):
+        return False
+    if not (song_dir / 'main.{}'.format(music_type)).is_file():
+        return False
+
+    song_type = song.get('type') or 'tja'
+    if song_type == 'tja':
+        return (
+            (song_dir / 'main.tja').is_file() and
+            any(song_has_course(song, course) for course in ADMIN_COURSES)
+        )
+    if song_type == 'osu':
+        courses = song.get('courses') if isinstance(song.get('courses'), dict) else {}
+        chart_names = [
+            '{}.osu'.format(course)
+            for course in ADMIN_COURSES
+            if song_has_course(song, course)
+        ]
+        return bool(chart_names) and all((song_dir / name).is_file() for name in chart_names)
+    return False
+
+
+def song_has_course(song, difficulty):
+    if difficulty not in ADMIN_COURSES or not isinstance(song, dict):
+        return False
+    courses = song.get('courses')
+    if not isinstance(courses, dict):
+        return False
+    course = courses.get(difficulty)
+    if not isinstance(course, dict):
+        return False
+    stars = safe_int_value(course.get('stars'))
+    return stars is not None and 0 <= stars <= 10
 
 
 def normalize_song_courses(courses):
@@ -1452,6 +1801,129 @@ def form_float(name, default=None):
     return safe_float_value(request.form.get(name), default)
 
 
+def optional_form_int(name, errors):
+    raw = (request.form.get(name) or '').strip()
+    if raw == '':
+        return None
+    value = safe_int_value(raw)
+    if value is None:
+        errors.append('{} must be an integer'.format(name))
+    return value
+
+
+def required_form_float(name, minimum, maximum, errors):
+    raw = (request.form.get(name) or '').strip()
+    value = safe_float_value(raw)
+    if value is None or not minimum <= value <= maximum:
+        errors.append('{} must be between {} and {}'.format(name, minimum, maximum))
+        return None
+    return value
+
+
+def reference_exists(collection, value):
+    if value is None:
+        return True
+    candidates = [value, str(value)]
+    numeric = safe_int_value(value)
+    if numeric is not None:
+        candidates.append(numeric)
+    return bool(collection.find_one({'id': {'$in': list(dict.fromkeys(candidates))}}, {'_id': True}))
+
+
+def build_admin_song_form(song_id, existing=None, can_set_enabled=True):
+    existing = existing or {}
+    errors = []
+    output = {'title_lang': {}, 'subtitle_lang': {}, 'courses': {}}
+    output['enabled'] = (
+        bool(request.form.get('enabled'))
+        if can_set_enabled else bool(existing.get('enabled'))
+    )
+    output['title'] = (request.form.get('title') or '').strip()
+    output['subtitle'] = (request.form.get('subtitle') or '').strip()
+    if not output['title'] or len(output['title']) > 500:
+        errors.append('title is required and must not exceed 500 characters')
+    if len(output['subtitle']) > 500:
+        errors.append('subtitle must not exceed 500 characters')
+
+    for lang in ['ja', 'en', 'cn', 'tw', 'ko']:
+        title = (request.form.get('title_{}'.format(lang)) or '').strip()
+        subtitle = (request.form.get('subtitle_{}'.format(lang)) or '').strip()
+        if len(title) > 500 or len(subtitle) > 500:
+            errors.append('{} translation is too long'.format(lang))
+        output['title_lang'][lang] = title or None
+        output['subtitle_lang'][lang] = subtitle or None
+
+    for course in ADMIN_COURSES:
+        raw = (request.form.get('course_{}'.format(course)) or '').strip()
+        if raw == '':
+            output['courses'][course] = None
+            continue
+        stars = safe_int_value(raw)
+        if stars is None or not 0 <= stars <= 10:
+            errors.append('{} stars must be an integer from 0 to 10'.format(course))
+            output['courses'][course] = None
+            continue
+        output['courses'][course] = {
+            'stars': stars,
+            'branch': bool(request.form.get('branch_{}'.format(course)))
+        }
+    if not any(output['courses'].values()):
+        errors.append('at least one course is required')
+
+    output['category_id'] = optional_form_int('category_id', errors)
+    output['skin_id'] = optional_form_int('skin_id', errors)
+    output['maker_id'] = optional_form_int('maker_id', errors)
+    output['type'] = (request.form.get('type') or '').strip().lower()
+    output['music_type'] = (request.form.get('music_type') or '').strip().lower()
+    output['offset'] = required_form_float('offset', -86400, 86400, errors)
+    output['preview'] = required_form_float('preview', 0, 86400, errors)
+    output['volume'] = required_form_float('volume', 0, 4, errors)
+    output['lyrics'] = bool(request.form.get('lyrics'))
+    output['hash'] = (request.form.get('hash') or '').strip()
+    output['id'] = song_id
+
+    if output['type'] not in ('tja', 'osu'):
+        errors.append('invalid chart type')
+    if output['music_type'] not in UPLOAD_ALLOWED_MUSIC_TYPES:
+        errors.append('invalid music type')
+    if not reference_exists(db.categories, output['category_id']):
+        errors.append('category does not exist')
+    if not reference_exists(db.song_skins, output['skin_id']):
+        errors.append('skin does not exist')
+    if not reference_exists(db.makers, output['maker_id']):
+        errors.append('maker does not exist')
+    return output, errors
+
+
+def validate_admin_song_document(song, existing_id=None):
+    errors = []
+    song_hash = song.get('hash')
+    if not song_hash or len(song_hash) > 500 or '\x00' in song_hash:
+        errors.append('hash is required and must not exceed 500 characters')
+    else:
+        duplicate_query = {'hash': song_hash}
+        if existing_id is not None:
+            duplicate_query['id'] = {'$ne': existing_id}
+        if db.songs.find_one(duplicate_query, {'_id': True}):
+            errors.append('hash is already in use')
+
+    if db.songs.find_one({'id': song.get('id')}, {'_id': True}) and existing_id is None:
+        errors.append('song ID is already in use')
+
+    if song.get('enabled') and not public_song_files_available(song):
+        errors.append('enabled songs require matching chart and audio files')
+    elif song.get('enabled') and songs_use_local_storage():
+        music_path = SONGS_DIR / str(song.get('id')) / 'main.{}'.format(song.get('music_type'))
+        try:
+            header = music_path.read_bytes()[:4096]
+        except OSError:
+            errors.append('audio file could not be read')
+        else:
+            if not music_signature_matches(header, song.get('music_type')):
+                errors.append('audio content does not match its format')
+    return errors
+
+
 def normalize_admin_song(song):
     song = dict(song or {})
     song['title_lang'] = safe_lang_map(song.get('title_lang'))
@@ -1473,6 +1945,7 @@ def normalize_admin_song(song):
     song.setdefault('preview', 0)
     song.setdefault('volume', 1)
     song.setdefault('hash', '')
+    song['storage_available'] = public_song_files_available(song)
     return song
 
 
@@ -1539,7 +2012,7 @@ def serialize_public_song(raw_song, context=None):
     song.pop('maker_id', None)
 
     category_id = song.get('category_id')
-    if category_id:
+    if category_id is not None:
         categories_by_id = context['categories_by_id']
         category = categories_by_id.get(category_id) or categories_by_id.get(safe_int_value(category_id)) or categories_by_id.get(str(category_id))
         song['category'] = category.get('title') if category else None
@@ -1547,7 +2020,7 @@ def serialize_public_song(raw_song, context=None):
         song['category'] = None
 
     skin_id = song.get('skin_id')
-    if skin_id:
+    if skin_id is not None:
         song_skins_by_id = context['song_skins_by_id']
         song_skin = song_skins_by_id.get(skin_id) or song_skins_by_id.get(safe_int_value(skin_id)) or song_skins_by_id.get(str(skin_id))
         song['song_skin'] = {
@@ -1562,11 +2035,62 @@ def serialize_public_song(raw_song, context=None):
     return song
 
 
+def sequence_floor(name):
+    if name != 'songs':
+        return 0
+    values = (
+        safe_int_value(song.get('id'))
+        for song in db.songs.find({}, {'_id': False, 'id': True})
+    )
+    return max((value for value in values if value is not None), default=0)
+
+
+def sequence_state(name):
+    documents = list(db.seq.find({'name': name}).limit(100))
+    floor = sequence_floor(name)
+    if not documents:
+        try:
+            result = db.seq.insert_one({'name': name, 'value': floor})
+            return result.inserted_id, floor
+        except DuplicateKeyError:
+            documents = list(db.seq.find({'name': name}).limit(100))
+    if not documents:
+        raise RuntimeError('Unable to initialize sequence {}'.format(name))
+
+    primary = min(documents, key=lambda document: str(document['_id']))
+    valid_values = [
+        value
+        for value in (safe_int_value(document.get('value')) for document in documents)
+        if value is not None
+    ]
+    current = max(valid_values + [floor])
+    stored = primary.get('value')
+    if isinstance(stored, bool) or not isinstance(stored, int) or stored != current:
+        result = db.seq.update_one(
+            {'_id': primary['_id'], 'value': stored},
+            {'$set': {'value': current}}
+        )
+        if not result.modified_count and stored != current:
+            return sequence_state(name)
+    return primary['_id'], current
+
+
 def next_sequence_value(name):
-    seq = db.seq.find_one({'name': name})
-    if not seq:
-        return 1
-    return safe_int_value(seq.get('value'), 0) + 1
+    _, current = sequence_state(name)
+    return current + 1
+
+
+def allocate_sequence_value(name):
+    for _ in range(20):
+        document_id, current = sequence_state(name)
+        updated = db.seq.find_one_and_update(
+            {'_id': document_id, 'value': current},
+            {'$inc': {'value': 1}},
+            return_document=ReturnDocument.AFTER
+        )
+        if updated:
+            return updated['value']
+    raise RuntimeError('Unable to allocate sequence {}'.format(name))
 
 
 def admin_category_title(category):
@@ -1719,7 +2243,7 @@ def route_api_board_posts_create():
     post = {
         'name': name,
         'message': message,
-        'created_at': datetime.utcnow(),
+        'created_at': utc_now(),
         'username': session.get('username'),
         'user_display_name': get_user_display_name(user) if user else None,
         'ip_hash': hashlib.sha256(get_remote_address().encode('utf-8')).hexdigest()
@@ -1759,7 +2283,7 @@ def route_api_visits_record():
         'username': username,
         'ip_hash': hashlib.sha256(get_remote_address().encode('utf-8')).hexdigest(),
         'user_agent_hash': hashlib.sha256((request.headers.get('User-Agent') or '').encode('utf-8')).hexdigest(),
-        'entered_at': datetime.utcnow()
+        'entered_at': utc_now()
     })
 
     return jsonify({'status': 'ok'})
@@ -1804,7 +2328,7 @@ def route_api_site_messages_read(message_id):
         '$setOnInsert': {
             'username': session.get('username'),
             'message_id': message_id,
-            'read_at': datetime.utcnow()
+            'read_at': utc_now()
         }
     }, upsert=True)
 
@@ -1816,7 +2340,7 @@ def get_current_admin(min_level=50):
     if not username:
         return None
     user = db.users.find_one({'username': username})
-    if user and user.get('user_level', 0) >= min_level:
+    if user and get_user_level(user) >= min_level:
         return user
     return None
 
@@ -1833,7 +2357,7 @@ def route_secret_admin_login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').encode('utf-8')
-        user = db.users.find_one({'username_lower': username.lower()})
+        user = find_user_by_username(username)
         password_ok = check_user_password(user, password)
         if (
             user and
@@ -1936,14 +2460,21 @@ def route_admin_messages_post():
         flash('Error: Please enter text or upload an image.', 'error')
         return redirect(basedir + 'admin/messages')
 
-    db.site_messages.insert_one({
-        'title': title,
-        'body': body,
-        'image_url': image_url,
-        'active': bool(request.form.get('active')),
-        'created_at': datetime.utcnow(),
-        'created_by': session.get('username')
-    })
+    try:
+        db.site_messages.insert_one({
+            'title': title,
+            'body': body,
+            'image_url': image_url,
+            'active': bool(request.form.get('active')),
+            'created_at': utc_now(),
+            'created_by': session.get('username')
+        })
+    except PyMongoError:
+        if uploaded_url:
+            remove_site_message_image(uploaded_url)
+        app.logger.exception('Could not publish site message')
+        flash('Error: Message could not be saved.', 'error')
+        return redirect(basedir + 'admin/messages')
     flash('Message published.')
     return redirect(basedir + 'admin/messages')
 
@@ -1952,7 +2483,15 @@ def route_admin_messages_post():
 @admin_required(level=50)
 def route_admin_messages_remove(message_id):
     object_id = object_id_or_404(message_id)
-    db.site_messages.delete_one({'_id': object_id})
+    message = db.site_messages.find_one({'_id': object_id})
+    if not message:
+        return abort(404)
+    result = db.site_messages.delete_one({'_id': object_id})
+    if result.deleted_count:
+        try:
+            remove_site_message_image(message.get('image_url'))
+        except OSError:
+            app.logger.exception('Could not remove image for message %s', message_id)
     db.site_message_reads.delete_many({'message_id': message_id})
     flash('Message removed.')
     return redirect(basedir + 'admin/messages')
@@ -2024,51 +2563,26 @@ def route_admin_songs_new():
 @app.route(basedir + 'admin/songs/new', methods=['POST'])
 @admin_required(level=100)
 def route_admin_songs_new_post():
-    output = {'title_lang': {}, 'subtitle_lang': {}, 'courses': {}}
-    output['enabled'] = True if request.form.get('enabled') else False
-    output['title'] = request.form.get('title') or None
-    output['subtitle'] = request.form.get('subtitle') or None
-    for lang in ['ja', 'en', 'cn', 'tw', 'ko']:
-        output['title_lang'][lang] = request.form.get('title_%s' % lang) or None
-        output['subtitle_lang'][lang] = request.form.get('subtitle_%s' % lang) or None
-
-    for course in ADMIN_COURSES:
-        stars = form_int('course_%s' % course)
-        if stars is not None:
-            output['courses'][course] = {'stars': stars,
-                                         'branch': True if request.form.get('branch_%s' % course) else False}
-        else:
-            output['courses'][course] = None
-    
-    output['category_id'] = form_int('category_id') or None
-    output['type'] = request.form.get('type')
-    output['music_type'] = request.form.get('music_type')
-    output['offset'] = form_float('offset', 0)
-    output['skin_id'] = form_int('skin_id') or None
-    output['preview'] = form_float('preview', 0)
-    output['volume'] = form_float('volume', 1.0)
-    output['maker_id'] = form_int('maker_id') or None
-    output['lyrics'] = True if request.form.get('lyrics') else False
-    output['hash'] = request.form.get('hash')
-    
-    seq_new = next_sequence_value('songs')
-    
-    hash_error = False
+    seq_new = allocate_sequence_value('songs')
+    output, errors = build_admin_song_form(seq_new)
     if request.form.get('gen_hash'):
         try:
             output['hash'] = generate_hash(seq_new, request.form)
         except HashException as e:
-            hash_error = True
-            flash('An error occurred: %s' % str(e), 'error')
-    
-    output['id'] = seq_new
+            errors.append(str(e))
     output['order'] = seq_new
-    
-    db.songs.insert_one(output)
-    if not hash_error:
-        flash('Song created.')
-    
-    db.seq.update_one({'name': 'songs'}, {'$set': {'value': seq_new}}, upsert=True)
+    errors.extend(validate_admin_song_document(output))
+    if errors:
+        for error in errors:
+            flash('Error: {}'.format(error), 'error')
+        return redirect(basedir + 'admin/songs/new')
+
+    try:
+        db.songs.insert_one(output)
+    except DuplicateKeyError:
+        flash('Error: Song ID or hash already exists.', 'error')
+        return redirect(basedir + 'admin/songs/new')
+    flash('Song created.')
     invalidate_song_derived_caches()
     
     return redirect(basedir + 'admin/songs/%s' % str(seq_new))
@@ -2085,46 +2599,24 @@ def route_admin_songs_id_post(song_id):
     user = db.users.find_one({'username': session['username']})
     user_level = get_user_level(user)
 
-    output = {'title_lang': {}, 'subtitle_lang': {}, 'courses': {}}
-    if user_level >= 100:
-        output['enabled'] = True if request.form.get('enabled') else False
-
-    output['title'] = request.form.get('title') or None
-    output['subtitle'] = request.form.get('subtitle') or None
-    for lang in ['ja', 'en', 'cn', 'tw', 'ko']:
-        output['title_lang'][lang] = request.form.get('title_%s' % lang) or None
-        output['subtitle_lang'][lang] = request.form.get('subtitle_%s' % lang) or None
-
-    for course in ADMIN_COURSES:
-        stars = form_int('course_%s' % course)
-        if stars is not None:
-            output['courses'][course] = {'stars': stars,
-                                         'branch': True if request.form.get('branch_%s' % course) else False}
-        else:
-            output['courses'][course] = None
-    
-    output['category_id'] = form_int('category_id') or None
-    output['type'] = request.form.get('type')
-    output['music_type'] = request.form.get('music_type')
-    output['offset'] = form_float('offset', 0)
-    output['skin_id'] = form_int('skin_id') or None
-    output['preview'] = form_float('preview', 0)
-    output['volume'] = form_float('volume', 1.0)
-    output['maker_id'] = form_int('maker_id') or None
-    output['lyrics'] = True if request.form.get('lyrics') else False
-    output['hash'] = request.form.get('hash')
-    
-    hash_error = False
+    output, errors = build_admin_song_form(
+        song_id,
+        existing=song,
+        can_set_enabled=user_level >= 100
+    )
     if request.form.get('gen_hash'):
         try:
             output['hash'] = generate_hash(song_id, request.form)
         except HashException as e:
-            hash_error = True
-            flash('An error occurred: %s' % str(e), 'error')
-    
+            errors.append(str(e))
+    errors.extend(validate_admin_song_document(output, existing_id=song_id))
+    if errors:
+        for error in errors:
+            flash('Error: {}'.format(error), 'error')
+        return redirect(basedir + 'admin/songs/{}'.format(song_id))
+
     db.songs.update_one({'id': song_id}, {'$set': output})
-    if not hash_error:
-        flash('Changes saved.')
+    flash('Changes saved.')
     invalidate_song_derived_caches()
     
     return redirect(basedir + 'admin/songs/%s' % song_id)
@@ -2170,7 +2662,7 @@ def route_admin_users_post():
     username = (request.form.get('username') or '').strip()
     level = form_int('level', 0) or 0
     
-    user = db.users.find_one({'username_lower': username.lower()}) if username else None
+    user = find_user_by_username(username)
     if not username:
         flash('Error: Username is required.')
     elif not user:
@@ -2202,6 +2694,8 @@ def route_api_preview():
     song = db.songs.find_one({'id': song_id, 'enabled': True})
     if not song:
         abort(400)
+    if not public_song_files_available(song):
+        abort(404)
     song = normalize_public_song(song)
     if not song:
         abort(400)
@@ -2233,6 +2727,8 @@ def route_api_songs():
     context = get_public_song_context()
     songs = []
     for raw_song in raw_songs:
+        if not public_song_files_available(raw_song):
+            continue
         song = serialize_public_song(raw_song, context)
         if not song:
             continue
@@ -2263,10 +2759,11 @@ def route_api_categories():
     return jsonify(categories)
 
 @app.route(basedir + 'api/config')
-@app.cache.cached(timeout=15)
 def route_api_config():
-    config = get_config(credentials=True)
-    return jsonify(config)
+    response = jsonify(get_config(credentials=True))
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['CDN-Cache-Control'] = 'no-store'
+    return response
 
 
 @app.route(basedir + 'api/register', methods=['POST'])
@@ -2283,11 +2780,11 @@ def route_api_register():
     if len(username) < 3 or len(username) > 20 or not re.match('^[a-zA-Z0-9_]{3,20}$', username):
         return api_error('invalid_username')
 
-    if db.users.find_one({'username_lower': username.lower()}):
+    if find_user_by_username(username):
         return api_error('username_in_use')
 
     password = data.get('password', '').encode('utf-8')
-    if not 6 <= len(password) <= 5000:
+    if not 6 <= len(password) <= 72:
         return api_error('invalid_password')
 
     salt = bcrypt.gensalt()
@@ -2295,15 +2792,18 @@ def route_api_register():
     don = get_default_don()
     
     session_id = os.urandom(24).hex()
-    db.users.insert_one({
-        'username': username,
-        'username_lower': username.lower(),
-        'password': hashed,
-        'display_name': username,
-        'don': don,
-        'user_level': 1,
-        'session_id': session_id
-    })
+    try:
+        db.users.insert_one({
+            'username': username,
+            'username_lower': username.lower(),
+            'password': hashed,
+            'display_name': username,
+            'don': don,
+            'user_level': 1,
+            'session_id': session_id
+        })
+    except DuplicateKeyError:
+        return api_error('username_in_use')
 
     session['session_id'] = session_id
     session['username'] = username
@@ -2322,7 +2822,7 @@ def route_api_login():
         session.clear()
 
     username = data.get('username', '')
-    result = db.users.find_one({'username_lower': username.lower()})
+    result = find_user_by_username(username)
     if not result:
         return api_error('invalid_username_password')
 
@@ -2414,7 +2914,7 @@ def route_api_account_password():
         return api_error('current_password_invalid')
     
     new_password = data.get('new_password', '').encode('utf-8')
-    if not 6 <= len(new_password) <= 5000:
+    if not 6 <= len(new_password) <= 72:
         return api_error('invalid_new_password')
     
     salt = bcrypt.gensalt()
@@ -2445,9 +2945,38 @@ def route_api_account_remove():
     if not check_user_password(user, password):
         return api_error('verify_password_invalid')
 
-    db.scores.delete_many({'username': session.get('username')})
-    db.weekly_challenge_scores.delete_many({'username': session.get('username')})
-    db.users.delete_one({'username': session.get('username')})
+    username = session.get('username')
+    db.scores.delete_many({'username': username})
+    db.weekly_challenge_scores.delete_many({'username': username})
+    db.site_message_reads.delete_many({'username': username})
+    deleted_identity = 'deleted:{}'.format(uuid.uuid4().hex)
+    db.play_records.update_many(
+        {'username': username},
+        {'$set': {'username': None}}
+    )
+    db.visit_records.update_many(
+        {'username': username},
+        {
+            '$set': {'username': None, 'visitor_key': deleted_identity},
+            '$unset': {'visitor_id': ''}
+        }
+    )
+    db.board_posts.update_many(
+        {'username': username},
+        {
+            '$set': {'username': None},
+            '$unset': {'user_display_name': ''}
+        }
+    )
+    db.leaderboard.update_many(
+        {'username': username},
+        {'$set': {'username': None}}
+    )
+    db.site_messages.update_many(
+        {'created_by': username},
+        {'$set': {'created_by': 'Deleted administrator'}}
+    )
+    db.users.delete_one({'username': username})
 
     session.clear()
     return jsonify({'status': 'ok'})
@@ -2462,9 +2991,6 @@ def route_api_scores_save():
         return abort(400)
 
     username = session.get('username')
-    if data.get('is_import'):
-        db.scores.delete_many({'username': username})
-
     scores_by_hash = {
         score['hash']: score['score']
         for score in data.get('scores', [])
@@ -2481,8 +3007,18 @@ def route_api_scores_save():
         )
         for song_hash, score in scores_by_hash.items()
     ]
-    if operations:
-        db.scores.bulk_write(operations, ordered=False)
+    try:
+        if operations:
+            db.scores.bulk_write(operations, ordered=True)
+    except PyMongoError:
+        app.logger.exception('Score import failed for user %s', username)
+        return api_error('score_save_failed'), 503
+
+    if data.get('is_import'):
+        stale_query = {'username': username}
+        if scores_by_hash:
+            stale_query['hash'] = {'$nin': list(scores_by_hash)}
+        db.scores.delete_many(stale_query)
 
     return jsonify({'status': 'ok'})
 
@@ -2523,9 +3059,10 @@ def route_api_playcount_record():
         return abort(400)
 
     username = session.get('username') if session.get('username') else None
-    played_at = datetime.utcnow()
+    played_at = utc_now()
     song_hash = data.get('hash')
-    if not find_enabled_song_by_identity(song_hash):
+    song = find_enabled_song_by_identity(song_hash)
+    if not song or not song_has_course(song, data.get('difficulty')):
         return abort(400)
 
     db.play_records.insert_one({
@@ -2563,7 +3100,7 @@ def route_api_playcount_get():
         except PyMongoError:
             play_count = 0
 
-    today = datetime.utcnow()
+    today = utc_now()
     start_of_week = today - timedelta(days=today.weekday(), hours=today.hour, minutes=today.minute, seconds=today.second, microseconds=today.microsecond)
     try:
         weekly_rows = list(db.play_records.aggregate([
@@ -2610,20 +3147,21 @@ def route_api_leaderboard_submit():
     score_value = int(raw_score)
     if score_value != raw_score:
         return abort(400)
-    if not find_enabled_song_by_identity(song_hash):
+    song = find_enabled_song_by_identity(song_hash)
+    if not song or not song_has_course(song, difficulty):
         return abort(400)
 
     if not display_name or not display_name.strip():
         display_name = 'Anonymous'
 
-    current_month = datetime.utcnow().strftime('%Y-%m')
+    current_month = utc_now().strftime('%Y-%m')
     db.leaderboard.insert_one({
         'song_hash': song_hash,
         'difficulty': difficulty,
         'display_name': display_name.strip()[:20],
         'score_value': score_value,
         'month': current_month,
-        'created_at': datetime.utcnow()
+        'created_at': utc_now()
     })
 
     higher_count = db.leaderboard.count_documents({
@@ -2666,7 +3204,7 @@ def route_api_leaderboard_get():
     if difficulty and len(difficulty) > 32:
         return abort(400)
 
-    current_month = datetime.utcnow().strftime('%Y-%m')
+    current_month = utc_now().strftime('%Y-%m')
 
     query = {
         'song_hash': song_hash,
@@ -2699,73 +3237,169 @@ def route_api_leaderboard_get():
 
 
 def week_start_for(now=None):
-    now = now or datetime.utcnow()
+    now = now or utc_now()
     return (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def week_key_for(now=None):
-    iso = (now or datetime.utcnow()).isocalendar()
+    iso = (now or utc_now()).isocalendar()
     return '{}-W{:02d}'.format(iso[0], iso[1])
 
 
-def weekly_challenge_cleanup(now=None):
-    now = now or datetime.utcnow()
-    keep_from = week_start_for(now) - timedelta(weeks=1)
-    db.weekly_challenge_scores.delete_many({'week_start': {'$lt': keep_from}})
-    db.weekly_challenges.delete_many({'week_start': {'$lt': keep_from}})
+def week_start_from_key(week_key):
+    match = re.fullmatch(r'(\d{4})-W(\d{2})', str(week_key or ''))
+    if not match:
+        return None
+    try:
+        return datetime.fromisocalendar(int(match.group(1)), int(match.group(2)), 1)
+    except ValueError:
+        return None
 
 
-def current_weekly_challenge(now=None):
-    now = now or datetime.utcnow()
-    weekly_challenge_cleanup(now)
-    date_key = now.strftime('%Y-%m-%d')
-    challenge = db.weekly_challenges.find_one({'date_key': date_key})
-    if challenge:
-        return challenge
+def weekly_challenge_song(challenge):
+    if not challenge:
+        return None
+    song = db.songs.find_one({
+        'id': challenge.get('song_id'),
+        'enabled': True
+    })
+    difficulty = challenge.get('difficulty') or 'oni'
+    if (
+        not song or
+        not song_has_course(song, difficulty) or
+        not public_song_files_available(song)
+    ):
+        return None
+    expected_hash = song.get('hash') or song.get('title') or str(song.get('id'))
+    if challenge.get('song_hash') != expected_hash:
+        return None
+    return song
 
-    candidates = list(db.songs.find({
-        'enabled': True,
-        'courses.oni': {'$exists': True, '$ne': None}
-    }).sort('id', 1))
+
+def legacy_weekly_challenges(week_key):
+    week_start = week_start_from_key(week_key)
+    if not week_start:
+        return []
+    date_from = week_start.strftime('%Y-%m-%d')
+    date_to = (week_start + timedelta(days=6)).strftime('%Y-%m-%d')
+    candidates = list(db.weekly_challenges.find({
+        '$or': [
+            {'week_key': week_key},
+            {
+                'week_key': {'$exists': False},
+                'date_key': {'$gte': date_from, '$lte': date_to}
+            }
+        ]
+    }))
+    return [
+        challenge
+        for challenge in candidates
+        if challenge.get('challenge_id') != week_key and weekly_challenge_song(challenge)
+    ]
+
+
+def legacy_weekly_challenge(week_key):
+    candidates = legacy_weekly_challenges(week_key)
     if not candidates:
         return None
 
-    seed = hashlib.sha256(('weekly-challenge:' + date_key).encode('utf-8')).digest()
+    def candidate_key(challenge):
+        score_count = db.weekly_challenge_scores.count_documents({
+            'challenge_id': challenge.get('challenge_id'),
+            'song_hash': challenge.get('song_hash'),
+            'difficulty': challenge.get('difficulty') or 'oni'
+        })
+        return (
+            -score_count,
+            str(challenge.get('date_key') or ''),
+            str(challenge.get('_id'))
+        )
+
+    return min(candidates, key=candidate_key)
+
+
+def historical_weekly_challenge(week_key):
+    challenge = db.weekly_challenges.find_one({'challenge_id': week_key})
+    if challenge and weekly_challenge_song(challenge):
+        return challenge
+    return legacy_weekly_challenge(week_key)
+
+
+def current_weekly_challenge(now=None):
+    now = now or utc_now()
+    week_start = week_start_for(now)
+    week_key = week_key_for(now)
+    existing = db.weekly_challenges.find_one({'challenge_id': week_key})
+    if existing:
+        return existing
+
+    candidates = [
+        song
+        for song in db.songs.find({'enabled': True})
+        if song_has_course(song, 'oni') and public_song_files_available(song)
+    ]
+    candidates.sort(key=lambda song: str(song.get('id')))
+    if not candidates:
+        return None
+
+    seed = hashlib.sha256(('weekly-challenge:' + week_key).encode('utf-8')).digest()
     song = candidates[int.from_bytes(seed[:8], 'big') % len(candidates)]
     doc = {
-        'challenge_id': date_key,
-        'date_key': date_key,
-        'week_key': week_key_for(now),
-        'week_start': week_start_for(now),
+        'challenge_id': week_key,
+        'date_key': week_start.strftime('%Y-%m-%d'),
+        'week_key': week_key,
+        'week_start': week_start,
+        'week_end': week_start + timedelta(weeks=1),
         'song_id': song['id'],
         'song_hash': song.get('hash') or song.get('title') or str(song['id']),
         'difficulty': 'oni',
+        'canonical': True,
         'created_at': now
     }
     try:
-        db.weekly_challenges.update_one(
-            {'date_key': date_key},
+        return db.weekly_challenges.find_one_and_update(
+            {'challenge_id': week_key},
             {'$setOnInsert': doc},
-            upsert=True
+            upsert=True,
+            return_document=ReturnDocument.AFTER
         )
     except DuplicateKeyError:
-        pass
-    return db.weekly_challenges.find_one({'date_key': date_key})
+        return db.weekly_challenges.find_one({
+            '$or': [
+                {'challenge_id': week_key},
+                {'week_key': week_key, 'canonical': True}
+            ]
+        })
 
 
 def serialize_challenge(challenge):
+    week_start = challenge.get('week_start') or week_start_from_key(
+        challenge.get('week_key')
+    )
+    week_end = challenge.get('week_end')
+    if not isinstance(week_end, datetime) and isinstance(week_start, datetime):
+        week_end = week_start + timedelta(weeks=1)
     return {
         'challenge_id': challenge.get('challenge_id'),
         'date_key': challenge.get('date_key'),
         'week_key': challenge.get('week_key'),
         'song_id': challenge.get('song_id'),
         'song_hash': challenge.get('song_hash'),
-        'difficulty': challenge.get('difficulty', 'oni')
+        'difficulty': challenge.get('difficulty', 'oni'),
+        'week_ends_at': week_end.isoformat() + 'Z' if isinstance(week_end, datetime) else None
     }
 
 
-def challenge_board(week_key):
-    scores = db.weekly_challenge_scores.find({'week_key': week_key}).sort([
+def challenge_score_query(challenge):
+    return {
+        'challenge_id': challenge.get('challenge_id'),
+        'song_hash': challenge.get('song_hash'),
+        'difficulty': challenge.get('difficulty') or 'oni'
+    }
+
+
+def challenge_board(challenge):
+    scores = db.weekly_challenge_scores.find(challenge_score_query(challenge)).sort([
         ('score_value', -1),
         ('updated_at', 1)
     ]).limit(100)
@@ -2786,47 +3420,47 @@ def challenge_board(week_key):
 
 @app.route(basedir + 'api/weekly-challenge/current')
 def route_api_weekly_challenge_current():
-    challenge = current_weekly_challenge()
+    now = utc_now()
+    challenge = current_weekly_challenge(now)
     if not challenge:
         return api_error('no_oni_songs')
 
-    song = db.songs.find_one({'id': challenge.get('song_id')})
+    song = weekly_challenge_song(challenge)
     if not song:
         return api_error('challenge_song_missing')
 
     return jsonify({
         'status': 'ok',
         'challenge': serialize_challenge(challenge),
-        'song': serialize_public_song(song)
+        'song': serialize_public_song(song),
+        'server_now': now.isoformat() + 'Z'
     })
 
 
 @app.route(basedir + 'api/weekly-challenge/leaderboards')
 def route_api_weekly_challenge_leaderboards():
-    now = datetime.utcnow()
+    now = utc_now()
     challenge = current_weekly_challenge(now)
     if not challenge:
         return api_error('no_oni_songs')
 
     previous_week = week_start_for(now) - timedelta(weeks=1)
-    previous_challenge = db.weekly_challenges.find_one(
-        {'week_key': week_key_for(previous_week)},
-        sort=[('date_key', -1)]
-    )
+    previous_challenge = historical_weekly_challenge(week_key_for(previous_week))
 
     def challenge_payload(item):
         if not item:
             return None
-        song = db.songs.find_one({'id': item.get('song_id')})
+        song = weekly_challenge_song(item)
         payload = serialize_challenge(item)
         payload['song'] = serialize_public_song(song) if song else None
-        payload['leaderboard'] = challenge_board(item.get('week_key'))
+        payload['leaderboard'] = challenge_board(item)
         return payload
 
     return jsonify({
         'status': 'ok',
         'current': challenge_payload(challenge),
-        'previous': challenge_payload(previous_challenge)
+        'previous': challenge_payload(previous_challenge),
+        'server_now': now.isoformat() + 'Z'
     })
 
 
@@ -2847,6 +3481,9 @@ def route_api_weekly_challenge_submit():
     challenge = current_weekly_challenge()
     if not challenge:
         return api_error('no_oni_songs')
+    song = weekly_challenge_song(challenge)
+    if not song:
+        return api_error('challenge_song_missing')
 
     challenge_id = data.get('challenge_id')
     song_hash = data.get('song_hash') or data.get('hash')
@@ -2864,16 +3501,22 @@ def route_api_weekly_challenge_submit():
         return api_error('not_logged_in')
 
     score_value = int_score_field(data, 'score')
-    now = datetime.utcnow()
-    existing = db.weekly_challenge_scores.find_one({
-        'week_key': challenge.get('week_key'),
+    now = utc_now()
+    score_identity = {
+        'challenge_id': challenge.get('challenge_id'),
         'username': username
-    })
-    if not existing or score_value > existing.get('score_value', 0):
-        db.weekly_challenge_scores.update_one({
-            'week_key': challenge.get('week_key'),
-            'username': username
-        }, {
+    }
+    existing = db.weekly_challenge_scores.find_one(score_identity)
+    existing_matches_challenge = bool(
+        existing and
+        existing.get('song_hash') == challenge.get('song_hash') and
+        existing.get('difficulty') == challenge.get('difficulty')
+    )
+    if (
+        not existing_matches_challenge or
+        score_value > existing.get('score_value', 0)
+    ):
+        db.weekly_challenge_scores.update_one(score_identity, {
             '$set': {
                 'challenge_id': challenge_id,
                 'display_name': user.get('display_name') or username,
@@ -2894,26 +3537,22 @@ def route_api_weekly_challenge_submit():
             }
         }, upsert=True)
 
-    overflow = list(db.weekly_challenge_scores.find({
-        'week_key': challenge.get('week_key')
-    }).sort([
+    overflow = list(db.weekly_challenge_scores.find(
+        challenge_score_query(challenge)
+    ).sort([
         ('score_value', -1),
         ('updated_at', 1)
     ]).skip(100))
     if overflow:
         db.weekly_challenge_scores.delete_many({'_id': {'$in': [score['_id'] for score in overflow]}})
 
-    score_doc = db.weekly_challenge_scores.find_one({
-        'week_key': challenge.get('week_key'),
-        'username': username
-    })
+    score_doc = db.weekly_challenge_scores.find_one(score_identity)
     rank = None
     in_top_100 = False
     if score_doc:
-        higher_count = db.weekly_challenge_scores.count_documents({
-            'week_key': challenge.get('week_key'),
-            'score_value': {'$gt': score_doc.get('score_value', 0)}
-        })
+        rank_query = challenge_score_query(challenge)
+        rank_query['score_value'] = {'$gt': score_doc.get('score_value', 0)}
+        higher_count = db.weekly_challenge_scores.count_documents(rank_query)
         rank = higher_count + 1
         in_top_100 = rank <= 100
 
@@ -2926,7 +3565,8 @@ def route_api_weekly_challenge_submit():
 
 @app.route(basedir + 'privacy')
 def route_api_privacy():
-    last_modified = time.strftime('%d %B %Y', time.gmtime(os.path.getmtime('templates/privacy.txt')))
+    privacy_path = APP_ROOT / 'templates' / 'privacy.txt'
+    last_modified = time.strftime('%d %B %Y', time.gmtime(privacy_path.stat().st_mtime))
     integration = take_config('GOOGLE_CREDENTIALS')['gdrive_enabled'] if take_config('GOOGLE_CREDENTIALS') else False
     
     response = make_response(render_template('privacy.txt', last_modified=last_modified, config=get_config(), integration=integration))
@@ -2938,17 +3578,26 @@ def make_preview(song_id, song_type, song_ext, preview):
     song_path = SONGS_DIR / str(song_id) / f'main.{song_ext}'
     prev_path = SONGS_DIR / str(song_id) / 'preview.mp3'
 
-    if song_path.is_file() and not prev_path.is_file():
-        if not preview or preview <= 0:
-            print('Skipping #%s due to no preview' % song_id)
-            return False
+    if prev_path.is_file():
+        return str(prev_path)
+    if not song_path.is_file() or not preview or preview <= 0:
+        return False
 
-        print('Making preview.mp3 for song #%s' % song_id)
-        ff = FFmpeg(inputs={str(song_path): '-ss %s' % preview},
-                    outputs={str(prev_path): '-codec:a libmp3lame -ar 32000 -b:a 92k -y -loglevel panic'})
+    temp_path = prev_path.with_name('.preview-{}.mp3'.format(uuid.uuid4().hex))
+    try:
+        ff = FFmpeg(
+            inputs={str(song_path): '-ss %s' % preview},
+            outputs={str(temp_path): '-codec:a libmp3lame -ar 32000 -b:a 92k -y -loglevel panic'}
+        )
         ff.run()
+        temp_path.replace(prev_path)
+    except (FFRuntimeError, OSError):
+        app.logger.exception('Failed to generate preview for song %s', song_id)
+        return False
+    finally:
+        temp_path.unlink(missing_ok=True)
 
-    return str(prev_path)
+    return str(prev_path) if prev_path.is_file() else False
 
 error_pages = take_config('ERROR_PAGES') or {}
 
@@ -2960,13 +3609,29 @@ def create_error_page(code, url):
             app.logger.warning('Unable to load remote error page for status %s', code)
             return
         if resp.status_code == 200:
-            app.register_error_handler(code, lambda e: (resp.content, code))
+            content = resp.content
+            app.register_error_handler(
+                code,
+                lambda error, content=content, status=code: (content, status)
+            )
     else:
         if url.startswith(basedir):
             url = url[len(basedir):]
-        path = os.path.normpath(os.path.join("public", url))
-        if os.path.isfile(path):
-            app.register_error_handler(code, lambda e: (send_from_directory(".", path), code))
+        public_root = PUBLIC_DIR.resolve()
+        path = (public_root / url.lstrip('/\\')).resolve()
+        try:
+            path.relative_to(public_root)
+        except ValueError:
+            app.logger.warning('Ignoring error page outside public directory: %s', url)
+            return
+        if path.is_file():
+            app.register_error_handler(
+                code,
+                lambda error, path=path, status=code: (
+                    send_from_directory(str(path.parent), path.name),
+                    status
+                )
+            )
 
 for code in error_pages:
     if error_pages[code]:
@@ -2980,23 +3645,60 @@ def cache_wrap(res_from, secs):
 
 @app.route(basedir + "src/<path:ref>")
 def send_src(ref):
-    return cache_wrap(flask.send_from_directory("public/src", ref), 3600)
+    return cache_wrap(flask.send_from_directory(str(PUBLIC_DIR / 'src'), ref), 3600)
 
 @app.route(basedir + "assets/<path:ref>")
 def send_assets(ref):
-    return cache_wrap(flask.send_from_directory("public/assets", ref), 3600)
+    return cache_wrap(flask.send_from_directory(str(PUBLIC_DIR / 'assets'), ref), 3600)
 
 @app.route(basedir + "songs/<path:ref>")
 def send_songs(ref):
+    parts = ref.split('/')
+    if len(parts) != 2 or not is_public_song_id(parts[0]):
+        return abort(404)
+    song = db.songs.find_one({
+        'id': route_song_id(parts[0]),
+        'enabled': True
+    })
+    if not song or not public_song_files_available(song):
+        return abort(404)
+
+    allowed_files = {'main.{}'.format(song.get('music_type') or 'mp3')}
+    if song.get('type') == 'tja':
+        allowed_files.add('main.tja')
+    elif song.get('type') == 'osu':
+        allowed_files.update(
+            '{}.osu'.format(course)
+            for course in ADMIN_COURSES
+            if song_has_course(song, course)
+        )
+    if song.get('lyrics'):
+        allowed_files.add('main.vtt')
+    if song.get('video') is not None:
+        allowed_files.add('main.mp4')
+    allowed_files.update({'preview.mp3', 'preview.ogg'})
+    if parts[1] not in allowed_files:
+        return abort(404)
+
+    preview_match = re.fullmatch(r'([^/]+)/preview\.(?:mp3|ogg)', ref)
+    preview_path = (SONGS_DIR / ref).resolve()
+    if (
+        preview_match and
+        not preview_path.is_file() and
+        is_public_song_id(preview_match.group(1))
+    ):
+        return redirect(flask.url_for('route_api_preview', id=preview_match.group(1)))
     return cache_wrap(flask.send_from_directory(str(SONGS_DIR), ref), 604800)
 
 @app.route(basedir + "notice_uploads/<path:ref>")
 def send_notice_uploads(ref):
+    if not re.fullmatch(r'[a-f0-9]{32}\.(?:jpg|jpeg|png|gif|webp)', ref):
+        return abort(404)
     return cache_wrap(flask.send_from_directory(str(NOTICE_UPLOADS_DIR), ref), 604800)
 
 @app.route(basedir + "manifest.json")
 def send_manifest():
-    return cache_wrap(flask.send_from_directory("public", "manifest.json"), 3600)
+    return cache_wrap(flask.send_from_directory(str(PUBLIC_DIR), "manifest.json"), 3600)
 
 
 def read_limited_upload(upload, limit, error_code):
@@ -3041,18 +3743,73 @@ def music_signature_matches(data, music_type):
 def validate_uploaded_tja(tja, tja_text, music_type):
     if not tja.title or len(tja.title) > 500:
         raise UploadValidationError('invalid_tja_title')
-    if not any(tja.courses.values()):
+    if tja.invalid_courses:
+        raise UploadValidationError('invalid_tja_course')
+    if tja.invalid_numeric_fields:
+        raise UploadValidationError('invalid_tja_number')
+    valid_courses = [
+        course
+        for course in tja.courses.values()
+        if isinstance(course, dict)
+    ]
+    if not valid_courses:
         raise UploadValidationError('missing_tja_courses')
+    if any(
+        safe_int_value(course.get('stars')) is None or
+        not 0 <= safe_int_value(course.get('stars')) <= 10
+        for course in valid_courses
+    ):
+        raise UploadValidationError('invalid_tja_level')
 
-    normalized_lines = [line.strip().upper() for line in tja_text.splitlines()]
-    if not any(line.startswith('#START') for line in normalized_lines):
+    normalized_lines = []
+    for raw_line in tja_text.splitlines():
+        line = raw_line.strip()
+        comment_index = line.find('//')
+        if comment_index >= 0 and not line.upper().startswith('MAKER:'):
+            line = line[:comment_index].strip()
+        if line:
+            normalized_lines.append(line)
+
+    in_chart = False
+    chart_count = 0
+    for line in normalized_lines:
+        upper = line.upper()
+        if upper in ('#START', '#START P1'):
+            if in_chart:
+                raise UploadValidationError('invalid_tja_start')
+            in_chart = True
+            chart_count += 1
+        elif upper == '#END':
+            if not in_chart:
+                raise UploadValidationError('invalid_tja_end')
+            in_chart = False
+    if not chart_count:
         raise UploadValidationError('missing_tja_start')
-    if not any(line.startswith('#END') for line in normalized_lines):
+    if in_chart:
         raise UploadValidationError('missing_tja_end')
 
-    wave_type = pathlib.Path((tja.wave or '').replace('\\', '/')).suffix.lower().lstrip('.')
-    if wave_type and wave_type != music_type:
+    wave = (tja.wave or '').strip()
+    if not wave or '\x00' in wave:
+        raise UploadValidationError('missing_tja_wave')
+    if pathlib.PurePath(wave).name != wave or '/' in wave or '\\' in wave:
+        raise UploadValidationError('unsafe_tja_wave')
+    wave_type = pathlib.Path(wave).suffix.lower().lstrip('.')
+    if wave_type not in UPLOAD_ALLOWED_MUSIC_TYPES or wave_type != music_type:
         raise UploadValidationError('music_type_mismatch')
+
+    numeric_headers = {'BPM', 'OFFSET', 'DEMOSTART'}
+    for line in normalized_lines:
+        if ':' not in line:
+            continue
+        name, value = (part.strip() for part in line.split(':', 1))
+        if name.upper() not in numeric_headers:
+            continue
+        try:
+            number = float(value)
+        except ValueError:
+            raise UploadValidationError('invalid_tja_number')
+        if not math.isfinite(number):
+            raise UploadValidationError('invalid_tja_number')
 
 
 def song_storage_child(name):
@@ -3193,7 +3950,7 @@ def process_song_upload(allowed_song_types=None, default_song_type=None, upload_
             'hash': generated_id,
             'music_type': music_type,
             'song_type': song_type,
-            'uploaded_at': datetime.utcnow(),
+            'uploaded_at': utc_now(),
             'upload_source': upload_source
         })
 
@@ -3239,12 +3996,12 @@ def process_song_upload(allowed_song_types=None, default_song_type=None, upload_
         return jsonify({'success': False, 'error': 'upload_failed'}), 500
 
 
-@app.route("/upload/", defaults={"ref": "index.html"})
-@app.route("/upload/<path:ref>")
+@app.route(basedir + "upload/", defaults={"ref": "index.html"})
+@app.route(basedir + "upload/<path:ref>")
 def send_upload(ref):
-    return cache_wrap(flask.send_from_directory("public/upload", ref), 3600)
+    return cache_wrap(flask.send_from_directory(str(PUBLIC_DIR / 'upload'), ref), 3600)
 
-@app.route("/api/user-upload", methods=["POST"])
+@app.route(basedir + "api/user-upload", methods=["POST"])
 @limiter.limit("5 per hour")
 def user_upload_file():
     return process_song_upload(
@@ -3253,15 +4010,18 @@ def user_upload_file():
         upload_source='web_upload'
     )
 
-@app.route("/api/upload", methods=["POST"])
+@app.route(basedir + "api/upload", methods=["POST"])
+@limiter.limit("5 per hour")
 def api_upload_file():
+    if not request_uses_upload_token() and not get_current_admin(50):
+        return jsonify({'success': False, 'error': 'upload_unauthorized'}), 403
     return process_song_upload(
         allowed_song_types=SONG_TYPES,
         default_song_type=CUSTOM_CATEGORY['title'],
         upload_source='api_upload'
     )
 
-@app.route("/api/remove", methods=["POST"])
+@app.route(basedir + "api/remove", methods=["POST"])
 def remove():
     return flask.jsonify({ "success": False, "reason": "Remove is disabled" }), 403
 

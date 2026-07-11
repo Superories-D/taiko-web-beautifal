@@ -20,16 +20,18 @@ class Leaderboard {
 		this.overlay.innerHTML = `
 			<div class="leaderboard-container">
 				<div class="leaderboard-header">
-					<h2 class="leaderboard-title">${strings.leaderboardTitle.replace("%s", songTitle)}</h2>
-					<button class="leaderboard-close" type="button" aria-label="${strings.back}" title="${strings.back}">x</button>
+					<h2 class="leaderboard-title"></h2>
+					<button class="leaderboard-close" type="button">x</button>
 				</div>
 				<div class="leaderboard-content">
-					<div class="leaderboard-loading">Loading...</div>
+					<div class="leaderboard-loading"></div>
 				</div>
 				<div class="leaderboard-user-rank"></div>
 			</div>
 		`
 		document.body.appendChild(this.overlay)
+		this.overlay.querySelector(".leaderboard-title").textContent = strings.leaderboardTitle.replace("%s", songTitle)
+		this.overlay.querySelector(".leaderboard-loading").textContent = strings.loading || "Loading..."
 
 		// Add styles
 		this.addStyles()
@@ -49,6 +51,8 @@ class Leaderboard {
 			}
 		}
 		this.closeButton = this.overlay.querySelector(".leaderboard-close")
+		this.closeButton.setAttribute("aria-label", strings.back)
+		this.closeButton.setAttribute("title", strings.back)
 		this.closeButton.addEventListener("click", this.closeHandler)
 		this.closeButton.addEventListener("touchend", this.closeHandler)
 		document.addEventListener("keydown", this.keyHandler)
@@ -58,58 +62,81 @@ class Leaderboard {
 	}
 
 	async fetchData() {
+		const controller = new AbortController()
+		this.fetchController = controller
+		const timeout = setTimeout(() => controller.abort(), 12000)
 		try {
 			const url = `api/leaderboard/get?hash=${encodeURIComponent(this.songHash)}&difficulty=${encodeURIComponent(this.difficulty)}`
-			const response = await fetch(url)
+			const response = await fetch(url, {signal: controller.signal})
+			if (!response.ok) {
+				throw new Error("HTTP " + response.status)
+			}
 			const data = await response.json()
 
-			if (data.status === "ok") {
-				this.data = data.leaderboard
-				this.render()
+			if (data.status !== "ok" || !Array.isArray(data.leaderboard)) {
+				throw new Error(data.message || "Invalid leaderboard response")
 			}
+			if (!this.visible || !this.overlay) return
+			this.data = data.leaderboard
+			this.render()
 		} catch (e) {
-			console.error("Failed to fetch leaderboard:", e)
-			this.renderError()
+			if (e.name !== "AbortError" || this.visible) console.error("Failed to fetch leaderboard:", e)
+			if (this.visible && this.overlay) this.renderError()
+		} finally {
+			clearTimeout(timeout)
+			if (this.fetchController === controller) this.fetchController = null
 		}
 	}
 
 	render() {
+		if (!this.overlay) return
 		const content = this.overlay.querySelector(".leaderboard-content")
+		content.replaceChildren()
 
 		if (!this.data || this.data.length === 0) {
-			content.innerHTML = `<div class="leaderboard-empty">${strings.noScores}</div>`
+			const empty = document.createElement("div")
+			empty.className = "leaderboard-empty"
+			empty.textContent = strings.noScores
+			content.appendChild(empty)
 			return
 		}
 
-		let html = '<ul class="leaderboard-list">'
+		const list = document.createElement("ul")
+		list.className = "leaderboard-list"
 		for (const entry of this.data) {
-			const rankClass = entry.rank <= 3 ? `rank-${entry.rank}` : ""
-			html += `
-				<li class="leaderboard-item ${rankClass}">
-					<span class="leaderboard-rank">${entry.rank}.</span>
-					<span class="leaderboard-name">${this.escapeHtml(entry.display_name)}</span>
-					<span class="leaderboard-score">${entry.score_value.toLocaleString()}${strings.points}</span>
-				</li>
-			`
+			const rankValue = Number.isInteger(entry.rank) ? entry.rank : 0
+			const scoreValue = Number.isFinite(entry.score_value) ? entry.score_value : 0
+			const item = document.createElement("li")
+			item.className = "leaderboard-item" + (rankValue >= 1 && rankValue <= 3 ? ` rank-${rankValue}` : "")
+			const rank = document.createElement("span")
+			rank.className = "leaderboard-rank"
+			rank.textContent = rankValue + "."
+			const name = document.createElement("span")
+			name.className = "leaderboard-name"
+			name.textContent = String(entry.display_name || "")
+			const score = document.createElement("span")
+			score.className = "leaderboard-score"
+			score.textContent = scoreValue.toLocaleString() + strings.points
+			item.append(rank, name, score)
+			list.appendChild(item)
 		}
-		html += '</ul>'
-		content.innerHTML = html
+		content.appendChild(list)
 	}
 
 	renderError() {
+		if (!this.overlay) return
 		const content = this.overlay.querySelector(".leaderboard-content")
-		content.innerHTML = `<div class="leaderboard-error">${strings.errorOccured}</div>`
-	}
-
-	escapeHtml(str) {
-		if (!str) return ""
-		return str.replace(/&/g, "&amp;")
-			.replace(/</g, "&lt;")
-			.replace(/>/g, "&gt;")
-			.replace(/"/g, "&quot;")
+		const error = document.createElement("div")
+		error.className = "leaderboard-error"
+		error.textContent = strings.errorOccured
+		content.replaceChildren(error)
 	}
 
 	hide() {
+		if (this.fetchController) {
+			this.fetchController.abort()
+			this.fetchController = null
+		}
 		if (this.overlay) {
 			this.overlay.remove()
 			this.overlay = null

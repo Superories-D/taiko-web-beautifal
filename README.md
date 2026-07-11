@@ -12,13 +12,12 @@ Keep these values in the deployment environment or the ignored `.env` file, not 
 TAIKO_WEB_SECRET_KEY=<at-least-32-random-characters>
 TAIKO_WEB_SITE_ORIGIN=https://taiko.asia
 TAIKO_WEB_SESSION_COOKIE_SECURE=1
-TAIKO_WEB_UPLOAD_TOKEN=<random-bearer-token>
 ```
 
-`TAIKO_WEB_UPLOAD_TOKEN` authorizes the privileged `/api/upload` endpoint used by
-the desktop editor. Set the same value as `TAIKO_EDITOR_UPLOAD_TOKEN` on the
-editor machine. The public `/api/user-upload` endpoint remains rate limited and
-uses a browser CSRF token.
+`/api/upload` is intentionally public for the desktop editor and does not
+require a CSRF token, login, Bearer token, or rate-limit credential. It still
+enforces file-size, signature, TJA-content, filename, and path validation. The
+browser `/api/user-upload` endpoint remains rate limited and uses a CSRF token.
 
 ## 功能概述
 

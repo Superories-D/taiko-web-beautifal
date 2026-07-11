@@ -1058,13 +1058,10 @@ class EditorWindow(QMainWindow):
                     'file_music': ('music.ogg', fm.read(), 'audio/ogg'),
                 }
                 data = {'song_type': song_type}
-                token = os.environ.get('TAIKO_EDITOR_UPLOAD_TOKEN')
-                headers = {'Authorization': 'Bearer ' + token} if token else {}
                 resp = requests.post(
                     self.UPLOAD_URL,
                     files=files,
                     data=data,
-                    headers=headers,
                     timeout=60
                 )
             if resp.status_code < 200 or resp.status_code >= 300:

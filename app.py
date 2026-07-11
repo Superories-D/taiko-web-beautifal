@@ -46,7 +46,7 @@ from werkzeug.utils import secure_filename
 
 APP_ROOT = pathlib.Path(__file__).resolve().parent
 PUBLIC_DIR = APP_ROOT / 'public'
-FRONTEND_ASSET_VERSION = os.environ.get('TAIKO_WEB_ASSET_VERSION', '20260711.1')
+FRONTEND_ASSET_VERSION = os.environ.get('TAIKO_WEB_ASSET_VERSION', '20260711.2')
 
 
 def utc_now():
@@ -1448,30 +1448,12 @@ def add_security_headers(response):
     return response
 
 
-def configured_upload_token():
-    return os.environ.get('TAIKO_WEB_UPLOAD_TOKEN') or take_config('UPLOAD_TOKEN') or ''
-
-
-def request_uses_upload_token():
-    configured = configured_upload_token()
-    authorization = request.headers.get('Authorization') or ''
-    scheme, separator, supplied = authorization.partition(' ')
-    return bool(
-        configured and
-        separator and
-        scheme.lower() == 'bearer' and
-        secrets.compare_digest(supplied.strip(), str(configured))
-    )
-
-
 @app.before_request
 def before_request_func():
     endpoint = request.endpoint or ''
     if (
         request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and
-        endpoint and not (
-            endpoint == 'api_upload_file' and request_uses_upload_token()
-        )
+        endpoint and endpoint != 'api_upload_file'
     ):
         csrf.protect()
 
@@ -4011,10 +3993,7 @@ def user_upload_file():
     )
 
 @app.route(basedir + "api/upload", methods=["POST"])
-@limiter.limit("5 per hour")
 def api_upload_file():
-    if not request_uses_upload_token() and not get_current_admin(50):
-        return jsonify({'success': False, 'error': 'upload_unauthorized'}), 403
     return process_song_upload(
         allowed_song_types=SONG_TYPES,
         default_song_type=CUSTOM_CATEGORY['title'],

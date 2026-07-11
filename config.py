@@ -55,10 +55,6 @@ REDIS = {
 # Secret key used for sessions.
 SECRET_KEY = 'change-me'
 
-# Optional Bearer token for the privileged /api/upload endpoint.
-# Prefer TAIKO_WEB_UPLOAD_TOKEN so the token never enters source control.
-UPLOAD_TOKEN = None
-
 # Git repository base URL.
 URL = 'https://github.com/bui/taiko-web/'
 

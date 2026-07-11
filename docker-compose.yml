@@ -16,7 +16,6 @@ services:
       TAIKO_WEB_BASEDIR: ${TAIKO_WEB_BASEDIR:-/}
       TAIKO_WEB_SITE_ORIGIN: ${TAIKO_WEB_SITE_ORIGIN:-https://taiko.asia}
       TAIKO_WEB_SESSION_COOKIE_SECURE: ${TAIKO_WEB_SESSION_COOKIE_SECURE:-1}
-      TAIKO_WEB_UPLOAD_TOKEN: ${TAIKO_WEB_UPLOAD_TOKEN:-}
     ports:
       - "80:80"
     restart: unless-stopped

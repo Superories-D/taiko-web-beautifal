@@ -64,30 +64,12 @@ def valid_tja(title="Upload Test", wave="song.ogg", level="5"):
     )
 
 
-def test_privileged_upload_rejects_anonymous_and_regular_user(
-    isolated_app, monkeypatch
-):
+def test_public_api_upload_accepts_anonymous_requests_without_csrf(isolated_app):
     module = isolated_app
     with module.app.test_client() as client:
-        token = csrf_token(client)
-        anonymous = client.post(
-            "/api/upload", headers={"X-CSRFToken": token}
-        )
-        assert anonymous.status_code == 403
-        assert anonymous.get_json()["error"] == "upload_unauthorized"
-
-        token = register(client)
-        regular = client.post("/api/upload", headers={"X-CSRFToken": token})
-        assert regular.status_code == 403
-
-    monkeypatch.setenv("TAIKO_WEB_UPLOAD_TOKEN", "test-bearer-token")
-    with module.app.test_client() as token_client:
-        authorized = token_client.post(
-            "/api/upload",
-            headers={"Authorization": "Bearer test-bearer-token"},
-        )
-    assert authorized.status_code == 400
-    assert authorized.get_json()["error"] == "missing_files"
+        response = client.post("/api/upload")
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "missing_files"
 
 
 def test_regular_user_cannot_open_admin_pages(isolated_app):

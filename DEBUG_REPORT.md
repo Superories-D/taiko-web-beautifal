@@ -17,7 +17,7 @@ the feature is disabled by product decision.
 | Weekly concurrency/history | First access used a non-atomic create path; legacy daily documents could be ambiguous. | Mongo `find_one_and_update(..., upsert=True)` plus duplicate-key retry creates one canonical challenge. Historical legacy weeks select one exact challenge deterministically without merging incompatible scores. `scripts/audit_weekly_data.py` is read-only and reports conflicts before any manual migration. |
 | Weekly validation | The client could submit a stale ID or a song/course differing from the active challenge. | The server verifies current week, challenge ID, song hash, difficulty, enabled storage, and the actual course. Scores are keyed by challenge plus user and only a higher valid score overwrites an older score. |
 | Stored XSS | Leaderboard titles and display names were assembled into `innerHTML`. | `leaderboard.js` now builds DOM nodes and uses `textContent`; browser regression submits an XSS payload and verifies it cannot create an element or execute. |
-| CSRF and privileged upload | State-changing API coverage was incomplete and `/api/upload` did not require a durable privileged identity. | Unsafe requests are CSRF-protected by default. High-privilege upload requires an authenticated administrator or a constant-time checked Bearer upload token, with rate, size, extension, signature, filename and path validation. |
+| CSRF and public upload | State-changing API coverage was incomplete. | Unsafe requests are CSRF-protected by default. By product decision, `/api/upload` is public and exempt from CSRF, identity and rate-limit checks; file size, signature, TJA content, filename and path validation remain enforced. |
 | Config cache disclosure | Identity-dependent configuration could be cached across users. | `/api/config` is not cached, emits `Cache-Control: no-store` and `Vary: Cookie`, and only returns Google credentials to a sufficiently privileged admin. |
 | Session and response hardening | Cookie/security policy was implicit. | Session cookies are HttpOnly and Lax; Secure is environment-controlled. Normal responses receive nosniff, frame, referrer and permissions headers; sensitive endpoints are no-store. |
 | Score import consistency | Import deleted old scores before new writes had succeeded. | All input is validated and upserted first; obsolete rows are removed only after successful writes. Failure preserves the old dataset. |
@@ -123,15 +123,15 @@ modified or enabled.
 Set a strong `TAIKO_WEB_SECRET_KEY`, `TAIKO_WEB_SITE_ORIGIN`, and (when
 applicable) normalized `TAIKO_WEB_BASEDIR`. In HTTPS production set
 `TAIKO_WEB_SESSION_COOKIE_SECURE=1`. Configure Mongo/Redis through their
-environment settings; prefer a complete `REDIS_URI` over separate fields. If
-machine upload is required, set a long random `TAIKO_WEB_UPLOAD_TOKEN` and
-rotate it independently. Rotate the previously committed administrator
-credential immediately. Do not commit `.env`, bootstrap credentials, tokens,
-or session/cache files.
+environment settings; prefer a complete `REDIS_URI` over separate fields.
+`/api/upload` is deliberately public, so continue to protect its filesystem
+validation and monitor upload volume at the reverse proxy. Rotate the previously
+committed administrator credential immediately. Do not commit `.env`, bootstrap
+credentials, tokens, or session/cache files.
 
 Deploy the backend and purge the paths listed in `cache_flush_urls.txt` through
 the CDN, especially changed `src/js`, `src/css`, weekly view, manifest and index
-resources. The new frontend asset version is `20260711.1` unless overridden by
+resources. The new frontend asset version is `20260711.2` unless overridden by
 `TAIKO_WEB_ASSET_VERSION`.
 
 When updating from `roll-challenge2`, explicitly fetch, switch, and

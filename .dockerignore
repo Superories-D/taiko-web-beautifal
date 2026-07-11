@@ -4,6 +4,7 @@
 /.venv
 /venv
 /env
+/backups
 /flask_session
 /taiko-editor/.venv
 /taiko-editor/build

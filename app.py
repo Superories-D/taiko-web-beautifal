@@ -1978,7 +1978,7 @@ def forget_multiplayer_health_lock(node_id):
         MULTIPLAYER_HEALTH_LOCKS.pop(node_id, None)
 
 
-def check_multiplayer_server(server, force=False):
+def _check_multiplayer_server(server, force=False):
     cache_key = multiplayer_health_cache_key(server)
     if not force:
         cached = get_cached_multiplayer_health(cache_key)
@@ -2004,6 +2004,26 @@ def check_multiplayer_server(server, force=False):
             app.logger.warning('Multiplayer health cache write failed.', exc_info=True)
         server['last_health'] = result
         return result
+
+
+def check_multiplayer_server(server, force=False):
+    """Treat every legacy/malformed node failure as an offline result."""
+    try:
+        return _check_multiplayer_server(server, force=force)
+    except Exception as exc:
+        app.logger.exception(
+            'Multiplayer health check failed for node %r; treating it as offline.',
+            server.get('node_id') if isinstance(server, dict) else None
+        )
+        return {
+            'online': False,
+            'latency_ms': None,
+            'connections': None,
+            'reported_max_connections': None,
+            'accepting_connections': False,
+            'error': str(exc) or 'Health check failed.',
+            'checked_at': datetime.utcnow()
+        }
 
 
 def next_multiplayer_node_id():

@@ -154,6 +154,12 @@ def test_frontend_random_index_network_and_loader_guards_are_present():
     assert "RESOURCE_EMPTY" in worker
 
 
+def test_update_sync_preserves_local_secret_and_file_sessions():
+    setup = (ROOT / "setup.sh").read_text(encoding="utf-8")
+    assert "--exclude '.taiko-secret-key'" in setup
+    assert "--exclude 'flask_session'" in setup
+
+
 def test_tjaf_and_editor_parser_handle_numeric_multi_course_and_prefixes():
     import tjaf
 

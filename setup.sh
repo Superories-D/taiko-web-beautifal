@@ -434,6 +434,8 @@ sync_source() {
     --exclude '.git' \
     --exclude '.venv' \
     --exclude '.env' \
+    --exclude '.taiko-secret-key' \
+    --exclude 'flask_session' \
     --exclude 'backups' \
     --exclude 'config.py' \
     --exclude 'public/songs' \

@@ -27,6 +27,7 @@ the feature is disabled by product decision.
 | Frontend state/networking | Indexes could become invalid after filter/sort, random selection could loop forever, and many fetches treated a resolved promise as success. | Selection is normalized and bounded; random selection chooses from a finite candidate list. Leaderboard, stats, upload, account, score and weekly calls validate response/status/content, abort on timeout and preserve usable old state on failure. |
 | Subdirectory/SEO/cache | Several client URLs assumed `/`; SEO links trusted host-derived values; changed assets could retain old cached logic. | URLs respect normalized `basedir`; site origin is configured and validated rather than read from Host. Asset versioning and `cache_flush_urls.txt` cover modified frontend resources. |
 | Loader/preview/filesystem paths | Worker timeout ended before fallback body reads; preview generation used shared temporary names and relative paths assumed the current working directory. | The worker timeout spans full response reads and retries safely. Preview output uses per-run staging, fsync/atomic replace and cleanup. Application/tools use paths rooted at `Path(__file__)`. |
+| Update deployment | `rsync --delete` did not preserve a generated Flask secret or filesystem-session fallback; `update.sh` also never switches a Git branch by design. | Source sync now excludes `.taiko-secret-key` and `flask_session`. Documentation requires an explicit fetch/switch/fast-forward pull to `roll-challenge4` before `update.sh` is run. |
 | TJA/admin form validation | Upload and editor parsing accepted inconsistent encodings/content and server validation trusted too much client form state. | TJA supports BOM, CRLF/LF, Shift-JIS/CP932, comments, numeric/text courses and subtitle prefixes. Uploads validate content, WAVE safety, audio signatures and bounds; admin song forms validate types, references, ranges, hashes and files server-side. |
 | Editor dependencies | Editor modules mixed PyQt and PySide imports. | The editor consistently uses PyQt5, its parser handles BOM, and an offscreen GUI smoke test succeeds. |
 | Tracked credentials/cache | A tracked bootstrap file contained an active administrator credential and a tracked filesystem session cache was modified at runtime. | `.admin_bootstrap.json` is removed and ignored. The tracked session cache is removed from Git while preserving local runtime behavior; session/cache paths are ignored. The historical administrator credential must be rotated because removing a file does not erase Git history. |
@@ -86,14 +87,15 @@ secrecy, import failure preservation, category ID `0`, course existence,
 account and announcement cleanup, malformed/oversized audio and TJA uploads,
 Shift-JIS TJA, atomic sequence repair, Redis/basedir/SEO normalization, static
 asset references, frontend index/random/loader guards, previews and editor
-parser behavior. `tests/browser_regression.js` exercises desktop and mobile UI,
+parser behavior, and update preservation of local secret/session files.
+`tests/browser_regression.js` exercises desktop and mobile UI,
 XSS, admin login, and both root and `/taiko/` deployment modes.
 
 ## Verification Results
 
 | Check | Result |
 | --- | --- |
-| `pytest -q` | Passed: 34 tests. |
+| `pytest -q` | Passed: 35 tests. |
 | `python -m compileall app.py schema.py tjaf.py tools scripts taiko-editor` | Passed. |
 | `node --check` for every `public/**/*.js` and browser regression script | Passed. |
 | `ruff check . --select E9,F63,F7,F82` | Passed. |
@@ -131,3 +133,8 @@ Deploy the backend and purge the paths listed in `cache_flush_urls.txt` through
 the CDN, especially changed `src/js`, `src/css`, weekly view, manifest and index
 resources. The new frontend asset version is `20260711.1` unless overridden by
 `TAIKO_WEB_ASSET_VERSION`.
+
+When updating from `roll-challenge2`, explicitly fetch, switch, and
+fast-forward-pull `roll-challenge4` in the source checkout before running
+`update.sh`; the update script intentionally synchronizes its current source
+directory and does not alter Git branches itself.

@@ -112,6 +112,24 @@ sudo bash setup.sh upgrade-direct
 `TAIKO_WEB_UPDATE_MODE=container` 或 `TAIKO_WEB_UPDATE_MODE=direct`。部署前可使用
 `TAIKO_WEB_UPDATE_DRY_RUN=1 bash update.sh` 检查将要执行的更新模式。
 
+### Branch selection before update
+
+`update.sh` deploys the source directory from which it is run; it deliberately
+does not fetch, pull, or switch Git branches. To update an installation from
+`roll-challenge2` to this release, switch the source checkout first and only
+then run the update:
+
+```bash
+git fetch origin roll-challenge4
+git switch roll-challenge4
+git pull --ff-only origin roll-challenge4
+sudo bash update.sh
+```
+
+The update sync preserves `.env`, `config.py`, `.taiko-secret-key`, file
+sessions, songs, notice uploads, virtual environments, and backups. MongoDB is
+backed up by default before a detected data-bearing update.
+
 这个命令会：
 - 同步最新代码到 `/srv/taiko-web`（保留 `config.py` 与数据目录）
 - 更新虚拟环境依赖（`requirements.txt`）

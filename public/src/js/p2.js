@@ -21,6 +21,7 @@ class P2Connection{
 		this.player = 1
 		this.allEvents = new Map()
 		this.addEventListener("message", this.message.bind(this))
+		this.chat = new MultiplayerChat(this)
 		this.currentHash = ""
 		this.disabled = 0
 		pageEvents.add(window, "hashchange", this.onhashchange.bind(this))
@@ -168,6 +169,7 @@ class P2Connection{
 		this.stopLatencyProbe()
 		this.otherConnected = false
 		this.session = false
+		this.chat.deactivate()
 		if(this.hashLock){
 			this.hash("")
 			this.hashLock = false
@@ -288,6 +290,7 @@ class P2Connection{
 	message(response){
 		switch(response.type){
 			case "gameload":
+				this.chat.activate()
 				if("player" in response.value){
 					this.player = response.value.player === 2 ? 2 : 1
 				}
@@ -304,6 +307,7 @@ class P2Connection{
 				scoreStorage.clearP2()
 				break
 			case "gameend":
+				this.chat.deactivate()
 				this.otherConnected = false
 				if(this.session){
 					pageEvents.send("session-end")
@@ -347,6 +351,7 @@ class P2Connection{
 				this.branchSet = false
 				break
 			case "session":
+				this.chat.activate()
 				this.clearMessage("users")
 				this.otherConnected = true
 				this.session = true
@@ -354,6 +359,9 @@ class P2Connection{
 				if("player" in response.value){
 					this.player = response.value.player === 2 ? 2 : 1
 				}
+				break
+			case "chat":
+				this.chat.receive(response.value)
 				break
 			case "name":
 				this.name = response.value ? (response.value.name || "").toString() : ""

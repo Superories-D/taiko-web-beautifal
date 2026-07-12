@@ -497,6 +497,57 @@ var translations = {
 		tw: "網上對打",
 		ko: "온라인 대전"
 	},
+	multiplayerChat: {
+		title: {
+			ja: "ルームチャット",
+			en: "Room Chat",
+			cn: "房间聊天",
+			tw: "房間聊天",
+			ko: "방 채팅"
+		},
+		open: {
+			ja: "チャットを開く",
+			en: "Open room chat",
+			cn: "打开房间聊天",
+			tw: "開啟房間聊天",
+			ko: "방 채팅 열기"
+		},
+		shortcut: {
+			ja: "Shiftでチャット",
+			en: "Press Shift to chat",
+			cn: "按 Shift 聊天",
+			tw: "按 Shift 聊天",
+			ko: "Shift 키로 채팅"
+		},
+		placeholder: {
+			ja: "メッセージを入力…",
+			en: "Type a message…",
+			cn: "输入消息…",
+			tw: "輸入訊息…",
+			ko: "메시지 입력…"
+		},
+		send: {
+			ja: "送信",
+			en: "Send",
+			cn: "发送",
+			tw: "傳送",
+			ko: "보내기"
+		},
+		you: {
+			ja: "自分",
+			en: "You",
+			cn: "我",
+			tw: "我",
+			ko: "나"
+		},
+		other: {
+			ja: "相手",
+			en: "Opponent",
+			cn: "对方",
+			tw: "對方",
+			ko: "상대"
+		}
+	},
 	multiplayerUnavailable: {
 		ja: "現在利用できるオンライン対戦サーバーはありません。しばらくしてからもう一度お試しください。",
 		en: "Multiplayer is currently unavailable. Please try again later.",
@@ -1155,6 +1206,20 @@ var translations = {
 			cn: "取消",
 			tw: "取消",
 			ko: "취소"
+		},
+		copy: {
+			ja: "コピー",
+			en: "Copy",
+			cn: "复制",
+			tw: "複製",
+			ko: "복사"
+		},
+		copied: {
+			ja: "コピー済み",
+			en: "Copied",
+			cn: "已复制",
+			tw: "已複製",
+			ko: "복사됨"
 		}
 	},
 	settings: {

@@ -21,6 +21,7 @@ var assets = {
 		"gamepad.js",
 		"tutorial.js",
 		"soundbuffer.js",
+		"multiplayerchat.js",
 		"p2.js",
 		"canvasasset.js",
 		"viewassets.js",

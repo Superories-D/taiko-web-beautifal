@@ -1155,6 +1155,20 @@ var translations = {
 			cn: "取消",
 			tw: "取消",
 			ko: "취소"
+		},
+		copy: {
+			ja: "コピー",
+			en: "Copy",
+			cn: "复制",
+			tw: "複製",
+			ko: "복사"
+		},
+		copied: {
+			ja: "コピー済み",
+			en: "Copied",
+			cn: "已复制",
+			tw: "已複製",
+			ko: "복사됨"
 		}
 	},
 	settings: {

@@ -67,6 +67,21 @@
 	cursor: text;
 	overflow: hidden;
 }
+.session-actions{
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.4em;
+}
+.session-actions .view-end-button{
+	float: none;
+}
+.session-copy-button{
+	padding: 0.4em 1.5em;
+	font-weight: bold;
+	border-color: #000;
+	color: #000;
+	z-index: 1;
+}
 @keyframes bgscroll{
 	from{
 		background-position: 50% top;

@@ -6,6 +6,7 @@ class Session{
 		this.touchEnabled = touchEnabled
 		loader.changePage("session", true)
 		this.endButton = this.getElement("view-end-button")
+		this.copyButton = this.getElement("session-copy-button")
 		if(touchEnabled){
 			this.getElement("view-outer").classList.add("touch-enabled")
 		}
@@ -17,6 +18,8 @@ class Session{
 		this.sessionInvite.parentNode.insertBefore(document.createTextNode(strings.session.linkTutorial), this.sessionInvite)
 		this.endButton.innerText = strings.session.cancel
 		this.endButton.setAttribute("alt", strings.session.cancel)
+		this.copyButton.innerText = strings.session.copy
+		this.copyButton.setAttribute("alt", strings.session.copy)
 		
 		pageEvents.add(window, ["mousedown", "touchstart"], this.mouseDown.bind(this))
 		this.keyboard = new Keyboard({
@@ -58,9 +61,53 @@ class Session{
 			getSelection().removeAllRanges()
 			this.sessionInvite.blur()
 		}
-		if(event.target === this.endButton){
+		if(event.target === this.copyButton){
+			this.copyInvite()
+		}else if(event.target === this.endButton){
 			this.onEnd()
 		}
+	}
+	copyInvite(){
+		var inviteLink = this.sessionInvite.innerText.trim()
+		if(!inviteLink){
+			return
+		}
+		var copied = () => this.showCopied()
+		if(navigator.clipboard && navigator.clipboard.writeText){
+			navigator.clipboard.writeText(inviteLink).then(copied, () => {
+				if(this.copyInviteFallback(inviteLink)){
+					copied()
+				}
+			})
+		}else if(this.copyInviteFallback(inviteLink)){
+			copied()
+		}
+	}
+	copyInviteFallback(inviteLink){
+		var textarea = document.createElement("textarea")
+		textarea.value = inviteLink
+		textarea.style.position = "fixed"
+		textarea.style.opacity = "0"
+		document.body.appendChild(textarea)
+		textarea.select()
+		var copied = false
+		try{
+			copied = document.execCommand("copy")
+		}catch(e){}
+		document.body.removeChild(textarea)
+		return copied
+	}
+	showCopied(){
+		if(!this.copyButton){
+			return
+		}
+		clearTimeout(this.copyFeedbackTimer)
+		this.copyButton.innerText = strings.session.copied
+		this.copyButton.setAttribute("alt", strings.session.copied)
+		this.copyFeedbackTimer = setTimeout(() => {
+			this.copyButton.innerText = strings.session.copy
+			this.copyButton.setAttribute("alt", strings.session.copy)
+		}, 1500)
 	}
 	keyPress(pressed){
 		if(pressed){
@@ -83,11 +130,13 @@ class Session{
 		}, 500)
 	}
 	clean(){
+		clearTimeout(this.copyFeedbackTimer)
 		this.keyboard.clean()
 		this.gamepad.clean()
 		pageEvents.remove(window, ["mousedown", "touchstart"])
 		pageEvents.remove(p2, "message")
 		delete this.endButton
+		delete this.copyButton
 		delete this.sessionInvite
 	}
 }

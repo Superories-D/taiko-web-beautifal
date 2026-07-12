@@ -78,6 +78,8 @@
 .session-copy-button{
 	padding: 0.4em 1.5em;
 	font-weight: bold;
+	font-family: inherit;
+	line-height: normal;
 	border-color: #000;
 	color: #000;
 	z-index: 1;

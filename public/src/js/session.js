@@ -20,6 +20,8 @@ class Session{
 		this.endButton.setAttribute("alt", strings.session.cancel)
 		this.copyButton.innerText = strings.session.copy
 		this.copyButton.setAttribute("alt", strings.session.copy)
+		this.copyInviteHandler = this.copyInvite.bind(this)
+		this.copyButton.addEventListener("click", this.copyInviteHandler)
 		
 		pageEvents.add(window, ["mousedown", "touchstart"], this.mouseDown.bind(this))
 		this.keyboard = new Keyboard({
@@ -61,9 +63,7 @@ class Session{
 			getSelection().removeAllRanges()
 			this.sessionInvite.blur()
 		}
-		if(event.target === this.copyButton){
-			this.copyInvite()
-		}else if(event.target === this.endButton){
+		if(event.target === this.endButton){
 			this.onEnd()
 		}
 	}
@@ -73,25 +73,26 @@ class Session{
 			return
 		}
 		var copied = () => this.showCopied()
-		if(navigator.clipboard && navigator.clipboard.writeText){
-			navigator.clipboard.writeText(inviteLink).then(copied, () => {
-				if(this.copyInviteFallback(inviteLink)){
-					copied()
-				}
-			})
-		}else if(this.copyInviteFallback(inviteLink)){
+		if(this.copyInviteFallback(inviteLink)){
 			copied()
+		}else if(navigator.clipboard && navigator.clipboard.writeText){
+			navigator.clipboard.writeText(inviteLink).then(copied, () => {})
 		}
 	}
 	copyInviteFallback(inviteLink){
 		var textarea = document.createElement("textarea")
 		textarea.value = inviteLink
+		textarea.setAttribute("readonly", "")
 		textarea.style.position = "fixed"
-		textarea.style.opacity = "0"
+		textarea.style.left = "-9999px"
+		textarea.style.top = "0"
+		textarea.style.fontSize = "16px"
 		document.body.appendChild(textarea)
-		textarea.select()
 		var copied = false
 		try{
+			textarea.focus()
+			textarea.select()
+			textarea.setSelectionRange(0, textarea.value.length)
 			copied = document.execCommand("copy")
 		}catch(e){}
 		document.body.removeChild(textarea)
@@ -131,12 +132,14 @@ class Session{
 	}
 	clean(){
 		clearTimeout(this.copyFeedbackTimer)
+		this.copyButton.removeEventListener("click", this.copyInviteHandler)
 		this.keyboard.clean()
 		this.gamepad.clean()
 		pageEvents.remove(window, ["mousedown", "touchstart"])
 		pageEvents.remove(p2, "message")
 		delete this.endButton
 		delete this.copyButton
+		delete this.copyInviteHandler
 		delete this.sessionInvite
 	}
 }

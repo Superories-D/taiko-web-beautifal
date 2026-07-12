@@ -22,6 +22,7 @@ class Session{
 		this.copyButton.setAttribute("alt", strings.session.copy)
 		this.copyInviteHandler = this.copyInvite.bind(this)
 		this.copyButton.addEventListener("click", this.copyInviteHandler)
+		this.copyButton.addEventListener("touchend", this.copyInviteHandler)
 		
 		pageEvents.add(window, ["mousedown", "touchstart"], this.mouseDown.bind(this))
 		this.keyboard = new Keyboard({
@@ -67,7 +68,11 @@ class Session{
 			this.onEnd()
 		}
 	}
-	copyInvite(){
+	copyInvite(event){
+		if(event){
+			event.preventDefault()
+			event.stopPropagation()
+		}
 		var inviteLink = this.sessionInvite.innerText.trim()
 		if(!inviteLink){
 			return
@@ -133,6 +138,7 @@ class Session{
 	clean(){
 		clearTimeout(this.copyFeedbackTimer)
 		this.copyButton.removeEventListener("click", this.copyInviteHandler)
+		this.copyButton.removeEventListener("touchend", this.copyInviteHandler)
 		this.keyboard.clean()
 		this.gamepad.clean()
 		pageEvents.remove(window, ["mousedown", "touchstart"])

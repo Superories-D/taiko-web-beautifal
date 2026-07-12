@@ -83,6 +83,7 @@
 	border-color: #000;
 	color: #000;
 	z-index: 1;
+	touch-action: manipulation;
 }
 @keyframes bgscroll{
 	from{

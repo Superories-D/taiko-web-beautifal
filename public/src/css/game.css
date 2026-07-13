@@ -6,6 +6,168 @@
 	background-size: calc(100vh / 720 * 512);
 	background-position: center;
 }
+#game.ai-battle-active::after{
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 420ms ease, background 420ms ease;
+}
+#game.ai-battle-player-leading::after{
+	opacity: 1;
+	background: radial-gradient(circle at 22% 48%, rgba(255, 48, 48, 0.24), transparent 58%);
+}
+#game.ai-battle-ai-leading::after{
+	opacity: 1;
+	background: radial-gradient(circle at 78% 48%, rgba(47, 123, 255, 0.25), transparent 58%);
+}
+#ai-battle-hud{
+	position: absolute;
+	top: max(8px, 1.5vh);
+	left: 50%;
+	z-index: 4;
+	width: min(58vw, 620px);
+	min-width: 280px;
+	transform: translateX(-50%);
+	color: #fff;
+	font-family: Meiryo, "Microsoft YaHei", sans-serif;
+	font-weight: 800;
+	text-align: center;
+	pointer-events: none;
+	filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.72));
+}
+.ai-battle-form{
+	display: inline-block;
+	margin-bottom: 5px;
+	padding: 3px 12px;
+	border: 1px solid rgba(255, 255, 255, 0.8);
+	border-radius: 999px;
+	background: rgba(13, 20, 38, 0.82);
+	font-size: clamp(11px, 1.5vmin, 15px);
+	opacity: 1;
+	transition: opacity 500ms ease;
+}
+.ai-battle-form.quiet{ opacity: 0.35; }
+.ai-battle-bar{
+	position: relative;
+	height: clamp(10px, 1.8vmin, 16px);
+	border: 2px solid rgba(255, 255, 255, 0.92);
+	border-radius: 999px;
+	background: rgba(5, 9, 18, 0.75);
+	overflow: hidden;
+	box-shadow: inset 0 0 8px #000, 0 0 12px rgba(255, 255, 255, 0.22);
+}
+.ai-battle-bar i{
+	position: absolute;
+	top: -3px;
+	bottom: -3px;
+	left: 50%;
+	width: 3px;
+	background: #fff;
+	transform: translateX(-50%);
+	box-shadow: 0 0 7px #fff;
+}
+.ai-battle-player,.ai-battle-ai{
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 0;
+	transition: width 150ms cubic-bezier(.2,.8,.2,1);
+}
+.ai-battle-player{
+	right: 50%;
+	background: linear-gradient(90deg, #8d0707, #ff3b2f 65%, #ffd4b0);
+	box-shadow: 0 0 12px #ff3b2f;
+}
+.ai-battle-ai{
+	left: 50%;
+	background: linear-gradient(90deg, #c9eeff, #3588ff 35%, #07348e);
+	box-shadow: 0 0 12px #3588ff;
+}
+.ai-battle-rounds{
+	display: flex;
+	justify-content: center;
+	gap: clamp(5px, 1vw, 10px);
+	margin-top: 6px;
+}
+.ai-battle-rounds span{
+	display: grid;
+	place-items: center;
+	width: clamp(22px, 3.3vmin, 32px);
+	height: clamp(22px, 3.3vmin, 32px);
+	border: 2px solid rgba(255,255,255,.8);
+	border-radius: 50%;
+	background: rgba(12,18,31,.78);
+	font-size: clamp(11px, 1.8vmin, 16px);
+	transition: transform 220ms ease, background 220ms ease;
+}
+.ai-battle-rounds .player{ background:#df3028; transform:scale(1.13); }
+.ai-battle-rounds .ai{ background:#2471dc; transform:scale(1.13); }
+.ai-battle-rounds .draw{ background:#6b6572; transform:scale(1.08); }
+.ai-battle-result{
+	position: fixed;
+	top: 45%;
+	left: 50%;
+	width: min(62vw, 680px);
+	padding: 10px 20px;
+	border: 2px solid rgba(255,255,255,.92);
+	border-radius: 999px;
+	background: linear-gradient(90deg, rgba(197,37,31,.93), rgba(22,27,42,.94), rgba(38,100,205,.93));
+	box-shadow: 0 0 0 0 rgba(255,255,255,.5), 0 12px 40px rgba(0,0,0,.48);
+	font-size: clamp(18px, 3.3vmin, 34px);
+	letter-spacing: .08em;
+	opacity: 0;
+	transform: translate(-50%,-50%) scale(.78);
+	transition: opacity 160ms ease, transform 230ms cubic-bezier(.2,1.5,.35,1);
+}
+.ai-battle-result::before,
+.ai-battle-result::after{
+	content:"";
+	position:absolute;
+	top:50%;
+	width:90px;
+	height:70px;
+	background:
+		radial-gradient(circle, #fff 0 3px, transparent 4px) 8px 12px/28px 28px,
+		radial-gradient(circle, #ffd34d 0 3px, transparent 4px) 20px 0/34px 34px,
+		radial-gradient(circle, #63d8ff 0 2px, transparent 3px) 0 22px/24px 24px;
+	opacity:0;
+	transform:translateY(-50%) scale(.4);
+}
+.ai-battle-result::before{ right:100%; }
+.ai-battle-result::after{ left:100%; transform:translateY(-50%) scale(.4) rotate(180deg); }
+.ai-battle-result.show::before{ animation:ai-battle-sparks-left 720ms ease-out; }
+.ai-battle-result.show::after{ animation:ai-battle-sparks-right 720ms ease-out; }
+.ai-battle-result.show{
+	opacity: 1;
+	transform: translate(-50%,-50%) scale(1);
+	animation: ai-battle-pulse 600ms ease-out;
+}
+.ai-battle-result.match{ top: 40%; padding-block: 16px; }
+@keyframes ai-battle-pulse{
+	0%{ box-shadow:0 0 0 0 rgba(255,255,255,.75),0 12px 40px rgba(0,0,0,.48); }
+	100%{ box-shadow:0 0 0 26px rgba(255,255,255,0),0 12px 40px rgba(0,0,0,.48); }
+}
+@keyframes ai-battle-sparks-left{
+	0%{opacity:0;transform:translate(34px,-50%) scale(.35)}
+	35%{opacity:1}
+	100%{opacity:0;transform:translate(-16px,-50%) scale(1.15)}
+}
+@keyframes ai-battle-sparks-right{
+	0%{opacity:0;transform:translate(-34px,-50%) scale(.35) rotate(180deg)}
+	35%{opacity:1}
+	100%{opacity:0;transform:translate(16px,-50%) scale(1.15) rotate(180deg)}
+}
+.portrait #ai-battle-hud{
+	top: max(42px, 5vh);
+	width: min(84vw, 560px);
+}
+.portrait .ai-battle-result{ width: min(82vw, 600px); }
+@media (prefers-reduced-motion: reduce){
+	#ai-battle-hud *,#game.ai-battle-active::after{ animation:none!important; transition:none!important; }
+}
 #screen.view{
 	background-image: none;
 	background-color: #000;

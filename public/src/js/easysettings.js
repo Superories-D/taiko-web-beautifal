@@ -7,9 +7,12 @@
 		abekobe: false,
 		detarame: false,
 		sortByTitle: false,
-		songSelectingSpeed: 400
+		songSelectingSpeed: 400,
+		aiBattleEnabled: false,
+		aiState: "random"
 	}
 	var BAISOKU_VALUES = [1, 1.5, 2, 3, 4]
+	var AI_STATES = ["random", "excellent", "great", "normal", "poor", "awful"]
 	var cachedSettings = null
 	var overlay = null
 	var activeSongSelect = null
@@ -57,6 +60,11 @@
 
 	function sanitizeSongSelectingSpeed(value) {
 		return Math.round(clampNumber(value, 150, 1200, DEFAULT_SETTINGS.songSelectingSpeed))
+	}
+
+	function sanitizeAiState(value) {
+		value = typeof value === "string" ? value.toLowerCase().trim() : ""
+		return AI_STATES.indexOf(value) === -1 ? DEFAULT_SETTINGS.aiState : value
 	}
 
 	function readStorage(key) {
@@ -121,6 +129,15 @@
 		settings.detarame = sanitizeBoolean(settings.detarame, DEFAULT_SETTINGS.detarame)
 		settings.sortByTitle = sanitizeBoolean(settings.sortByTitle, DEFAULT_SETTINGS.sortByTitle)
 		settings.songSelectingSpeed = sanitizeSongSelectingSpeed(settings.songSelectingSpeed)
+		settings.aiBattleEnabled = sanitizeBoolean(settings.aiBattleEnabled, DEFAULT_SETTINGS.aiBattleEnabled)
+		settings.aiState = sanitizeAiState(settings.aiState)
+		if (settings.aiBattleEnabled) {
+			var aiState = settings.aiState
+			settings = Object.assign({}, DEFAULT_SETTINGS, {
+				aiBattleEnabled: true,
+				aiState: aiState
+			})
+		}
 		return settings
 	}
 
@@ -140,9 +157,13 @@
 	}
 
 	function saveSettings(settings, silent) {
+		var wasAiEnabled = cachedSettings && cachedSettings.aiBattleEnabled
 		cachedSettings = sanitizeSettings(settings)
 		writeStorage(STORAGE_KEY, JSON.stringify(cachedSettings))
 		syncLegacySettings(cachedSettings)
+		if (wasAiEnabled !== cachedSettings.aiBattleEnabled) {
+			setNetworkBlocked(cachedSettings.aiBattleEnabled)
+		}
 		if (!silent) {
 			notifyChange()
 		}
@@ -158,8 +179,36 @@
 
 	function setSetting(key, value) {
 		var settings = getSettings()
-		settings[key] = value
+		if (key === "aiBattleEnabled") {
+			var enabled = sanitizeBoolean(value, false)
+			var aiState = settings.aiState
+			settings = enabled ? Object.assign({}, DEFAULT_SETTINGS, {
+				aiBattleEnabled: true,
+				aiState: aiState
+			}) : Object.assign({}, settings, {aiBattleEnabled: false})
+			setNetworkBlocked(enabled)
+		} else if (settings.aiBattleEnabled && key !== "aiState") {
+			return getSettings()
+		} else {
+			settings[key] = value
+		}
 		return saveSettings(settings)
+	}
+
+	function setNetworkBlocked(blocked) {
+		if (typeof p2 === "undefined" || !p2) {
+			return
+		}
+		if (blocked && !p2.aiBattleBlocked) {
+			if (p2.session || p2.otherConnected) {
+				p2.send("leave")
+			}
+			p2.aiBattleBlocked = true
+			p2.disable()
+		} else if (!blocked && p2.aiBattleBlocked) {
+			p2.aiBattleBlocked = false
+			p2.enable()
+		}
 	}
 
 	function isModifiedGameplay(settings) {
@@ -168,7 +217,8 @@
 			Math.abs(settings.baisoku - 1) > 0.0001 ||
 			settings.doron ||
 			settings.abekobe ||
-			settings.detarame
+			settings.detarame ||
+			settings.aiBattleEnabled
 	}
 
 	function isLeaderboardEligible(settings) {
@@ -192,6 +242,9 @@
 		}
 		if (settings.detarame) {
 			reasons.push("detarame")
+		}
+		if (settings.aiBattleEnabled) {
+			reasons.push("aiBattle")
 		}
 		return reasons.join(", ")
 	}
@@ -326,6 +379,17 @@
 					'<label class="easy-settings-toggle"><input id="easy-settings-abekobe" type="checkbox"><span id="easy-settings-abekobe-label"></span></label>' +
 					'<label class="easy-settings-toggle"><input id="easy-settings-detarame" type="checkbox"><span id="easy-settings-detarame-label"></span></label>' +
 					'<label class="easy-settings-toggle"><input id="easy-settings-sort" type="checkbox"><span id="easy-settings-sort-label"></span></label>' +
+					'<div class="easy-settings-ai">' +
+						'<label class="easy-settings-toggle easy-settings-ai-toggle"><input id="easy-settings-ai" type="checkbox"><span id="easy-settings-ai-label"></span></label>' +
+						'<label class="easy-settings-row easy-settings-ai-state">' +
+							'<span id="easy-settings-ai-state-label"></span>' +
+							'<select id="easy-settings-ai-state">' +
+								'<option value="random"></option><option value="excellent"></option><option value="great"></option>' +
+								'<option value="normal"></option><option value="poor"></option><option value="awful"></option>' +
+							'</select>' +
+						'</label>' +
+						'<p id="easy-settings-ai-note"></p>' +
+					'</div>' +
 				'</div>' +
 				'<div class="easy-settings-footer">' +
 					'<span id="easy-settings-leaderboard"></span>' +
@@ -379,6 +443,14 @@
 			setSetting("sortByTitle", event.target.checked)
 			renderSettings(false)
 		})
+		overlay.querySelector("#easy-settings-ai").addEventListener("change", function (event) {
+			setSetting("aiBattleEnabled", event.target.checked)
+			renderSettings(false)
+		})
+		overlay.querySelector("#easy-settings-ai-state").addEventListener("change", function (event) {
+			setSetting("aiState", event.target.value)
+			renderSettings(false)
+		})
 		renderStaticText()
 		return overlay
 	}
@@ -395,6 +467,21 @@
 		setText(overlay.querySelector("#easy-settings-abekobe-label"), getText("abekobe", "Reverse"))
 		setText(overlay.querySelector("#easy-settings-detarame-label"), getText("detarame", "Random Notes"))
 		setText(overlay.querySelector("#easy-settings-sort-label"), getText("sortByTitle", "Sort Current Category by Title"))
+		setText(overlay.querySelector("#easy-settings-ai-label"), getText("aiBattle", "AI Battle"))
+		setText(overlay.querySelector("#easy-settings-ai-state-label"), getText("aiState", "AI Form"))
+		setText(overlay.querySelector("#easy-settings-ai-note"), getText("aiNote", "Auto play and online multiplayer are disabled in AI Battle."))
+		var stateSelect = overlay.querySelector("#easy-settings-ai-state")
+		var stateLabels = {
+			random: getText("aiRandom", "Random"),
+			excellent: getText("aiExcellent", "Excellent"),
+			great: getText("aiGreat", "Great"),
+			normal: getText("aiNormal", "Normal"),
+			poor: getText("aiPoor", "Poor"),
+			awful: getText("aiAwful", "Awful")
+		}
+		Array.prototype.forEach.call(stateSelect.options, function (option) {
+			option.textContent = stateLabels[option.value]
+		})
 		setText(overlay.querySelector("#easy-settings-reset"), getText("reset", "Reset"))
 	}
 
@@ -414,6 +501,22 @@
 		overlay.querySelector("#easy-settings-abekobe").checked = settings.abekobe
 		overlay.querySelector("#easy-settings-detarame").checked = settings.detarame
 		overlay.querySelector("#easy-settings-sort").checked = settings.sortByTitle
+		overlay.querySelector("#easy-settings-ai").checked = settings.aiBattleEnabled
+		overlay.querySelector("#easy-settings-ai-state").value = settings.aiState
+		overlay.querySelector("#easy-settings-ai-state").disabled = !settings.aiBattleEnabled
+		var locked = [
+			"#easy-settings-playback", "#easy-settings-baisoku", "#easy-settings-speed",
+			"#easy-settings-doron", "#easy-settings-abekobe", "#easy-settings-detarame", "#easy-settings-sort"
+		]
+		locked.forEach(function (selector) {
+			var input = overlay.querySelector(selector)
+			input.disabled = settings.aiBattleEnabled
+			var row = input.closest("label")
+			if (row) {
+				row.classList.toggle("easy-settings-locked", settings.aiBattleEnabled)
+			}
+		})
+		overlay.classList.toggle("ai-battle-enabled", settings.aiBattleEnabled)
 		var status = overlay.querySelector("#easy-settings-leaderboard")
 		if (isLeaderboardEligible(settings)) {
 			status.classList.remove("modified")
@@ -488,6 +591,22 @@
 		}
 	}
 
+	function showConflict(message) {
+		var notice = document.getElementById("ai-battle-conflict-notice")
+		if (!notice) {
+			notice = document.createElement("div")
+			notice.id = "ai-battle-conflict-notice"
+			notice.setAttribute("role", "alert")
+			document.body.appendChild(notice)
+		}
+		notice.textContent = message || getText("aiConflict", "Turn off AI Battle first.")
+		notice.classList.add("visible")
+		clearTimeout(notice.hideTimer)
+		notice.hideTimer = setTimeout(function () {
+			notice.classList.remove("visible")
+		}, 4500)
+	}
+
 	loadSettings()
 
 	window.EasySettings = {
@@ -502,6 +621,9 @@
 		getLeaderboardBlockReason: getLeaderboardBlockReason,
 		getPlaybackRate: getPlaybackRate,
 		getBaisoku: getBaisoku,
+		isAiBattleEnabled: function () { return getSettings().aiBattleEnabled },
+		setNetworkBlocked: setNetworkBlocked,
+		showConflict: showConflict,
 		getSongTitle: getSongTitle,
 		initUI: initUI,
 		open: open,

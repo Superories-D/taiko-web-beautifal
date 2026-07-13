@@ -49,6 +49,7 @@ class Mekadon{
 			this.game.updateCurrentCircle()
 			this.game.updateCombo(0)
 			this.game.updateGlobalScore(0, 1, circle.gogoTime)
+			this.controller.recordBattleJudgement(0, circle)
 			this.game.sectionNotes.push(0)
 			return true
 		}
@@ -100,6 +101,7 @@ class Mekadon{
 			this.controller.displayScore(score, false, keyDai)
 			this.game.updateCombo(score)
 			this.game.updateGlobalScore(score, keyDai ? 2 : 1, circle.gogoTime)
+			this.controller.recordBattleJudgement(score, circle)
 			this.game.updateCurrentCircle()
 			circle.played(score, keyDai)
 			if(circle.section){

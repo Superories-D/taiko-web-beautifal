@@ -99,7 +99,9 @@
 		this.branchCache = new CanvasCache(noSmoothing)
 		this.nameplateCache = new CanvasCache(noSmoothing)
 		
-		if(this.multiplayer === 2){
+		if(this.controller.aiBattle){
+			this.player = this.controller.player
+		}else if(this.multiplayer === 2){
 			this.player = p2.player === 2 ? 1 : 2
 		}else{
 			this.player = this.controller.multiplayer ? p2.player : 1
@@ -383,7 +385,9 @@
 				id: "1p",
 			}, ctx => {
 				var defaultName = this.player === 1 ? strings.defaultName : strings.default2PName
-				if(this.multiplayer === 2){
+				if(this.controller.aiBattle && this.player === 2){
+					var name = "AI"
+				}else if(this.multiplayer === 2){
 					var name = p2.name || defaultName
 				}else{
 					var name = account.loggedIn ? account.displayName : defaultName
@@ -573,7 +577,9 @@
 				id: "1p",
 			}, ctx => {
 				var defaultName = this.player === 1 ? strings.defaultName : strings.default2PName
-				if(this.multiplayer === 2){
+				if(this.controller.aiBattle && this.player === 2){
+					var name = "AI"
+				}else if(this.multiplayer === 2){
 					var name = p2.name || defaultName
 				}else{
 					var name = account.loggedIn ? account.displayName : defaultName

@@ -303,6 +303,28 @@ var translations = {
 			tw: "分類內標題排序",
 			ko: "분류 안 제목순 정렬"
 		},
+		aiBattle: {ja: "AI対戦", en: "AI Battle", cn: "AI 对战", tw: "AI 對戰", ko: "AI 대전"},
+		aiState: {ja: "AIの調子", en: "AI Form", cn: "AI 状态", tw: "AI 狀態", ko: "AI 상태"},
+		aiNote: {
+			ja: "AI対戦中はオートとオンライン対戦を利用できません。",
+			en: "Auto play and online multiplayer are disabled in AI Battle.",
+			cn: "AI 对战开启后将禁用自动演奏和在线联机。",
+			tw: "AI 對戰開啟後將停用自動演奏和線上連線。",
+			ko: "AI 대전에서는 자동 연주와 온라인 멀티플레이를 사용할 수 없습니다."
+		},
+		aiRandom: {ja: "ランダム", en: "Random", cn: "随机", tw: "隨機", ko: "무작위"},
+		aiExcellent: {ja: "絶好調", en: "Excellent", cn: "极佳", tw: "極佳", ko: "최상"},
+		aiGreat: {ja: "好調", en: "Great", cn: "佳", tw: "佳", ko: "좋음"},
+		aiNormal: {ja: "普通", en: "Normal", cn: "普通", tw: "普通", ko: "보통"},
+		aiPoor: {ja: "不調", en: "Poor", cn: "差", tw: "差", ko: "나쁨"},
+		aiAwful: {ja: "絶不調", en: "Awful", cn: "极差", tw: "極差", ko: "최악"},
+		aiConflict: {
+			ja: "先にAI対戦をオフにしてください。",
+			en: "Turn off AI Battle first.",
+			cn: "请先关闭 AI 对战。",
+			tw: "請先關閉 AI 對戰。",
+			ko: "먼저 AI 대전을 꺼 주세요."
+		},
 		leaderboardEnabled: {
 			ja: "ランキング有効",
 			en: "Leaderboard enabled",
@@ -324,6 +346,21 @@ var translations = {
 			tw: "恢復預設配置",
 			ko: "기본 설정 복원"
 		}
+	},
+	aiBattle: {
+		form: {ja: "AIの調子", en: "AI Form", cn: "AI 状态", tw: "AI 狀態", ko: "AI 상태"},
+		excellent: {ja: "絶好調", en: "Excellent", cn: "极佳", tw: "極佳", ko: "최상"},
+		great: {ja: "好調", en: "Great", cn: "佳", tw: "佳", ko: "좋음"},
+		normal: {ja: "普通", en: "Normal", cn: "普通", tw: "普通", ko: "보통"},
+		poor: {ja: "不調", en: "Poor", cn: "差", tw: "差", ko: "나쁨"},
+		awful: {ja: "絶不調", en: "Awful", cn: "极差", tw: "極差", ko: "최악"},
+		round: {ja: "第{round}区間", en: "Round {round}", cn: "第 {round} 段", tw: "第 {round} 段", ko: "{round} 구간"},
+		playerWins: {ja: "プレイヤー勝利", en: "Player wins", cn: "玩家胜", tw: "玩家勝", ko: "플레이어 승"},
+		aiWins: {ja: "AI勝利", en: "AI wins", cn: "AI 胜", tw: "AI 勝", ko: "AI 승"},
+		draw: {ja: "引き分け", en: "Draw", cn: "平局", tw: "平局", ko: "무승부"},
+		matchPlayer: {ja: "五番勝負・プレイヤー勝利", en: "Five rounds · Player wins", cn: "五局战罢 · 玩家胜", tw: "五局戰罷 · 玩家勝", ko: "5구간 · 플레이어 승"},
+		matchAi: {ja: "五番勝負・AI勝利", en: "Five rounds · AI wins", cn: "五局战罢 · AI 胜", tw: "五局戰罷 · AI 勝", ko: "5구간 · AI 승"},
+		matchDraw: {ja: "五番勝負・引き分け", en: "Five rounds · Draw", cn: "五局战罢 · 平局", tw: "五局戰罷 · 平局", ko: "5구간 · 무승부"}
 	},
 	siteMessages: {
 		title: {

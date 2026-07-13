@@ -74,6 +74,9 @@ class Game{
 	update(){
 		this.updateTime()
 		this.updateSongEvents()
+		if(this.controller.aiPlayer){
+			this.controller.aiPlayer.update()
+		}
 		// Main operations
 		this.updateCirclesStatus()
 		this.checkPlays()
@@ -154,7 +157,7 @@ class Game{
 				if(circle.daiFailed && (ms >= circle.daiFailed.ms + this.rules.daiLeniency || ms > endTime)){
 					this.checkScore(circle, circle.daiFailed.check)
 				}else if(ms > endTime){
-					if(this.controller.multiplayer === 2 && p2.waitForJudgement(ms, endTime)){
+					if(this.controller.networkMultiplayer && this.controller.multiplayer === 2 && p2.waitForJudgement(ms, endTime)){
 						nextSet = true
 						this.currentCircle = i
 						if(index++ > 1){
@@ -169,7 +172,7 @@ class Game{
 							}
 							circle.played(-1, false)
 							this.updateCurrentCircle()
-							if(this.controller.multiplayer === 1){
+							if(this.controller.networkMultiplayer && this.controller.multiplayer === 1){
 								var value = {
 									pace: (ms - circle.ms - this.controller.audioLatency) / circle.timesHit,
 									state: this.getSyncState()
@@ -195,10 +198,10 @@ class Game{
 		}
 		
 		var branches = this.songData.branches
-		if(branches){
-			var force = this.controller.multiplayer === 2 ? p2 : this
+		if(branches && !this.controller.aiPlayer){
+			var force = this.controller.networkMultiplayer && this.controller.multiplayer === 2 ? p2 : this
 			var measures = this.songData.measures
-			if(this.controller.multiplayer === 2 || force.branch){
+			if(this.controller.networkMultiplayer && this.controller.multiplayer === 2 || force.branch){
 				if(!force.branchSet){
 					force.branchSet = true
 					if(branches.length){
@@ -254,7 +257,7 @@ class Game{
 							}else{
 								this.setBranch(branch, "normal")
 							}
-						}else if(this.controller.multiplayer === 1){
+						}else if(this.controller.networkMultiplayer && this.controller.multiplayer === 1){
 							p2.send("branch", "normal")
 						}
 					}
@@ -313,7 +316,8 @@ class Game{
 		this.controller.displayScore(0, true)
 		this.updateCombo(0)
 		this.updateGlobalScore(0, 1)
-		if(this.controller.multiplayer === 1){
+		this.controller.recordBattleJudgement(0, circle)
+		if(this.controller.networkMultiplayer && this.controller.multiplayer === 1){
 			p2.send("note", {
 				score: -1,
 				state: this.getSyncState()
@@ -444,12 +448,13 @@ class Game{
 			}
 			this.updateCombo(score)
 			this.updateGlobalScore(score, typeDai && keyDai ? 2 : 1, circle.gogoTime)
+			this.controller.recordBattleJudgement(score, circle)
 			this.updateCurrentCircle()
 			if(circle.section){
 				this.resetSection()
 			}
 			this.sectionNotes.push(score === 450 ? 1 : (score === 230 ? 0.5 : 0))
-			if(this.controller.multiplayer === 1){
+			if(this.controller.networkMultiplayer && this.controller.multiplayer === 1){
 				var value = {
 					score: score,
 					ms: circle.ms - currentTime - this.controller.audioLatency,
@@ -497,7 +502,7 @@ class Game{
 		this.sectionDrumroll++
 		this.globalScore.points += score
 		this.view.setDarkBg(false)
-		if(completed && this.controller.multiplayer === 1){
+		if(completed && this.controller.networkMultiplayer && this.controller.multiplayer === 1){
 			p2.send("drumroll", {
 				pace: completedPace,
 				state: this.getSyncState()
@@ -617,7 +622,7 @@ class Game{
 			var duration = this.mainAsset ? this.mainAsset.duration : 0
 			var musicDuration = (this.musicStartMS || 0) + duration * 1000 - (this.musicStartMS ? 0 : this.controller.offset)
 			if(this.musicFadeOut === 0){
-				if(this.controller.multiplayer === 1){
+				if(this.controller.networkMultiplayer && this.controller.multiplayer === 1){
 					var obj = this.getGlobalScore()
 					obj.name = account.loggedIn ? account.displayName : null
 					p2.send("gameresults", obj)
@@ -625,7 +630,7 @@ class Game{
 				this.musicFadeOut++
 			}else if(this.musicFadeOut === 1 && ms >= started + 1600){
 				this.controller.gameEnded()
-				if(!p2.session && this.controller.multiplayer === 1){
+				if(this.controller.networkMultiplayer && !p2.session && this.controller.multiplayer === 1){
 					p2.send("gameend")
 				}
 				this.musicFadeOut++
@@ -834,7 +839,7 @@ class Game{
 		}
 		this.globalScore.points += Math.floor(score * multiplier / 10) * 10
 	}
-	setBranch(currentBranch, activeName){
+	setBranch(currentBranch, activeName, skipBattleSync){
 		var pastActive = currentBranch.active
 		var ms = currentBranch.ms
 		for(var i = 0; i < this.songData.branches.length; i++){
@@ -877,8 +882,11 @@ class Game{
 				this.currentCircle = closestCircle
 			}
 		}
-		if(this.controller.multiplayer === 1){
+		if(this.controller.networkMultiplayer && this.controller.multiplayer === 1){
 			p2.send("branch", activeName)
+		}
+		if(!skipBattleSync){
+			this.controller.onBattleBranch(currentBranch.ms, activeName)
 		}
 	}
 	resetSection(){

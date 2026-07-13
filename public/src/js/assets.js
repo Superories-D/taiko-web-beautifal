@@ -10,6 +10,7 @@ var assets = {
 		"titlescreen.js",
 		"scoresheet.js",
 		"easysettings.js",
+		"aibattle.js",
 		"songselect.js",
 		"keyboard.js",
 		"gameinput.js",

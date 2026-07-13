@@ -4,6 +4,16 @@ class LoadSong{
 	}
 	init(selectedSong, autoPlayEnabled, multiplayer, touchEnabled){
 		this.selectedSong = selectedSong
+		var easySettings = typeof EasySettings !== "undefined" ? EasySettings.getSettings() : {aiBattleEnabled: false}
+		if(typeof AIBattleCore !== "undefined" && AIBattleCore.hasModeConflict(easySettings.aiBattleEnabled, autoPlayEnabled, multiplayer)){
+			if(typeof EasySettings !== "undefined"){
+				EasySettings.showConflict()
+			}
+			setTimeout(function () { new SongSelect(false, false, touchEnabled) }, 0)
+			return
+		}
+		this.aiBattle = !!easySettings.aiBattleEnabled
+		this.aiState = easySettings.aiState || "random"
 		this.autoPlayEnabled = autoPlayEnabled
 		this.multiplayer = multiplayer
 		this.touchEnabled = touchEnabled
@@ -404,7 +414,7 @@ class LoadSong{
 		}
 		if(this.selectedSong.donBg !== null){
 			filenames.push("bg_don_" + this.selectedSong.donBg)
-			if(this.multiplayer){
+			if(this.multiplayer || this.aiBattle){
 				filenames.push("bg_don2_" + this.selectedSong.donBg)
 			}
 		}
@@ -435,7 +445,27 @@ class LoadSong{
 	setupMultiplayer(){
 		var song = this.selectedSong
 		
-		if(this.multiplayer){
+		if(this.aiBattle){
+			this.clean()
+			var seed = [song.hash || song.folder, song.difficulty, Date.now(), Math.random()].join(":")
+			var taikoGame1 = new Controller(song, this.songData, false, 1, this.touchEnabled, {
+				mode: "ai",
+				player: 1,
+				aiState: this.aiState,
+				seed: seed
+			})
+			var taikoGame2 = new Controller(song, this.songData, false, 2, this.touchEnabled, {
+				mode: "ai",
+				player: 2,
+				aiState: this.aiState,
+				seed: seed
+			})
+			taikoGame1.run(taikoGame2)
+			pageEvents.send("load-song-ai", {
+				selectedSong: song,
+				aiState: taikoGame2.aiPlayer.state
+			})
+		}else if(this.multiplayer){
 			var loadingText = document.getElementsByClassName("loading-text")[0]
 			loadingText.firstChild.data = strings.waitingForP2
 			loadingText.setAttribute("alt", strings.waitingForP2)

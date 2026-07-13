@@ -2,9 +2,13 @@ class Controller{
 	constructor(...args){
 		this.init(...args)
 	}
-	init(selectedSong, songData, autoPlayEnabled, multiplayer, touchEnabled){
+	init(selectedSong, songData, autoPlayEnabled, multiplayer, touchEnabled, battleOptions){
 		this.selectedSong = selectedSong
 		this.songData = songData
+		this.battleOptions = battleOptions || {}
+		this.aiBattle = this.battleOptions.mode === "ai"
+		this.networkMultiplayer = !!multiplayer && !this.aiBattle
+		this.player = this.battleOptions.player || null
 		this.autoPlayEnabled = autoPlayEnabled
 		this.saveScore = !autoPlayEnabled
 		if (selectedSong.weeklyChallenge && typeof WeeklyChallenge !== "undefined") {
@@ -23,8 +27,19 @@ class Controller{
 			this.saveScore = false
 		}
 		this.multiplayer = multiplayer
+		if(this.aiBattle){
+			this.saveScore = false
+			this.autoPlayEnabled = false
+		}
 		this.touchEnabled = touchEnabled
-		if(multiplayer === 2){
+		if(this.aiBattle){
+			this.player = this.player || (multiplayer === 2 ? 2 : 1)
+			this.snd = "_p" + this.player
+			this.don = this.player === 2 ? {
+				body_fill: defaultDon.face_fill,
+				face_fill: defaultDon.body_fill
+			} : (account.loggedIn ? account.don : defaultDon)
+		}else if(multiplayer === 2){
 			this.snd = p2.player === 2 ? "_p1" : "_p2"
 			this.don = p2.don || defaultDon
 		}else{
@@ -100,6 +115,12 @@ class Controller{
 		this.game = new Game(this, this.selectedSong, this.parsedSongData)
 		this.view = new View(this)
 		this.mekadon = new Mekadon(this, this.game)
+		if(this.aiBattle && this.player === 2){
+			var aiState = this.battleOptions.aiState || "random"
+			var seed = this.battleOptions.seed
+			this.aiPlayer = new AIBattleCore.AIBattlePlayer(this, aiState, seed)
+			this.game.globalScore.name = "AI"
+		}
 		this.keyboard = new GameInput(this)
 		if(!autoPlayEnabled && this.multiplayer !== 2){
 			this.easierBigNotes = settings.getItem("easierBigNotes") || this.keyboard.keyboard.TaikoForceLv5
@@ -139,6 +160,10 @@ class Controller{
 			syncWith.run(this)
 			syncWith.game.elapsedTime = this.game.elapsedTime
 			syncWith.game.startDate = this.game.startDate
+			if(this.aiBattle){
+				this.battleCoordinator = new AIBattleCore.AIBattleCoordinator(this, syncWith, this.battleOptions)
+				syncWith.battleCoordinator = this.battleCoordinator
+			}
 		}
 		requestAnimationFrame(() => {
 			this.startMainLoop()
@@ -222,14 +247,16 @@ class Controller{
 			}
 			var ms = this.game.elapsedTime
 			
-			if(this.game.musicFadeOut < 3){
+			if(this.game.musicFadeOut < 3 && !this.aiPlayer){
 				this.keyboard.checkMenuKeys()
 			}
 			if(this.calibrationMode){
 				this.game.calibration()
 			}
 			if(!this.game.isPaused()){
-				this.keyboard.checkGameKeys()
+				if(!this.aiPlayer){
+					this.keyboard.checkGameKeys()
+				}
 				
 				if(ms < 0){
 					this.game.updateTime()
@@ -245,6 +272,9 @@ class Controller{
 			}
 			if(this.multiplayer === 1){
 				this.syncWith.gameLoop()
+				if(this.aiBattle && this.battleCoordinator){
+					this.battleCoordinator.update(this.game.elapsedTime)
+				}
 			}
 		}
 	}
@@ -252,7 +282,7 @@ class Controller{
 		if(this.mainLoopRunning){
 			if(this.multiplayer !== 2){
 				requestAnimationFrame(() => {
-					var player = this.multiplayer ? p2.player : 1
+					var player = this.aiBattle ? this.player : (this.multiplayer ? p2.player : 1)
 					if(player === 1){
 						this.viewLoop()
 					}
@@ -298,6 +328,10 @@ class Controller{
 	}
 	displayResults(){
 		if(this.multiplayer !== 2){
+			if(this.aiBattle && this.battleCoordinator){
+				this.battleCoordinator.finish()
+				this.battleCoordinator.clean()
+			}
 			if(this.view.cursorHidden){
 				this.view.canvas.style.cursor = ""
 			}
@@ -328,7 +362,9 @@ class Controller{
 			return
 		}
 		this.clean()
-		if(this.multiplayer){
+		if(this.aiBattle){
+			new LoadSong(this.selectedSong, false, false, this.touchEnabled)
+		}else if(this.multiplayer){
 			new LoadSong(this.selectedSong, false, true, this.touchEnabled)
 		}else{
 			new Promise(resolve => {
@@ -443,10 +479,22 @@ class Controller{
 		return this.game.getGlobalScore()
 	}
 	autoPlay(circle){
-		if(this.multiplayer){
+		if(this.aiBattle){
+			return false
+		}else if(this.multiplayer){
 			p2.play(circle, this.mekadon)
 		}else{
 			return this.mekadon.play(circle)
+		}
+	}
+	recordBattleJudgement(score, circle){
+		if(this.aiBattle && this.battleCoordinator){
+			this.battleCoordinator.record(this.player, score, circle)
+		}
+	}
+	onBattleBranch(branchMs, activeName){
+		if(this.aiBattle && this.player === 1 && this.battleCoordinator){
+			this.battleCoordinator.onBranchChange(branchMs, activeName)
 		}
 	}
 	objEqual(a, b){
@@ -465,6 +513,12 @@ class Controller{
 		this.stopMainLoop()
 		this.keyboard.clean()
 		this.view.clean()
+		if(this.aiPlayer){
+			this.aiPlayer.clean()
+		}
+		if(this.aiBattle && this.player === 1 && this.battleCoordinator){
+			this.battleCoordinator.clean()
+		}
 		snd.buffer.loadSettings()
 		
 		if(!this.multiplayer){

@@ -4,16 +4,26 @@ class Scoresheet {
 	}
 	init(controller, results, multiplayer, touchEnabled) {
 		this.controller = controller
+		this.aiBattle = !!controller.aiBattle
 		this.resultsObj = results
-		this.player = [multiplayer ? (p2.player === 1 ? 0 : 1) : 0]
+		this.player = [this.aiBattle ? 0 : (multiplayer ? (p2.player === 1 ? 0 : 1) : 0)]
 		var player0 = this.player[0]
 		this.results = []
 		this.results[player0] = {}
 		this.rules = []
 		this.rules[player0] = this.controller.game.rules
 		if (multiplayer) {
-			this.player.push(p2.player === 2 ? 0 : 1)
-			this.results[this.player[1]] = p2.results
+			this.player.push(this.aiBattle ? 1 : (p2.player === 2 ? 0 : 1))
+			if(this.aiBattle){
+				var aiScore = this.controller.syncWith.getGlobalScore()
+				var aiResults = {}
+				for(var aiKey in aiScore){
+					aiResults[aiKey] = aiScore[aiKey] === null ? null : aiScore[aiKey].toString()
+				}
+				this.results[this.player[1]] = aiResults
+			}else{
+				this.results[this.player[1]] = p2.results
+			}
 			this.rules[this.player[1]] = this.controller.syncWith.game.rules
 		}
 		for (var i in results) {
@@ -78,7 +88,7 @@ class Scoresheet {
 		assets.sounds["v_results"].play()
 		loader.playBgm("bgm_result.mp3", [3, false, 0, 0.847, 17.689], () => !this.closed)
 
-		this.session = p2.session
+		this.session = this.aiBattle ? false : p2.session
 		if (this.session) {
 			if (p2.getMessage("songsel")) {
 				this.toSongsel(true)
@@ -95,7 +105,7 @@ class Scoresheet {
 			multiplayer: multiplayer,
 			touchEnabled: touchEnabled,
 			results: this.results,
-			p2results: multiplayer ? p2.results : null,
+			p2results: multiplayer ? this.results[this.player[1]] : null,
 			keyboardEvents: controller.keyboard.keyboardEvents,
 			gamepadEvents: controller.keyboard.gamepad.gamepadEvents,
 			touchEvents: controller.view.touchEvents
@@ -128,14 +138,14 @@ class Scoresheet {
 		}
 	}
 	toScoresShown() {
-		if (!p2.session) {
+		if (!this.session) {
 			this.state.screen = "scoresShown"
 			this.state.screenMS = this.getMS()
 			this.controller.playSound("neiro_1_don", 0, true)
 		}
 	}
 	toSongsel(fromP2) {
-		if (!p2.session || fromP2) {
+		if (!this.session || fromP2) {
 			snd.musicGain.fadeOut(0.5)
 			this.state.screen = "fadeOut"
 			this.state.screenMS = this.getMS()
@@ -854,7 +864,7 @@ class Scoresheet {
 
 		if (this.session && !this.state.scoreNext && this.state.screen === "scoresShown" && ms - this.state.screenMS >= 10000) {
 			this.state.scoreNext = true
-			if (p2.session) {
+		if (this.session) {
 				p2.send("songsel")
 			} else {
 				this.toSongsel(true)

@@ -4,6 +4,9 @@ class SongSelect {
 	}
 	init(fromTutorial, fadeIn, touchEnabled, songId, showWarning) {
 		this.touchEnabled = touchEnabled
+		if(typeof EasySettings !== "undefined"){
+			EasySettings.setNetworkBlocked(EasySettings.isAiBattleEnabled())
+		}
 		if (typeof WeeklyChallenge !== "undefined") {
 			WeeklyChallenge.clearRun()
 		}
@@ -761,6 +764,10 @@ class SongSelect {
 	}
 
 	onEasySettingsChanged(settings) {
+		if(settings.aiBattleEnabled){
+			this.state.options = 0
+			EasySettings.setNetworkBlocked(true)
+		}
 		if (this.songSelecting && settings.songSelectingSpeed) {
 			this.songSelecting.speed = settings.songSelectingSpeed
 		}
@@ -1341,6 +1348,12 @@ class SongSelect {
 		pageEvents.send("song-select-back")
 	}
 	toLoadSong(difficulty, shift, ctrl, touch) {
+		var aiBattleEnabled = typeof EasySettings !== "undefined" && EasySettings.isAiBattleEnabled()
+		var blockedMode = p2.session || this.state.options === 1 || this.state.options === 2 || !!shift || !!ctrl
+		if(aiBattleEnabled && blockedMode){
+			EasySettings.showConflict()
+			return
+		}
 		this.clean()
 		var selectedSong = this.songs[this.selectedSong]
 		assets.sounds["v_diffsel"].stop()
@@ -1416,6 +1429,11 @@ class SongSelect {
 	}
 	toOptions(moveBy) {
 		if (!p2.session) {
+			if(typeof EasySettings !== "undefined" && EasySettings.isAiBattleEnabled()){
+				this.state.options = 0
+				EasySettings.showConflict()
+				return
+			}
 			this.playSound("se_ka", 0, p2.session ? p2.player : false)
 			this.selectedDiff = 1
 			do {
@@ -1461,6 +1479,10 @@ class SongSelect {
 		}, 500)
 	}
 	toSession() {
+		if(typeof EasySettings !== "undefined" && EasySettings.isAiBattleEnabled()){
+			EasySettings.showConflict()
+			return
+		}
 		if (!p2.socket || p2.socket.readyState !== 1 || assets.customSongs) {
 			return
 		}
@@ -3550,6 +3572,10 @@ class SongSelect {
 		}
 	}
 	startP2() {
+		if(typeof EasySettings !== "undefined" && EasySettings.isAiBattleEnabled()){
+			EasySettings.setNetworkBlocked(true)
+			return
+		}
 		this.onusers(p2.getMessage("users"))
 		if (p2.session) {
 			this.onsongsel(p2.getMessage("songsel"))

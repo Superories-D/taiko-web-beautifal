@@ -25,11 +25,24 @@
 }
 #ai-battle-hud{
 	position: absolute;
-	top: max(8px, 1.5vh);
+	top: max(4px, env(safe-area-inset-top, 0px));
 	left: 50%;
 	z-index: 4;
-	width: min(58vw, 620px);
-	min-width: 280px;
+	display: grid;
+	grid-template-columns: max-content minmax(120px, 1fr) max-content;
+	grid-template-areas: "form bar rounds";
+	align-items: center;
+	gap: clamp(5px, .7vw, 10px);
+	width: min(calc(100vw - 24px), 760px);
+	min-width: 0;
+	box-sizing: border-box;
+	padding: 1px 6px;
+	border: 1px solid rgba(255, 255, 255, .62);
+	border-radius: 999px;
+	background: linear-gradient(90deg, rgba(95, 13, 16, .76), rgba(9, 14, 25, .86) 45%, rgba(13, 53, 112, .78));
+	box-shadow: 0 3px 14px rgba(0, 0, 0, .42), inset 0 0 12px rgba(255, 255, 255, .08);
+	-webkit-backdrop-filter: blur(4px);
+	backdrop-filter: blur(4px);
 	transform: translateX(-50%);
 	color: #fff;
 	font-family: Meiryo, "Microsoft YaHei", sans-serif;
@@ -39,21 +52,24 @@
 	filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.72));
 }
 .ai-battle-form{
+	grid-area: form;
 	display: inline-block;
-	margin-bottom: 5px;
-	padding: 3px 12px;
-	border: 1px solid rgba(255, 255, 255, 0.8);
-	border-radius: 999px;
-	background: rgba(13, 20, 38, 0.82);
-	font-size: clamp(11px, 1.5vmin, 15px);
+	margin: 0;
+	padding: 0 4px;
+	border: 0;
+	background: transparent;
+	font-size: clamp(10px, 1.2vmin, 13px);
+	line-height: 1;
+	white-space: nowrap;
 	opacity: 1;
 	transition: opacity 500ms ease;
 }
 .ai-battle-form.quiet{ opacity: 0.35; }
 .ai-battle-bar{
+	grid-area: bar;
 	position: relative;
-	height: clamp(10px, 1.8vmin, 16px);
-	border: 2px solid rgba(255, 255, 255, 0.92);
+	height: clamp(8px, 1.3vmin, 12px);
+	border: 1px solid rgba(255, 255, 255, 0.92);
 	border-radius: 999px;
 	background: rgba(5, 9, 18, 0.75);
 	overflow: hidden;
@@ -103,20 +119,21 @@
 	box-shadow: 0 0 12px #3588ff;
 }
 .ai-battle-rounds{
+	grid-area: rounds;
 	display: flex;
 	justify-content: center;
-	gap: clamp(5px, 1vw, 10px);
-	margin-top: 6px;
+	gap: clamp(3px, .45vw, 6px);
+	margin: 0;
 }
 .ai-battle-rounds span{
 	display: grid;
 	place-items: center;
-	width: clamp(22px, 3.3vmin, 32px);
-	height: clamp(22px, 3.3vmin, 32px);
-	border: 2px solid rgba(255,255,255,.8);
+	width: clamp(17px, 2.3vmin, 21px);
+	height: clamp(17px, 2.3vmin, 21px);
+	border: 1px solid rgba(255,255,255,.8);
 	border-radius: 50%;
 	background: rgba(12,18,31,.78);
-	font-size: clamp(11px, 1.8vmin, 16px);
+	font-size: clamp(9px, 1.5vmin, 13px);
 	transition: transform 220ms ease, background 220ms ease;
 }
 .ai-battle-rounds .player{ background:#df3028; transform:scale(1.13); }
@@ -182,11 +199,65 @@
 	35%{opacity:1}
 	100%{opacity:0;transform:translate(16px,-50%) scale(1.15) rotate(180deg)}
 }
+.touchp2 #ai-battle-hud{
+	grid-template-columns: minmax(120px, 1fr) max-content;
+	grid-template-areas: "bar rounds";
+	width: clamp(280px, 50vw, 620px);
+}
+.touchp2 #ai-battle-hud .ai-battle-form{
+	position: absolute;
+	top: calc(100% + 3px);
+	left: 50%;
+	max-width: min(240px, 42vw);
+	padding: 2px 8px;
+	border: 1px solid rgba(255,255,255,.5);
+	border-radius: 999px;
+	background: rgba(10,16,29,.78);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	transform: translateX(-50%);
+	transition: opacity 500ms ease, transform 500ms ease;
+}
+.touchp2 #ai-battle-hud .ai-battle-form.quiet{
+	opacity: 0;
+	transform: translate(-50%, -4px);
+}
 .portrait #ai-battle-hud{
-	top: max(42px, 5vh);
-	width: min(84vw, 560px);
+	top: max(6px, env(safe-area-inset-top, 0px));
+	width: min(calc(100vw - 16px), 560px);
 }
 .portrait .ai-battle-result{ width: min(82vw, 600px); }
+@media (max-width: 600px) and (orientation: portrait){
+	#ai-battle-hud{
+		grid-template-columns: minmax(0, 1fr) max-content;
+		grid-template-areas: "bar rounds";
+		gap: 6px;
+		padding: 2px 5px;
+	}
+	#ai-battle-hud .ai-battle-form{
+		position: absolute;
+		top: calc(100% + 4px);
+		left: 50%;
+		max-width: calc(100vw - 30px);
+		padding: 2px 9px;
+		border: 1px solid rgba(255,255,255,.5);
+		border-radius: 999px;
+		background: rgba(10,16,29,.78);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		transform: translateX(-50%);
+		transition: opacity 500ms ease, transform 500ms ease;
+	}
+	#ai-battle-hud .ai-battle-form.quiet{
+		opacity: 0;
+		transform: translate(-50%, -4px);
+	}
+	.ai-battle-rounds span{
+		width: clamp(17px, 5vw, 21px);
+		height: clamp(17px, 5vw, 21px);
+		font-size: clamp(9px, 2.8vw, 12px);
+	}
+}
 @media (prefers-reduced-motion: reduce){
 	#ai-battle-hud *,#game.ai-battle-active::after{ animation:none!important; transition:none!important; }
 }

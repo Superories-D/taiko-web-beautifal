@@ -146,6 +146,18 @@ test("round result overlay is a game-level sibling of the HUD", () => {
 	}
 })
 
+test("AI battle HUD uses a compact responsive status ribbon", () => {
+	const css = fs.readFileSync(path.join(__dirname, "..", "public", "src", "css", "game.css"), "utf8")
+	assert.match(css, /#ai-battle-hud\s*\{[\s\S]*?grid-template-areas:\s*"form bar rounds"/)
+	assert.match(css, /\.touchp2 #ai-battle-hud\s*\{[\s\S]*?width:\s*clamp\(280px,\s*50vw,\s*620px\)/)
+	assert.match(css, /\.touchp2 #ai-battle-hud \.ai-battle-form\.quiet\s*\{[\s\S]*?opacity:\s*0/)
+	assert.match(css, /\.portrait #ai-battle-hud\s*\{[\s\S]*?safe-area-inset-top/)
+	assert.match(css, /@media \(max-width:\s*600px\) and \(orientation:\s*portrait\)/)
+	assert.match(css, /grid-template-areas:\s*"bar rounds"/)
+	assert.match(css, /\.ai-battle-form\.quiet\s*\{[\s\S]*?opacity:\s*0/)
+	assert.doesNotMatch(css, /\.portrait #ai-battle-hud\s*\{[\s\S]{0,100}?top:\s*max\(42px,\s*5vh\)/)
+})
+
 test("AI consumes dense triplets and alternating notes in one frame", () => {
 	const circles = [
 		{type: "don", ms: 90},

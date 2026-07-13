@@ -10,11 +10,11 @@
 	var STATES = ["excellent", "great", "normal", "poor", "awful"]
 	var WEIGHTS = [0.08, 0.27, 0.45, 0.15, 0.05]
 	var PROFILES = {
-		excellent: {good: 0.982, ok: 0.016, bad: 0.002, roll: 36, big: 0.995, instability: 0.24},
-		great: {good: 0.94, ok: 0.05, bad: 0.01, roll: 46, big: 0.975, instability: 0.48},
-		normal: {good: 0.84, ok: 0.12, bad: 0.04, roll: 60, big: 0.90, instability: 0.76},
-		poor: {good: 0.67, ok: 0.23, bad: 0.10, roll: 78, big: 0.76, instability: 1},
-		awful: {good: 0.47, ok: 0.32, bad: 0.21, roll: 100, big: 0.58, instability: 1.12}
+		excellent: {good: 0.95, ok: 0.04, bad: 0.01, roll: 38, big: 0.99, instability: 0.28},
+		great: {good: 0.90, ok: 0.08, bad: 0.02, roll: 48, big: 0.96, instability: 0.52},
+		normal: {good: 0.82, ok: 0.13, bad: 0.05, roll: 62, big: 0.88, instability: 0.80},
+		poor: {good: 0.65, ok: 0.23, bad: 0.12, roll: 80, big: 0.74, instability: 1},
+		awful: {good: 0.45, ok: 0.32, bad: 0.23, roll: 102, big: 0.56, instability: 1.12}
 	}
 
 	function hashSeed(value) {

@@ -1,0 +1,110 @@
+{% extends 'admin.html' %}
+{% block content %}
+<a class="admin-back-link" href="{{ config.basedir }}admin/users">← Back to user accounts</a>
+
+<div class="admin-page-header admin-user-heading">
+    <div>
+        <h1>{{ user.display_name or user.username }}</h1>
+        <p class="admin-page-subtitle">@{{ user.username }} · account level {{ user_level }}</p>
+    </div>
+    {% if user.username == admin.username %}
+    <span class="admin-tag admin-tag-self">Your account</span>
+    {% elif manageable %}
+    <span class="admin-tag admin-tag-manageable">Manageable</span>
+    {% else %}
+    <span class="admin-tag">Read only</span>
+    {% endif %}
+</div>
+
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div class="message{% if category == 'error' %} message-error{% endif %}">{{ message }}</div>
+{% endfor %}
+
+<section class="admin-account-card">
+    <h2>Account data</h2>
+    <dl class="admin-account-data">
+        <div><dt>Username</dt><dd>{{ user.username }}</dd></div>
+        <div><dt>Display name</dt><dd>{{ user.display_name or user.username }}</dd></div>
+        <div><dt>Account level</dt><dd>{{ user_level }}</dd></div>
+        <div><dt>Created</dt><dd>{{ user.created_at.strftime('%Y-%m-%d %H:%M UTC') if user.created_at else 'Not recorded for legacy account' }}</dd></div>
+        <div><dt>Last login</dt><dd>{{ user.last_login_at.strftime('%Y-%m-%d %H:%M UTC') if user.last_login_at else 'Not recorded' }}</dd></div>
+        <div><dt>Password changed</dt><dd>{{ user.password_changed_at.strftime('%Y-%m-%d %H:%M UTC') if user.password_changed_at else 'Not recorded' }}</dd></div>
+    </dl>
+    <p class="admin-privacy-note">Password hashes, session tokens, IP-derived data, and other secrets are never shown.</p>
+</section>
+
+<section class="admin-account-card">
+    <h2>Activity summary</h2>
+    <div class="admin-stats-grid admin-user-stats">
+        <div class="admin-stat-card"><span>Saved scores</span><strong>{{ counts.scores }}</strong></div>
+        <div class="admin-stat-card"><span>Recorded plays</span><strong>{{ counts.plays }}</strong></div>
+        <div class="admin-stat-card"><span>Weekly scores</span><strong>{{ counts.weekly_scores }}</strong></div>
+        <div class="admin-stat-card"><span>Board posts</span><strong>{{ counts.board_posts }}</strong></div>
+        <div class="admin-stat-card"><span>Messages read</span><strong>{{ counts.message_reads }}</strong></div>
+        <div class="admin-stat-card"><span>Visits</span><strong>{{ counts.visits }}</strong></div>
+    </div>
+</section>
+
+{% if recent_plays %}
+<section class="admin-account-card">
+    <h2>Recent plays</h2>
+    <div class="admin-table-wrap">
+        <table class="admin-table">
+            <thead><tr><th>Played at</th><th>Song hash</th><th>Difficulty</th><th>Score</th><th>Auto</th></tr></thead>
+            <tbody>
+            {% for play in recent_plays %}
+                <tr>
+                    <td>{{ play.played_at.strftime('%Y-%m-%d %H:%M') if play.played_at else 'Unknown' }}</td>
+                    <td><code>{{ play.song_hash or 'Unknown' }}</code></td>
+                    <td>{{ play.difficulty or 'Unknown' }}</td>
+                    <td>{{ play.score if play.score is not none else '—' }}</td>
+                    <td>{{ 'Yes' if play.is_auto else 'No' }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+{% if manageable %}
+<div class="admin-account-actions">
+    <section class="admin-account-card">
+        <h2>Account level</h2>
+        <p>Set a level lower than your own (maximum {{ max_level }}).</p>
+        <form method="post" action="{{ config.basedir }}admin/users/{{ user.username }}/level">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="account-level">Level</label>
+            <input type="number" id="account-level" name="level" value="{{ user_level }}" min="0" max="{{ max_level }}" required>
+            <button type="submit" class="save-song">Update level</button>
+        </form>
+    </section>
+
+    <section class="admin-account-card">
+        <h2>Reset password</h2>
+        <p>The user will be signed out on all existing sessions.</p>
+        <form method="post" action="{{ config.basedir }}admin/users/{{ user.username }}/password" autocomplete="off">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="new-password">New password</label>
+            <input type="password" id="new-password" name="new_password" minlength="6" maxlength="72" autocomplete="new-password" required>
+            <label for="confirm-password">Confirm password</label>
+            <input type="password" id="confirm-password" name="confirm_password" minlength="6" maxlength="72" autocomplete="new-password" required>
+            <button type="submit" class="save-song">Reset password</button>
+        </form>
+    </section>
+
+    <section class="admin-account-card admin-danger-zone">
+        <h2>Delete account</h2>
+        <p>Saved scores and private account data will be deleted. Public play statistics and board conversations are retained anonymously.</p>
+        <form method="post" action="{{ config.basedir }}admin/users/{{ user.username }}/delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="confirm-username">Type <strong>{{ user.username }}</strong> to confirm</label>
+            <input type="text" id="confirm-username" name="confirm_username" autocomplete="off" required>
+            <button type="submit" class="admin-danger-button">Delete account permanently</button>
+        </form>
+    </section>
+</div>
+{% else %}
+<div class="admin-readonly-note">This account cannot be changed because it is your own account or has an equal/higher administrator level.</div>
+{% endif %}
+{% endblock %}

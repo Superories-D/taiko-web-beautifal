@@ -447,6 +447,272 @@ h2 {
     box-shadow: var(--admin-shadow);
 }
 
+.admin-page-subtitle {
+    margin: 0;
+    color: var(--admin-muted);
+}
+
+.admin-count-badge,
+.admin-tag,
+.admin-level-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.admin-count-badge {
+    padding: 9px 12px;
+    color: var(--admin-accent-strong);
+    background: #fff0ea;
+    border: 1px solid #f4c7b8;
+}
+
+.admin-tag {
+    margin-left: 6px;
+    padding: 5px 8px;
+    color: var(--admin-muted);
+    background: #eee8e5;
+}
+
+.admin-tag-self {
+    color: #6b3d00;
+    background: #ffe4a8;
+}
+
+.admin-tag-manageable {
+    color: #075f61;
+    background: #cef0ed;
+}
+
+.admin-level-badge {
+    min-width: 24px;
+    justify-content: center;
+    padding: 6px;
+    color: #075f61;
+    background: #d9f2ef;
+}
+
+.admin-level-badge.is-admin {
+    color: #81220e;
+    background: #ffe0d6;
+}
+
+.admin-user-search,
+.admin-account-card,
+.admin-empty-state,
+.admin-readonly-note {
+    background: var(--admin-panel);
+    border: 1px solid var(--admin-border);
+    border-radius: 8px;
+    box-shadow: var(--admin-shadow);
+}
+
+.admin-user-search {
+    margin-bottom: 18px;
+    padding: 16px;
+}
+
+.admin-user-search > label,
+.admin-account-card form > label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--admin-text);
+    font-weight: 700;
+}
+
+.admin-search-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.admin-search-row input,
+.admin-account-card input {
+    box-sizing: border-box;
+    max-width: 100%;
+    padding: 9px 10px;
+    color: var(--admin-text);
+    background: #fff;
+    border: 1px solid var(--admin-border-strong);
+    border-radius: 6px;
+}
+
+.admin-search-row input {
+    width: min(100%, 460px);
+}
+
+.admin-account-card input[type="password"],
+.admin-account-card input[type="text"] {
+    display: block;
+    width: min(100%, 420px);
+    margin-bottom: 14px;
+}
+
+.admin-account-card input[type="number"] {
+    width: 100px;
+    margin-right: 8px;
+}
+
+.admin-secondary-button,
+.admin-back-link {
+    color: var(--admin-accent-strong);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.admin-secondary-button {
+    padding: 9px 4px;
+}
+
+.admin-back-link {
+    display: inline-block;
+    margin-bottom: 14px;
+}
+
+.admin-user-link {
+    font-weight: 700;
+}
+
+.admin-table-action {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.admin-account-card code {
+    overflow-wrap: anywhere;
+    color: var(--admin-muted);
+}
+
+.admin-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    margin: 18px 0;
+}
+
+.admin-pagination a,
+.admin-pagination span {
+    min-width: 64px;
+    color: var(--admin-accent-strong);
+    text-align: center;
+}
+
+.admin-pagination span {
+    color: var(--admin-muted);
+}
+
+.admin-empty-state,
+.admin-readonly-note {
+    padding: 20px;
+    color: var(--admin-muted);
+}
+
+.admin-account-card {
+    margin-bottom: 18px;
+    padding: 20px;
+}
+
+.admin-account-card h2 {
+    margin: 0 0 12px;
+}
+
+.admin-account-card > p {
+    color: var(--admin-muted);
+}
+
+.admin-account-data {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1px;
+    overflow: hidden;
+    margin: 0;
+    background: var(--admin-border);
+    border: 1px solid var(--admin-border);
+    border-radius: 7px;
+}
+
+.admin-account-data div {
+    min-width: 0;
+    padding: 12px;
+    background: var(--admin-panel-soft);
+}
+
+.admin-account-data dt {
+    margin-bottom: 4px;
+    color: var(--admin-muted);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.admin-account-data dd {
+    overflow-wrap: anywhere;
+    margin: 0;
+    color: var(--admin-text);
+    font-weight: 700;
+}
+
+.admin-privacy-note {
+    margin-bottom: 0;
+    font-size: 13px;
+}
+
+.admin-user-stats {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    margin-bottom: 0;
+}
+
+.admin-user-stats .admin-stat-card strong {
+    font-size: 26px;
+}
+
+.admin-account-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.admin-account-actions .admin-account-card {
+    margin: 0;
+}
+
+.admin-danger-zone {
+    grid-column: 1 / -1;
+    border-color: #e3a096;
+    background: #fff7f5;
+}
+
+.admin-danger-zone h2 {
+    color: #8b2018;
+}
+
+.admin-danger-button {
+    padding: 10px 16px;
+    color: #fff;
+    background: #8b2018;
+    border: 0;
+    border-radius: 7px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .admin-cache-card > div {
     min-width: 0;
     padding: 12px;
@@ -812,6 +1078,31 @@ h1 .song-id {
 
     .admin-page-header {
         display: block;
+    }
+
+    .admin-count-badge {
+        margin-top: 10px;
+    }
+
+    .admin-search-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .admin-search-row input,
+    .admin-search-row .save-song {
+        width: 100%;
+    }
+
+    .admin-account-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-users-table th:nth-child(2),
+    .admin-users-table td:nth-child(2),
+    .admin-users-table th:nth-child(4),
+    .admin-users-table td:nth-child(4) {
+        display: none;
     }
 
     .admin-cache-card {

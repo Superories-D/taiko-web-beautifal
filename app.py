@@ -356,6 +356,7 @@ def ensure_unique_single_field_index(collection, field):
 
 
 db.users.create_index('username', unique=True)
+ensure_unique_single_field_index(db.users, 'username_lower')
 db.songs.create_index('id', unique=True)
 db.songs.create_index('hash')
 db.songs.create_index('title')
@@ -363,6 +364,7 @@ db.songs.create_index('song_type')
 db.scores.create_index('username')
 db.scores.create_index([('username', 1), ('hash', 1)])
 db.play_records.create_index('song_hash')
+db.play_records.create_index('username')
 db.play_records.create_index('played_at')
 db.play_records.create_index([('song_hash', 1), ('played_at', -1)])
 db.play_records.create_index([('played_at', -1), ('song_hash', 1)])
@@ -373,6 +375,8 @@ db.leaderboard.create_index('username')
 db.site_messages.create_index([('active', 1), ('created_at', -1)])
 db.site_message_reads.create_index([('username', 1), ('message_id', 1)], unique=True)
 db.site_message_reads.create_index('message_id')
+db.board_posts.create_index('username')
+db.visit_records.create_index('username')
 db.weekly_challenges.create_index('challenge_id', unique=True)
 ensure_unique_single_field_index(db.weekly_challenges, 'date_key')
 db.weekly_challenges.create_index('week_key')
@@ -1481,6 +1485,7 @@ def get_db_don(user):
 
 
 ADMIN_COURSES = ['easy', 'normal', 'hard', 'oni', 'ura']
+ADMIN_USERS_PER_PAGE = 30
 
 
 def safe_int_value(value, default=None):
@@ -1543,6 +1548,66 @@ def form_int(name, default=None):
 
 def form_float(name, default=None):
     return safe_float_value(request.form.get(name), default)
+
+
+def admin_can_manage_user(admin, target):
+    if not admin or not target:
+        return False
+    if admin.get('username') == target.get('username'):
+        return False
+    return get_user_level(target) < get_user_level(admin)
+
+
+def admin_user_or_404(username):
+    username = (username or '').strip()
+    if not re.fullmatch(r'[A-Za-z0-9_]{3,20}', username):
+        abort(404)
+    user = db.users.find_one({'username_lower': username.lower()}, {
+        'username': True,
+        'username_lower': True,
+        'display_name': True,
+        'user_level': True,
+        'created_at': True,
+        'last_login_at': True,
+        'password_changed_at': True
+    })
+    if not user:
+        abort(404)
+    return user
+
+
+def admin_user_data_counts(username):
+    return {
+        'scores': db.scores.count_documents({'username': username}),
+        'plays': db.play_records.count_documents({'username': username}),
+        'weekly_scores': db.weekly_challenge_scores.count_documents({'username': username}),
+        'board_posts': db.board_posts.count_documents({'username': username}),
+        'message_reads': db.site_message_reads.count_documents({'username': username}),
+        'visits': db.visit_records.count_documents({'username': username}),
+    }
+
+
+def remove_user_account_data(username, user_filter=None):
+    """Remove private account data while retaining anonymized public history."""
+    deleted = db.users.delete_one(user_filter or {'username': username})
+    if deleted.deleted_count != 1:
+        return deleted
+    db.scores.delete_many({'username': username})
+    db.weekly_challenge_scores.delete_many({'username': username})
+    db.site_message_reads.delete_many({'username': username})
+    db.visit_records.delete_many({'username': username})
+    # Old deployments may have stored account names on public leaderboard rows.
+    db.leaderboard.delete_many({'username': username})
+    # Keep aggregate song statistics and board conversations, but detach identity.
+    db.play_records.update_many({'username': username}, {'$set': {'username': None}})
+    db.board_posts.update_many({'username': username}, {
+        '$set': {
+            'username': None,
+            'user_display_name': 'Deleted user'
+        },
+        '$unset': {'ip_hash': ''}
+    })
+    return deleted
 
 
 def normalize_admin_song(song):
@@ -2082,6 +2147,7 @@ def route_secret_admin_login():
             session['session_id'] = session_id
             session['username'] = user.get('username')
             session.permanent = True
+            db.users.update_one({'_id': user['_id']}, {'$set': {'last_login_at': datetime.utcnow()}})
             return redirect(basedir + 'admin/overview')
 
         flash('Invalid admin username or password.', 'error')
@@ -2511,40 +2577,192 @@ def route_admin_songs_id_remove(song_id):
 @app.route(basedir + 'admin/users')
 @admin_required(level=50)
 def route_admin_users():
-    user = db.users.find_one({'username': session.get('username')})
-    max_level = max(0, get_user_level(user) - 1)
-    return render_template('admin_users.html', config=get_config(), max_level=max_level, username='', level='')
+    admin = db.users.find_one({'username': session.get('username')})
+    query_text = (request.args.get('q') or '').strip()[:50]
+    page = max(1, safe_int_value(request.args.get('page'), 1) or 1)
+    query = {}
+    if query_text:
+        pattern = re.escape(query_text)
+        query = {'$or': [
+            {'username_lower': {'$regex': pattern.lower()}},
+            {'display_name': {'$regex': pattern, '$options': 'i'}}
+        ]}
+
+    total = db.users.count_documents(query)
+    total_pages = max(1, math.ceil(total / ADMIN_USERS_PER_PAGE))
+    page = min(page, total_pages)
+    projection = {
+        'username': True,
+        'username_lower': True,
+        'display_name': True,
+        'user_level': True,
+        'created_at': True,
+        'last_login_at': True,
+        'password_changed_at': True
+    }
+    users = list(
+        db.users.find(query, projection)
+        .sort([('username_lower', 1), ('username', 1)])
+        .skip((page - 1) * ADMIN_USERS_PER_PAGE)
+        .limit(ADMIN_USERS_PER_PAGE)
+    )
+    for user in users:
+        user['level'] = get_user_level(user)
+        user['manageable'] = admin_can_manage_user(admin, user)
+
+    return render_template(
+        'admin_users.html',
+        config=get_config(),
+        admin=admin,
+        users=users,
+        query=query_text,
+        page=page,
+        total=total,
+        total_pages=total_pages
+    )
 
 
 @app.route(basedir + 'admin/users', methods=['POST'])
 @admin_required(level=50)
 def route_admin_users_post():
-    admin_name = session.get('username')
-    admin = db.users.find_one({'username': admin_name})
-    max_level = max(0, get_user_level(admin) - 1)
-    
+    """Backward-compatible endpoint for the former level editor."""
+    admin = db.users.find_one({'username': session.get('username')})
     username = (request.form.get('username') or '').strip()
     level = form_int('level', 0) or 0
-    
     user = db.users.find_one({'username_lower': username.lower()}) if username else None
     if not username:
-        flash('Error: Username is required.')
+        flash('Username is required.', 'error')
     elif not user:
-        flash('Error: User was not found.')
-    elif admin.get('username') == user.get('username'):
-        flash('Error: You cannot modify your own level.')
+        flash('User was not found.', 'error')
+    elif not admin_can_manage_user(admin, user):
+        flash('You can only manage accounts below your own level.', 'error')
     else:
-        user_level = get_user_level(user)
+        max_level = max(0, get_user_level(admin) - 1)
         if level < 0 or level > max_level:
-            flash('Error: Invalid level.')
-        elif user_level > max_level:
-            flash('Error: This user has higher level than you.')
+            flash('Invalid account level.', 'error')
         else:
-            output = {'user_level': level}
-            db.users.update_one({'username': user['username']}, {'$set': output})
-            flash('User updated.')
-    
-    return render_template('admin_users.html', config=get_config(), max_level=max_level, username=username, level=level)
+            updated = db.users.update_one({
+                '_id': user['_id'],
+                'user_level': user.get('user_level')
+            }, {'$set': {'user_level': level}})
+            if updated.matched_count == 1:
+                app.logger.info('Admin %s changed account level for %s to %s', admin.get('username'), user.get('username'), level)
+                flash('Account level updated.')
+            else:
+                flash('The account changed while you were editing it. Please try again.', 'error')
+    return redirect(basedir + 'admin/users')
+
+
+@app.route(basedir + 'admin/users/<username>')
+@admin_required(level=50)
+def route_admin_user_detail(username):
+    admin = db.users.find_one({'username': session.get('username')})
+    user = admin_user_or_404(username)
+    recent_plays = list(
+        db.play_records.find({'username': user['username']}, {
+            '_id': False,
+            'song_hash': True,
+            'difficulty': True,
+            'score': True,
+            'is_auto': True,
+            'played_at': True
+        }).sort('played_at', -1).limit(10)
+    )
+    return render_template(
+        'admin_user_detail.html',
+        config=get_config(),
+        admin=admin,
+        user=user,
+        user_level=get_user_level(user),
+        max_level=max(0, get_user_level(admin) - 1),
+        manageable=admin_can_manage_user(admin, user),
+        counts=admin_user_data_counts(user['username']),
+        recent_plays=recent_plays
+    )
+
+
+@app.route(basedir + 'admin/users/<username>/level', methods=['POST'])
+@limiter.limit('30 per minute')
+@admin_required(level=50)
+def route_admin_user_level(username):
+    admin = db.users.find_one({'username': session.get('username')})
+    user = admin_user_or_404(username)
+    if not admin_can_manage_user(admin, user):
+        abort(403)
+    level = form_int('level')
+    max_level = max(0, get_user_level(admin) - 1)
+    if level is None or level < 0 or level > max_level:
+        flash('Invalid account level.', 'error')
+    else:
+        updated = db.users.update_one({
+            '_id': user['_id'],
+            'user_level': user.get('user_level')
+        }, {'$set': {'user_level': level}})
+        if updated.matched_count == 1:
+            app.logger.info('Admin %s changed account level for %s to %s', admin.get('username'), user.get('username'), level)
+            flash('Account level updated.')
+        else:
+            flash('The account changed while you were editing it. Please try again.', 'error')
+    return redirect(basedir + 'admin/users/' + user['username'])
+
+
+@app.route(basedir + 'admin/users/<username>/password', methods=['POST'])
+@limiter.limit('10 per hour')
+@admin_required(level=50)
+def route_admin_user_password(username):
+    admin = db.users.find_one({'username': session.get('username')})
+    user = admin_user_or_404(username)
+    if not admin_can_manage_user(admin, user):
+        abort(403)
+    new_password_text = request.form.get('new_password') or ''
+    confirm_password = request.form.get('confirm_password') or ''
+    new_password = new_password_text.encode('utf-8')
+    if new_password_text != confirm_password:
+        flash('The two passwords do not match.', 'error')
+    elif not 6 <= len(new_password) <= 72:
+        flash('Password must be between 6 and 72 UTF-8 bytes.', 'error')
+    else:
+        session_id = os.urandom(24).hex()
+        hashed = bcrypt.hashpw(new_password, bcrypt.gensalt())
+        updated = db.users.update_one({
+            '_id': user['_id'],
+            'user_level': user.get('user_level')
+        }, {'$set': {
+            'password': hashed,
+            'session_id': session_id,
+            'password_changed_at': datetime.utcnow()
+        }})
+        if updated.matched_count == 1:
+            app.logger.warning('Admin %s reset the password for %s', admin.get('username'), user.get('username'))
+            flash('Password reset. Existing sessions for this account were signed out.')
+        else:
+            flash('The account changed while you were editing it. Please try again.', 'error')
+    return redirect(basedir + 'admin/users/' + user['username'])
+
+
+@app.route(basedir + 'admin/users/<username>/delete', methods=['POST'])
+@limiter.limit('10 per day')
+@admin_required(level=50)
+def route_admin_user_delete(username):
+    admin = db.users.find_one({'username': session.get('username')})
+    user = admin_user_or_404(username)
+    if not admin_can_manage_user(admin, user):
+        abort(403)
+    confirmation = (request.form.get('confirm_username') or '').strip()
+    if confirmation != user.get('username'):
+        flash('Type the exact username to confirm account deletion.', 'error')
+        return redirect(basedir + 'admin/users/' + user['username'])
+
+    deleted = remove_user_account_data(user['username'], {
+        '_id': user['_id'],
+        'user_level': user.get('user_level')
+    })
+    if deleted.deleted_count != 1:
+        flash('The account could not be deleted.', 'error')
+        return redirect(basedir + 'admin/users/' + user['username'])
+    app.logger.warning('Admin %s deleted account %s', admin.get('username'), user.get('username'))
+    flash('Account deleted and personal data cleaned.')
+    return redirect(basedir + 'admin/users')
 
 
 @app.route(basedir + 'api/preview')
@@ -2722,7 +2940,9 @@ def route_api_register():
         'display_name': username,
         'don': don,
         'user_level': 1,
-        'session_id': session_id
+        'session_id': session_id,
+        'created_at': datetime.utcnow(),
+        'last_login_at': datetime.utcnow()
     })
 
     session['session_id'] = session_id
@@ -2756,6 +2976,7 @@ def route_api_login():
     session['session_id'] = session_id
     session['username'] = result['username']
     session.permanent = True if data.get('remember') else False
+    db.users.update_one({'_id': result['_id']}, {'$set': {'last_login_at': datetime.utcnow()}})
 
     return jsonify({
         'status': 'ok',
@@ -2865,9 +3086,7 @@ def route_api_account_remove():
     if not check_user_password(user, password):
         return api_error('verify_password_invalid')
 
-    db.scores.delete_many({'username': session.get('username')})
-    db.weekly_challenge_scores.delete_many({'username': session.get('username')})
-    db.users.delete_one({'username': session.get('username')})
+    remove_user_account_data(session.get('username'))
 
     session.clear()
     return jsonify({'status': 'ok'})

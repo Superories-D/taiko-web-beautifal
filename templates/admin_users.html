@@ -1,21 +1,65 @@
 {% extends 'admin.html' %}
 {% block content %}
-<h1>Users</h1>
-{% for message in get_flashed_messages() %}
-<div class="message">{{ message }}</div>
-{% endfor %}
-<div class="song-form">
-    <form method="post">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        
-        <div class="form-field">
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" value="{{username}}" required>
-            <label for="level">Level</label>
-            <input type="number" id="level" name="level" min="0" max="{{max_level}}" value="{{level}}" required>
-        </div>
-        
-        <button type="submit" class="save-song">Save</button>
-    </form>
+<div class="admin-page-header">
+    <div>
+        <h1>User accounts</h1>
+        <p class="admin-page-subtitle">View account data and manage accounts below your administrator level.</p>
+    </div>
+    <span class="admin-count-badge">{{ total }} account{% if total != 1 %}s{% endif %}</span>
 </div>
+
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div class="message{% if category == 'error' %} message-error{% endif %}">{{ message }}</div>
+{% endfor %}
+
+<form method="get" class="admin-user-search" role="search">
+    <label for="user-search">Search users</label>
+    <div class="admin-search-row">
+        <input type="search" id="user-search" name="q" value="{{ query }}" maxlength="50" placeholder="Username or display name">
+        <button type="submit" class="save-song">Search</button>
+        {% if query %}<a href="{{ config.basedir }}admin/users" class="admin-secondary-button">Clear</a>{% endif %}
+    </div>
+</form>
+
+{% if users %}
+<div class="admin-table-wrap">
+    <table class="admin-table admin-users-table">
+        <thead>
+            <tr>
+                <th>Account</th>
+                <th>Display name</th>
+                <th>Level</th>
+                <th>Created</th>
+                <th>Last login</th>
+                <th><span class="visually-hidden">Actions</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td>
+                    <a class="admin-user-link" href="{{ config.basedir }}admin/users/{{ user.username }}">{{ user.username }}</a>
+                    {% if user.username == admin.username %}<span class="admin-tag admin-tag-self">You</span>{% endif %}
+                </td>
+                <td>{{ user.display_name or user.username }}</td>
+                <td><span class="admin-level-badge{% if user.level >= 50 %} is-admin{% endif %}">{{ user.level }}</span></td>
+                <td>{{ user.created_at.strftime('%Y-%m-%d') if user.created_at else 'Legacy account' }}</td>
+                <td>{{ user.last_login_at.strftime('%Y-%m-%d %H:%M') if user.last_login_at else 'Not recorded' }}</td>
+                <td class="admin-table-action"><a href="{{ config.basedir }}admin/users/{{ user.username }}">View{% if user.manageable %} / manage{% endif %}</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if total_pages > 1 %}
+<nav class="admin-pagination" aria-label="User pages">
+    {% if page > 1 %}<a href="?q={{ query|urlencode }}&amp;page={{ page - 1 }}">Previous</a>{% else %}<span>Previous</span>{% endif %}
+    <strong>Page {{ page }} of {{ total_pages }}</strong>
+    {% if page < total_pages %}<a href="?q={{ query|urlencode }}&amp;page={{ page + 1 }}">Next</a>{% else %}<span>Next</span>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+<div class="admin-empty-state">No accounts matched “{{ query }}”.</div>
+{% endif %}
 {% endblock %}

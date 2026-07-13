@@ -133,9 +133,11 @@
 		settings.aiState = sanitizeAiState(settings.aiState)
 		if (settings.aiBattleEnabled) {
 			var aiState = settings.aiState
+			var sortByTitle = settings.sortByTitle
 			settings = Object.assign({}, DEFAULT_SETTINGS, {
 				aiBattleEnabled: true,
-				aiState: aiState
+				aiState: aiState,
+				sortByTitle: sortByTitle
 			})
 		}
 		return settings
@@ -181,18 +183,30 @@
 		var settings = getSettings()
 		if (key === "aiBattleEnabled") {
 			var enabled = sanitizeBoolean(value, false)
+			if (enabled && isMultiplayerActive()) {
+				showConflict(getText("aiMultiplayerConflict", "AI Battle cannot be enabled during online multiplayer."))
+				return getSettings()
+			}
 			var aiState = settings.aiState
 			settings = enabled ? Object.assign({}, DEFAULT_SETTINGS, {
 				aiBattleEnabled: true,
-				aiState: aiState
+				aiState: aiState,
+				sortByTitle: settings.sortByTitle
 			}) : Object.assign({}, settings, {aiBattleEnabled: false})
 			setNetworkBlocked(enabled)
-		} else if (settings.aiBattleEnabled && key !== "aiState") {
+		} else if (settings.aiBattleEnabled && key !== "aiState" && key !== "sortByTitle") {
 			return getSettings()
 		} else {
 			settings[key] = value
 		}
 		return saveSettings(settings)
+	}
+
+	function isMultiplayerActive() {
+		if (typeof p2 === "undefined" || !p2 || p2.aiBattleBlocked) {
+			return false
+		}
+		return !!(p2.session || p2.otherConnected || p2.hashLock)
 	}
 
 	function setNetworkBlocked(blocked) {
@@ -493,6 +507,7 @@
 			renderStaticText()
 		}
 		var settings = getSettings()
+		var multiplayerActive = isMultiplayerActive()
 		overlay.querySelector("#easy-settings-playback").value = settings.playbackRate
 		setText(overlay.querySelector("#easy-settings-playback-value"), formatNumber(settings.playbackRate) + "x")
 		overlay.querySelector("#easy-settings-baisoku").value = String(settings.baisoku)
@@ -501,12 +516,18 @@
 		overlay.querySelector("#easy-settings-abekobe").checked = settings.abekobe
 		overlay.querySelector("#easy-settings-detarame").checked = settings.detarame
 		overlay.querySelector("#easy-settings-sort").checked = settings.sortByTitle
-		overlay.querySelector("#easy-settings-ai").checked = settings.aiBattleEnabled
+		var aiToggle = overlay.querySelector("#easy-settings-ai")
+		aiToggle.checked = settings.aiBattleEnabled
+		aiToggle.disabled = multiplayerActive && !settings.aiBattleEnabled
+		var aiToggleRow = aiToggle.closest("label")
+		if (aiToggleRow) {
+			aiToggleRow.classList.toggle("easy-settings-locked", aiToggle.disabled)
+		}
 		overlay.querySelector("#easy-settings-ai-state").value = settings.aiState
 		overlay.querySelector("#easy-settings-ai-state").disabled = !settings.aiBattleEnabled
 		var locked = [
 			"#easy-settings-playback", "#easy-settings-baisoku", "#easy-settings-speed",
-			"#easy-settings-doron", "#easy-settings-abekobe", "#easy-settings-detarame", "#easy-settings-sort"
+			"#easy-settings-doron", "#easy-settings-abekobe", "#easy-settings-detarame"
 		]
 		locked.forEach(function (selector) {
 			var input = overlay.querySelector(selector)
@@ -517,6 +538,9 @@
 			}
 		})
 		overlay.classList.toggle("ai-battle-enabled", settings.aiBattleEnabled)
+		setText(overlay.querySelector("#easy-settings-ai-note"), multiplayerActive && !settings.aiBattleEnabled ?
+			getText("aiMultiplayerConflict", "AI Battle cannot be enabled during online multiplayer.") :
+			getText("aiNote", "Auto play and online multiplayer are disabled in AI Battle."))
 		var status = overlay.querySelector("#easy-settings-leaderboard")
 		if (isLeaderboardEligible(settings)) {
 			status.classList.remove("modified")
@@ -592,6 +616,9 @@
 	}
 
 	function showConflict(message) {
+		if (typeof document === "undefined") {
+			return
+		}
 		var notice = document.getElementById("ai-battle-conflict-notice")
 		if (!notice) {
 			notice = document.createElement("div")
@@ -622,6 +649,7 @@
 		getPlaybackRate: getPlaybackRate,
 		getBaisoku: getBaisoku,
 		isAiBattleEnabled: function () { return getSettings().aiBattleEnabled },
+		isMultiplayerActive: isMultiplayerActive,
 		setNetworkBlocked: setNetworkBlocked,
 		showConflict: showConflict,
 		getSongTitle: getSongTitle,

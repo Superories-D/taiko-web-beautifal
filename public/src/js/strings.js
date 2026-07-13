@@ -325,6 +325,13 @@ var translations = {
 			tw: "請先關閉 AI 對戰。",
 			ko: "먼저 AI 대전을 꺼 주세요."
 		},
+		aiMultiplayerConflict: {
+			ja: "オンライン対戦中はAI対戦を有効にできません。",
+			en: "AI Battle cannot be enabled during online multiplayer.",
+			cn: "在线联机时无法开启 AI 对战。",
+			tw: "線上連線時無法開啟 AI 對戰。",
+			ko: "온라인 멀티플레이 중에는 AI 대전을 켤 수 없습니다."
+		},
 		leaderboardEnabled: {
 			ja: "ランキング有効",
 			en: "Leaderboard enabled",

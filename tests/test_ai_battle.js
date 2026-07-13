@@ -179,7 +179,7 @@ test("AI consumes dense triplets and alternating notes in one frame", () => {
 	assert.deepEqual(played, ["don", "ka", "don"])
 })
 
-test("Easy Settings resets and locks other options while AI is enabled", () => {
+test("Easy Settings keeps title sorting available while AI is enabled", () => {
 	const storage = new Map()
 	const context = {
 		console,
@@ -205,7 +205,39 @@ test("Easy Settings resets and locks other options while AI is enabled", () => {
 	context.EasySettings.setSetting("baisoku", 3)
 	settings = context.EasySettings.getSettings()
 	assert.equal(settings.baisoku, 1)
+	context.EasySettings.setSetting("sortByTitle", true)
+	settings = context.EasySettings.getSettings()
+	assert.equal(settings.sortByTitle, true)
+	assert.equal(context.EasySettings.sanitizeSettings(settings).sortByTitle, true)
 	context.EasySettings.setSetting("aiState", "excellent")
 	assert.equal(context.EasySettings.getSettings().aiState, "excellent")
 	assert.equal(context.EasySettings.isLeaderboardEligible(), false)
+})
+
+test("Easy Settings refuses to enable AI during multiplayer", () => {
+	const storage = new Map()
+	const context = {
+		console,
+		setTimeout,
+		clearTimeout,
+		CustomEvent: function () {},
+		localStorage: {
+			getItem: key => storage.has(key) ? storage.get(key) : null,
+			setItem: (key, value) => storage.set(key, String(value))
+		},
+		dispatchEvent() {},
+		p2: {session: true, otherConnected: true, hashLock: true, aiBattleBlocked: false}
+	}
+	context.window = context
+	vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "public", "src", "js", "easysettings.js"), "utf8"), context)
+	assert.equal(context.EasySettings.isMultiplayerActive(), true)
+	context.EasySettings.setSetting("aiBattleEnabled", true)
+	assert.equal(context.EasySettings.getSettings().aiBattleEnabled, false)
+	context.p2.session = false
+	context.p2.otherConnected = false
+	assert.equal(context.EasySettings.isMultiplayerActive(), true)
+	context.EasySettings.setSetting("aiBattleEnabled", true)
+	assert.equal(context.EasySettings.getSettings().aiBattleEnabled, false)
+	context.p2.hashLock = false
+	assert.equal(context.EasySettings.isMultiplayerActive(), false)
 })

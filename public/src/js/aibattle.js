@@ -178,20 +178,30 @@
 	AIBattlePlayer.prototype.update = function () {
 		var game = this.controller.game
 		var circles = game.songData.circles
-		var circle = circles[game.currentCircle]
-		if (!circle || circle.isPlayed || circle.branch && !circle.branch.active) return
-		if (circle !== this.lastCircle) {
-			this.lastCircle = circle
-			this.decision = isBattleNote(circle) ? this.decide(circle) : null
-		}
-		var type = circle.type
-		if (type === "balloon" || type === "drumroll" || type === "daiDrumroll") {
-			var pace = this.profile.roll * (0.82 + this.rng() * 0.4)
-			this.controller.mekadon.playDrumrollAt(circle, 0, pace, type === "balloon" ? 0 : 0.35)
-			return
-		}
-		if (!this.decision || this.decision.miss) return
-		if (game.elapsedTime >= circle.ms + this.controller.audioLatency + this.decision.offset) {
+		var processed = 0
+		while (processed++ < 64) {
+			var circle = circles[game.currentCircle]
+			if (!circle || circle.isPlayed || circle.branch && !circle.branch.active) return
+			if (circle !== this.lastCircle) {
+				this.lastCircle = circle
+				this.decision = isBattleNote(circle) ? this.decide(circle) : null
+			}
+			var type = circle.type
+			if (type === "balloon" || type === "drumroll" || type === "daiDrumroll") {
+				var pace = this.profile.roll * (0.82 + this.rng() * 0.4)
+				this.controller.mekadon.playDrumrollAt(circle, 0, pace, type === "balloon" ? 0 : 0.35)
+				return
+			}
+			if (!this.decision) return
+			if (this.decision.miss) {
+				var missAt = circle.ms + this.controller.audioLatency + game.rules.bad
+				if (game.elapsedTime < missAt) return
+				game.skipNote(circle)
+				game.updateCurrentCircle()
+				continue
+			}
+			var playAt = circle.ms + this.controller.audioLatency + this.decision.offset
+			if (game.elapsedTime < playAt) return
 			this.controller.mekadon.playNow(circle, this.decision.score, this.decision.dai, this.decision.reverse)
 		}
 	}

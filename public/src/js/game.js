@@ -79,7 +79,9 @@ class Game{
 		}
 		// Main operations
 		this.updateCirclesStatus()
-		this.checkPlays()
+		if(!this.controller.aiPlayer){
+			this.checkPlays()
+		}
 		this.updateRollCounter()
 		// Event operations
 		this.whenFadeoutMusic()

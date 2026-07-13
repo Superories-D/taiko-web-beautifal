@@ -83,6 +83,39 @@ test("player branch changes never force the AI branch", () => {
 	assert.equal(aiBranchChanges, 0)
 })
 
+test("AI consumes dense triplets and alternating notes in one frame", () => {
+	const circles = [
+		{type: "don", ms: 90},
+		{type: "ka", ms: 94},
+		{type: "don", ms: 98}
+	]
+	const played = []
+	const game = {
+		currentCircle: 0,
+		elapsedTime: 100,
+		rules: {good: 25, ok: 75, bad: 108},
+		songData: {circles},
+		updateCurrentCircle() { this.currentCircle++ },
+		skipNote(circle) { circle.isPlayed = true; this.currentCircle++ }
+	}
+	const controller = {
+		game,
+		audioLatency: 0,
+		mekadon: {
+			playNow(circle) {
+				played.push(circle.type)
+				circle.isPlayed = true
+				game.currentCircle++
+			},
+			playDrumrollAt() {}
+		}
+	}
+	const player = new core.AIBattlePlayer(controller, "excellent", "dense-triplet")
+	player.decide = () => ({score: 450, offset: 0, miss: false, reverse: false, dai: 0})
+	player.update()
+	assert.deepEqual(played, ["don", "ka", "don"])
+})
+
 test("Easy Settings resets and locks other options while AI is enabled", () => {
 	const storage = new Map()
 	const context = {

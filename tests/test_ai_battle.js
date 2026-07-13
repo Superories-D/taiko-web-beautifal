@@ -64,8 +64,8 @@ test("AI form tiers retain the intended ordering over seeded decisions", () => {
 		return good / total
 	}
 	const rates = core.STATES.map(goodRate)
-	assert.ok(rates[0] > 0.99, rates.join(","))
-	assert.ok(rates[1] > 0.96, rates.join(","))
+	assert.ok(rates[0] > 0.975 && rates[0] < 0.99, rates.join(","))
+	assert.ok(rates[1] > 0.925 && rates[1] < 0.955, rates.join(","))
 	for (let i = 1; i < rates.length; i++) assert.ok(rates[i - 1] > rates[i] + 0.015, rates.join(","))
 })
 

@@ -12,19 +12,24 @@
 	<meta name="theme-color" content="#ff5a3d">
 	<meta name="color-scheme" content="only light">
 	<meta name="format-detection" content="telephone=no">
-	<meta name="robots" content="index,follow,noimageindex">
+	<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
 
 	<meta property="og:type" content="website">
 	<meta property="og:site_name" content="Taiko Web">
 	<meta property="og:title" content="{{seo.title}}">
 	<meta property="og:description" content="{{seo.description}}">
-	<meta property="og:image" content="{{config.assets_baseurl}}img/favicon-512.png">
+	<meta property="og:image" content="{{seo.image_url}}">
+	<meta property="og:image:alt" content="{{seo.heading}}">
 	<meta property="og:url" content="{{seo.canonical_url}}">
-	<meta property="og:locale" content="{{seo.html_lang|replace('-', '_')}}">
+	<meta property="og:locale" content="{{seo.og_locale}}">
+	{% for alternate in seo.alternate_urls if alternate.lang != seo.lang %}
+	<meta property="og:locale:alternate" content="{{alternate.og_locale}}">
+	{% endfor %}
 	<meta name="twitter:card" content="summary">
 	<meta name="twitter:title" content="{{seo.title}}">
 	<meta name="twitter:description" content="{{seo.description}}">
-	<meta name="twitter:image" content="{{config.assets_baseurl}}img/favicon-512.png">
+	<meta name="twitter:image" content="{{seo.image_url}}">
+	<meta name="twitter:image:alt" content="{{seo.heading}}">
 
 	<link rel="canonical" href="{{seo.canonical_url}}">
 	{% for alternate in seo.alternate_urls %}
@@ -47,13 +52,31 @@
 	{
 		"@context": "https://schema.org",
 		"@type": "VideoGame",
-		"name": {{seo.title|tojson}},
+		"name": "Taiko Web",
+		"alternateName": {{seo.heading|tojson}},
 		"applicationCategory": "Game",
-		"operatingSystem": "Web browser",
+		"operatingSystem": ["Windows", "macOS", "Linux", "Android", "iOS"],
+		"gamePlatform": ["Web browser", "PC", "Mobile"],
+		"browserRequirements": "JavaScript enabled; modern HTML5 browser",
 		"genre": ["Rhythm", "Music"],
-		"inLanguage": ["en", "ja", "zh-Hans", "zh-Hant", "ko"],
+		"playMode": ["SinglePlayer", "MultiPlayer"],
+		"isAccessibleForFree": true,
+		"featureList": {{seo.features|tojson}},
+		"inLanguage": {{seo.html_lang|tojson}},
 		"description": {{seo.description|tojson}},
-		"url": {{seo.canonical_url|tojson}}
+		"disambiguatingDescription": {{seo.disclaimer|tojson}},
+		"url": {{seo.canonical_url|tojson}},
+		"image": {{seo.image_url|tojson}},
+		"offers": {
+			"@type": "Offer",
+			"price": "0",
+			"priceCurrency": "USD",
+			"availability": "https://schema.org/InStock"
+		},
+		"potentialAction": {
+			"@type": "PlayAction",
+			"target": {{seo.canonical_url|tojson}}
+		}
 	}
 	</script>
 

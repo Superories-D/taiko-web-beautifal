@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 import pathlib
 import shutil
 import threading
+import xml.etree.ElementTree as ET
 from flask_limiter import Limiter
 
 import flask
@@ -234,41 +235,66 @@ limiter = Limiter(
 client = MongoClient(host=os.environ.get("TAIKO_WEB_MONGO_HOST") or take_config('MONGO', required=True)['host'])
 basedir = take_config('BASEDIR') or '/'
 SEO_DEFAULT_LANG = 'ja'
+SEO_SITE_ORIGIN = (
+    os.environ.get('TAIKO_WEB_SITE_URL') or
+    take_config('SITE_URL') or
+    'https://taiko.asia'
+).rstrip('/')
 SEO_LANGUAGES = {
     'ja': {
         'html_lang': 'ja',
         'hreflang': 'ja',
-        'title': 'Taiko Web | ブラウザ太鼓リズムゲーム',
-        'description': 'Taiko Webで太鼓リズム譜面をブラウザですぐにプレイ。曲検索、カスタムTJA譜面、キーボード・タッチ・コントローラー操作に対応。',
-        'keywords': '太鼓, 太鼓ウェブ, 太鼓の達人, リズムゲーム, ブラウザゲーム, HTML5ゲーム, TJA, カスタム曲, オンライン太鼓',
+        'og_locale': 'ja_JP',
+        'title': '太鼓ウェブ（Taiko Web）｜非公式・無料ブラウザ太鼓シミュレーター',
+        'heading': '太鼓ウェブ（Taiko Web）',
+        'disclaimer': '非公式のファンメイドシミュレーターです。株式会社バンダイナムコエンターテインメントとは関係ありません。',
+        'description': '太鼓ウェブ（Taiko Web）は非公式の太鼓の達人風シミュレーターです。PC・スマホで無料プレイでき、オンライン・AI対戦、ランキング、週間チャレンジ、カスタムTJA譜面に対応。',
+        'keywords': '太鼓ウェブ, 太鼓の達人web, Taiko Web, 太鼓の達人 無料ゲーム, 太鼓の達人 PC, オンライン対戦, AI対戦, ランキング, 週間チャレンジ, TJA',
+        'features': ['オンライン対戦', 'AI対戦', 'ランキング', '週間チャレンジ', 'カスタムTJA譜面'],
     },
     'en': {
         'html_lang': 'en',
         'hreflang': 'en',
-        'title': 'Taiko Web | Browser Rhythm Game Simulator',
-        'description': 'Play Taiko Web, a fast HTML5 taiko rhythm game simulator for desktop, tablet, and mobile browsers. Search songs, import custom TJA charts, and play with keyboard, touch, or controllers.',
-        'keywords': 'taiko, Taiko Web, Taiko no Tatsujin, rhythm game, browser game, HTML5 game, drum game, custom songs, TJA, online taiko',
+        'og_locale': 'en_US',
+        'title': 'Taiko Web | Unofficial Free Online Taiko Rhythm Game Simulator',
+        'heading': 'Taiko Web — Free Online Taiko Rhythm Game',
+        'disclaimer': 'Unofficial fan-made simulator. Not affiliated with or endorsed by Bandai Namco Entertainment.',
+        'description': 'Unofficial Taiko no Tatsujin-inspired simulator. Play free on PC or mobile with multiplayer, AI battles, rankings, weekly challenges, and custom TJA charts.',
+        'keywords': 'Taiko Web, Taiko no Tatsujin online, free taiko game, PC browser game, multiplayer, AI battle, rankings, weekly challenges, custom TJA charts',
+        'features': ['Online multiplayer', 'AI battles', 'Rankings', 'Weekly challenges', 'Custom TJA charts'],
     },
     'cn': {
         'html_lang': 'zh-Hans',
         'hreflang': 'zh-Hans',
-        'title': 'Taiko Web | 浏览器太鼓节奏游戏',
-        'description': '在浏览器中游玩 Taiko Web 太鼓节奏游戏，支持歌曲搜索、自定义 TJA 谱面、键盘、触控和手柄操作。',
-        'keywords': '太鼓, 太鼓网页, 太鼓达人, 节奏游戏, 浏览器游戏, HTML5游戏, 鼓游戏, 自定义歌曲, TJA, 在线太鼓',
+        'og_locale': 'zh_CN',
+        'title': '太鼓达人网页版｜非官方免费在线太鼓模拟器 - Taiko Web',
+        'heading': '太鼓达人网页版（Taiko Web）',
+        'disclaimer': '非官方粉丝制作的模拟器，与万代南梦宫娱乐无隶属、授权或合作关系。',
+        'description': 'Taiko Web 是非官方太鼓达人网页版模拟器。电脑和手机可免费在线游玩，支持联机对战、AI 对战、排行榜、每周挑战和自定义 TJA 谱面。',
+        'keywords': '太鼓达人网页版, 太鼓网页, Taiko Web, 免费太鼓游戏, 电脑太鼓游戏, 联机对战, AI对战, 排行榜, 每周挑战, 自定义TJA谱面',
+        'features': ['联机对战', 'AI 对战', '排行榜', '每周挑战', '自定义 TJA 谱面'],
     },
     'tw': {
         'html_lang': 'zh-Hant',
         'hreflang': 'zh-Hant',
-        'title': 'Taiko Web | 瀏覽器太鼓節奏遊戲',
-        'description': '在瀏覽器中遊玩 Taiko Web 太鼓節奏遊戲，支援歌曲搜尋、自訂 TJA 譜面、鍵盤、觸控和控制器操作。',
-        'keywords': '太鼓, 太鼓網頁, 太鼓達人, 節奏遊戲, 瀏覽器遊戲, HTML5遊戲, 鼓遊戲, 自訂歌曲, TJA, 線上太鼓',
+        'og_locale': 'zh_TW',
+        'title': '太鼓達人網頁版｜非官方免費線上太鼓模擬器 - Taiko Web',
+        'heading': '太鼓達人網頁版（Taiko Web）',
+        'disclaimer': '非官方粉絲製作的模擬器，與萬代南夢宮娛樂無隸屬、授權或合作關係。',
+        'description': 'Taiko Web 是非官方太鼓達人網頁版模擬器。電腦與手機可免費線上遊玩，支援連線對戰、AI 對戰、排行榜、每週挑戰和自訂 TJA 譜面。',
+        'keywords': '太鼓達人網頁版, 太鼓網頁, Taiko Web, 免費太鼓遊戲, 電腦太鼓遊戲, 連線對戰, AI對戰, 排行榜, 每週挑戰, 自訂TJA譜面',
+        'features': ['連線對戰', 'AI 對戰', '排行榜', '每週挑戰', '自訂 TJA 譜面'],
     },
     'ko': {
         'html_lang': 'ko',
         'hreflang': 'ko',
-        'title': 'Taiko Web | 브라우저 태고 리듬 게임',
-        'description': '브라우저에서 Taiko Web 태고 리듬 게임을 플레이하세요. 곡 검색, 커스텀 TJA 채보, 키보드, 터치, 컨트롤러 조작을 지원합니다.',
-        'keywords': '태고, Taiko Web, 태고의 달인, 리듬 게임, 브라우저 게임, HTML5 게임, 드럼 게임, 커스텀 곡, TJA, 온라인 태고',
+        'og_locale': 'ko_KR',
+        'title': 'Taiko Web | 비공식 무료 온라인 태고 리듬 게임 시뮬레이터',
+        'heading': 'Taiko Web — 무료 온라인 태고 리듬 게임',
+        'disclaimer': '비공식 팬메이드 시뮬레이터이며 Bandai Namco Entertainment와 제휴하거나 승인받은 서비스가 아닙니다.',
+        'description': 'Taiko Web은 비공식 태고 리듬 게임 시뮬레이터입니다. PC와 모바일에서 무료로 플레이하고 멀티플레이, AI 대전, 랭킹, 주간 챌린지, 커스텀 TJA 채보를 즐기세요.',
+        'keywords': 'Taiko Web, 태고의 달인 온라인, 무료 태고 게임, 브라우저 리듬 게임, 멀티플레이, AI 대전, 랭킹, 주간 챌린지, 커스텀 TJA 채보',
+        'features': ['온라인 멀티플레이', 'AI 대전', '랭킹', '주간 챌린지', '커스텀 TJA 채보'],
     },
 }
 SEO_LANG_ALIASES = {
@@ -1409,7 +1435,7 @@ def localized_index_path(lang):
 
 
 def absolute_site_url(path):
-    return request.url_root.rstrip('/') + path
+    return SEO_SITE_ORIGIN + '/' + path.lstrip('/')
 
 
 def resolve_seo_lang(lang):
@@ -1426,10 +1452,12 @@ def get_seo_meta(lang=SEO_DEFAULT_LANG):
     meta['lang'] = lang
     meta['canonical_url'] = absolute_site_url(localized_index_path(lang))
     meta['default_url'] = absolute_site_url(localized_index_path(SEO_DEFAULT_LANG))
+    meta['image_url'] = absolute_site_url(site_path('assets/img/favicon-512.png'))
     meta['alternate_urls'] = [
         {
             'lang': code,
             'hreflang': details['hreflang'],
+            'og_locale': details['og_locale'],
             'url': absolute_site_url(localized_index_path(code))
         }
         for code, details in SEO_LANGUAGES.items()
@@ -1439,7 +1467,33 @@ def get_seo_meta(lang=SEO_DEFAULT_LANG):
 
 def render_index_page(lang=SEO_DEFAULT_LANG):
     version = get_version()
-    return render_template('index.html', version=version, config=get_config(), seo=get_seo_meta(lang))
+    seo = get_seo_meta(lang)
+    response = make_response(render_template('index.html', version=version, config=get_config(), seo=seo))
+    response.headers['Content-Language'] = seo['html_lang']
+    return response
+
+
+def build_sitemap_xml():
+    sitemap_namespace = 'http://www.sitemaps.org/schemas/sitemap/0.9'
+    xhtml_namespace = 'http://www.w3.org/1999/xhtml'
+    ET.register_namespace('', sitemap_namespace)
+    ET.register_namespace('xhtml', xhtml_namespace)
+    urlset = ET.Element('{%s}urlset' % sitemap_namespace)
+    alternates = [
+        (details['hreflang'], absolute_site_url(localized_index_path(code)))
+        for code, details in SEO_LANGUAGES.items()
+    ]
+    alternates.append(('x-default', absolute_site_url(localized_index_path(SEO_DEFAULT_LANG))))
+    for code in SEO_LANGUAGES:
+        url = ET.SubElement(urlset, '{%s}url' % sitemap_namespace)
+        ET.SubElement(url, '{%s}loc' % sitemap_namespace).text = absolute_site_url(localized_index_path(code))
+        for hreflang, href in alternates:
+            ET.SubElement(url, '{%s}link' % xhtml_namespace, {
+                'rel': 'alternate',
+                'hreflang': hreflang,
+                'href': href,
+            })
+    return ET.tostring(urlset, encoding='utf-8', xml_declaration=True)
 
 
 def get_user_level(user):
@@ -1826,6 +1880,31 @@ def route_index():
     return render_index_page(SEO_DEFAULT_LANG)
 
 
+@app.route(basedir + 'sitemap.xml')
+def route_sitemap():
+    response = make_response(build_sitemap_xml())
+    response.headers['Content-Type'] = 'application/xml; charset=utf-8'
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
+
+
+@app.route(basedir + 'robots.txt')
+def route_robots():
+    body = '\n'.join([
+        'User-agent: *',
+        'Allow: ' + site_path(),
+        'Disallow: ' + site_path('admin'),
+        'Disallow: ' + site_path('api/'),
+        'Disallow: ' + site_path('upload/'),
+        'Sitemap: ' + absolute_site_url(site_path('sitemap.xml')),
+        '',
+    ])
+    response = make_response(body)
+    response.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
+
+
 @app.route(basedir + '<lang_code>', strict_slashes=False)
 def route_localized_index(lang_code):
     lang = resolve_seo_lang(lang_code)
@@ -1833,7 +1912,7 @@ def route_localized_index(lang_code):
         abort(404)
     canonical_path = localized_index_path(lang)
     if request.path != canonical_path:
-        return redirect(canonical_path, code=302)
+        return redirect(canonical_path, code=301)
     return render_index_page(lang)
 
 

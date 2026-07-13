@@ -82,9 +82,13 @@
 		return 10
 	}
 
+	function roundWinThreshold(threshold) {
+		return Math.max(0, Number(threshold) || 0) * 0.5
+	}
+
 	function resolveRound(playerScore, aiScore, threshold) {
 		var difference = playerScore - aiScore
-		if (Math.abs(difference) < threshold) {
+		if (difference === 0 || Math.abs(difference) < roundWinThreshold(threshold)) {
 			return "draw"
 		}
 		return difference > 0 ? "player" : "ai"
@@ -376,6 +380,7 @@
 		resolveState: resolveState,
 		splitCounts: splitCounts,
 		thresholdForDifficulty: thresholdForDifficulty,
+		roundWinThreshold: roundWinThreshold,
 		resolveRound: resolveRound,
 		resolveMatch: resolveMatch,
 		hasModeConflict: hasModeConflict,

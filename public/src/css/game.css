@@ -59,6 +59,20 @@
 	overflow: hidden;
 	box-shadow: inset 0 0 8px #000, 0 0 12px rgba(255, 255, 255, 0.22);
 }
+.ai-battle-bar::before{
+	content:"";
+	position:absolute;
+	top:0;
+	bottom:0;
+	left:25%;
+	width:50%;
+	z-index:0;
+	box-sizing:border-box;
+	border-left:1px dashed rgba(255,255,255,.6);
+	border-right:1px dashed rgba(255,255,255,.6);
+	background:linear-gradient(90deg,rgba(255,255,255,.035),rgba(255,255,255,.12) 50%,rgba(255,255,255,.035));
+	pointer-events:none;
+}
 .ai-battle-bar i{
 	position: absolute;
 	top: -3px;
@@ -68,6 +82,7 @@
 	background: #fff;
 	transform: translateX(-50%);
 	box-shadow: 0 0 7px #fff;
+	z-index:2;
 }
 .ai-battle-player,.ai-battle-ai{
 	position: absolute;
@@ -75,6 +90,7 @@
 	bottom: 0;
 	width: 0;
 	transition: width 150ms cubic-bezier(.2,.8,.2,1);
+	z-index:1;
 }
 .ai-battle-player{
 	right: 50%;

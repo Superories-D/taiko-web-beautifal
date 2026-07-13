@@ -5,7 +5,11 @@ class SongSelect {
 	init(fromTutorial, fadeIn, touchEnabled, songId, showWarning) {
 		this.touchEnabled = touchEnabled
 		if(typeof EasySettings !== "undefined"){
-			EasySettings.setNetworkBlocked(EasySettings.isAiBattleEnabled())
+			if(EasySettings.isMultiplayerActive()){
+				EasySettings.enforceMultiplayerSettings(true)
+			}else{
+				EasySettings.setNetworkBlocked(EasySettings.isAiBattleEnabled())
+			}
 		}
 		if (typeof WeeklyChallenge !== "undefined") {
 			WeeklyChallenge.clearRun()
@@ -667,6 +671,14 @@ class SongSelect {
 
 	getSafeSongTitle(song) {
 		if (typeof window !== "undefined" && window.EasySettings && typeof window.EasySettings.getSongTitle === "function") {
+			if(window.EasySettings.isMultiplayerActive()){
+				return window.EasySettings.getSongTitle({
+					title: song && (song.originalTitle || song.title),
+					title_lang: song && song.title_lang,
+					name: song && song.name,
+					id: song && song.id
+				}, "ja")
+			}
 			return window.EasySettings.getSongTitle(song)
 		}
 		return String(song && (song.title || song.name || song.id) || "")
@@ -692,7 +704,7 @@ class SongSelect {
 		if (orderA !== orderB) {
 			return orderA > orderB ? 1 : -1
 		}
-		return String(a.id || "").localeCompare(String(b.id || ""), undefined, {
+		return String(a.id || "").localeCompare(String(b.id || ""), "en", {
 			sensitivity: "base",
 			numeric: true
 		})
@@ -700,6 +712,7 @@ class SongSelect {
 
 	sortSongEntries(songEntries) {
 		var sortByTitle = !!this.getEasySettings().sortByTitle
+		var sortLocale = typeof EasySettings !== "undefined" && EasySettings.isMultiplayerActive() ? "ja" : undefined
 		return songEntries.map((song, index) => {
 			return { song: song, index: index }
 		}).sort((a, b) => {
@@ -708,7 +721,7 @@ class SongSelect {
 				return categoryCompare
 			}
 			if (sortByTitle) {
-				var titleCompare = this.getSafeSongTitle(a.song).localeCompare(this.getSafeSongTitle(b.song), undefined, {
+				var titleCompare = this.getSafeSongTitle(a.song).localeCompare(this.getSafeSongTitle(b.song), sortLocale, {
 					sensitivity: "base",
 					numeric: true
 				})

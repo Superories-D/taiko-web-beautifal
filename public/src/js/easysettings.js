@@ -161,6 +161,9 @@
 	function saveSettings(settings, silent) {
 		var wasAiEnabled = cachedSettings && cachedSettings.aiBattleEnabled
 		cachedSettings = sanitizeSettings(settings)
+		if (isMultiplayerActive()) {
+			cachedSettings = multiplayerSettings()
+		}
 		writeStorage(STORAGE_KEY, JSON.stringify(cachedSettings))
 		syncLegacySettings(cachedSettings)
 		if (wasAiEnabled !== cachedSettings.aiBattleEnabled) {
@@ -181,12 +184,14 @@
 
 	function setSetting(key, value) {
 		var settings = getSettings()
+		if (isMultiplayerActive()) {
+			if (key === "aiBattleEnabled" && sanitizeBoolean(value, false)) {
+				showConflict(getText("aiMultiplayerConflict", "AI Battle cannot be enabled during online multiplayer."))
+			}
+			return enforceMultiplayerSettings()
+		}
 		if (key === "aiBattleEnabled") {
 			var enabled = sanitizeBoolean(value, false)
-			if (enabled && isMultiplayerActive()) {
-				showConflict(getText("aiMultiplayerConflict", "AI Battle cannot be enabled during online multiplayer."))
-				return getSettings()
-			}
 			var aiState = settings.aiState
 			settings = enabled ? Object.assign({}, DEFAULT_SETTINGS, {
 				aiBattleEnabled: true,
@@ -207,6 +212,14 @@
 			return false
 		}
 		return !!(p2.session || p2.otherConnected || p2.hashLock)
+	}
+
+	function multiplayerSettings() {
+		return Object.assign({}, DEFAULT_SETTINGS, {sortByTitle: true})
+	}
+
+	function enforceMultiplayerSettings(silent) {
+		return saveSettings(multiplayerSettings(), silent)
 	}
 
 	function setNetworkBlocked(blocked) {
@@ -506,8 +519,8 @@
 		if (includeStaticText !== false) {
 			renderStaticText()
 		}
-		var settings = getSettings()
 		var multiplayerActive = isMultiplayerActive()
+		var settings = multiplayerActive ? enforceMultiplayerSettings(true) : getSettings()
 		overlay.querySelector("#easy-settings-playback").value = settings.playbackRate
 		setText(overlay.querySelector("#easy-settings-playback-value"), formatNumber(settings.playbackRate) + "x")
 		overlay.querySelector("#easy-settings-baisoku").value = String(settings.baisoku)
@@ -515,7 +528,13 @@
 		overlay.querySelector("#easy-settings-doron").checked = settings.doron
 		overlay.querySelector("#easy-settings-abekobe").checked = settings.abekobe
 		overlay.querySelector("#easy-settings-detarame").checked = settings.detarame
-		overlay.querySelector("#easy-settings-sort").checked = settings.sortByTitle
+		var sortToggle = overlay.querySelector("#easy-settings-sort")
+		sortToggle.checked = settings.sortByTitle
+		sortToggle.disabled = multiplayerActive
+		var sortToggleRow = sortToggle.closest("label")
+		if (sortToggleRow) {
+			sortToggleRow.classList.toggle("easy-settings-locked", multiplayerActive)
+		}
 		var aiToggle = overlay.querySelector("#easy-settings-ai")
 		aiToggle.checked = settings.aiBattleEnabled
 		aiToggle.disabled = multiplayerActive && !settings.aiBattleEnabled
@@ -524,17 +543,19 @@
 			aiToggleRow.classList.toggle("easy-settings-locked", aiToggle.disabled)
 		}
 		overlay.querySelector("#easy-settings-ai-state").value = settings.aiState
-		overlay.querySelector("#easy-settings-ai-state").disabled = !settings.aiBattleEnabled
+		overlay.querySelector("#easy-settings-ai-state").disabled = !settings.aiBattleEnabled || multiplayerActive
+		overlay.querySelector("#easy-settings-reset").disabled = multiplayerActive
+		var lockedByMode = settings.aiBattleEnabled || multiplayerActive
 		var locked = [
 			"#easy-settings-playback", "#easy-settings-baisoku", "#easy-settings-speed",
 			"#easy-settings-doron", "#easy-settings-abekobe", "#easy-settings-detarame"
 		]
 		locked.forEach(function (selector) {
 			var input = overlay.querySelector(selector)
-			input.disabled = settings.aiBattleEnabled
+			input.disabled = lockedByMode
 			var row = input.closest("label")
 			if (row) {
-				row.classList.toggle("easy-settings-locked", settings.aiBattleEnabled)
+				row.classList.toggle("easy-settings-locked", lockedByMode)
 			}
 		})
 		overlay.classList.toggle("ai-battle-enabled", settings.aiBattleEnabled)
@@ -650,6 +671,7 @@
 		getBaisoku: getBaisoku,
 		isAiBattleEnabled: function () { return getSettings().aiBattleEnabled },
 		isMultiplayerActive: isMultiplayerActive,
+		enforceMultiplayerSettings: enforceMultiplayerSettings,
 		setNetworkBlocked: setNetworkBlocked,
 		showConflict: showConflict,
 		getSongTitle: getSongTitle,

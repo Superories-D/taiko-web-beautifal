@@ -347,6 +347,9 @@ class P2Connection{
 				this.branchSet = false
 				break
 			case "session":
+				if(typeof EasySettings !== "undefined"){
+					EasySettings.enforceMultiplayerSettings()
+				}
 				this.clearMessage("users")
 				this.otherConnected = true
 				this.session = true

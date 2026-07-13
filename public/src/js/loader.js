@@ -1654,6 +1654,9 @@ class Loader{
 					p2.disable()
 					setTimeout(function () { EasySettings.showConflict() }, 0)
 				}else if(/^#p2=[a-f0-9]{12}:[bcdfghjklmnpqrstvwxyz]{5}$/i.test(location.hash) || location.hash.length === 6){
+					if(typeof EasySettings !== "undefined"){
+						EasySettings.enforceMultiplayerSettings()
+					}
 					var inviteMatch = location.hash.match(/^#p2=([a-f0-9]{12}):([bcdfghjklmnpqrstvwxyz]{5})$/i)
 					var inviteCode = inviteMatch ? inviteMatch[2].toLowerCase() : location.hash.slice(1).toLowerCase()
 					if(inviteMatch){

@@ -231,8 +231,19 @@ test("Easy Settings refuses to enable AI during multiplayer", () => {
 	context.window = context
 	vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "public", "src", "js", "easysettings.js"), "utf8"), context)
 	assert.equal(context.EasySettings.isMultiplayerActive(), true)
+	let settings = context.EasySettings.getSettings()
+	assert.equal(settings.sortByTitle, true)
+	assert.equal(settings.aiBattleEnabled, false)
+	assert.equal(settings.baisoku, 1)
 	context.EasySettings.setSetting("aiBattleEnabled", true)
 	assert.equal(context.EasySettings.getSettings().aiBattleEnabled, false)
+	context.EasySettings.setSetting("sortByTitle", false)
+	assert.equal(context.EasySettings.getSettings().sortByTitle, true)
+	context.EasySettings.saveSettings({baisoku: 4, doron: true, sortByTitle: false})
+	settings = context.EasySettings.getSettings()
+	assert.equal(settings.baisoku, 1)
+	assert.equal(settings.doron, false)
+	assert.equal(settings.sortByTitle, true)
 	context.p2.session = false
 	context.p2.otherConnected = false
 	assert.equal(context.EasySettings.isMultiplayerActive(), true)
@@ -240,4 +251,6 @@ test("Easy Settings refuses to enable AI during multiplayer", () => {
 	assert.equal(context.EasySettings.getSettings().aiBattleEnabled, false)
 	context.p2.hashLock = false
 	assert.equal(context.EasySettings.isMultiplayerActive(), false)
+	context.EasySettings.setSetting("sortByTitle", false)
+	assert.equal(context.EasySettings.getSettings().sortByTitle, false)
 })

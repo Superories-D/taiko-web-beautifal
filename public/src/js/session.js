@@ -4,6 +4,9 @@ class Session{
 	}
 	init(touchEnabled){
 		this.touchEnabled = touchEnabled
+		if(typeof EasySettings !== "undefined"){
+			EasySettings.enforceMultiplayerSettings()
+		}
 		loader.changePage("session", true)
 		this.endButton = this.getElement("view-end-button")
 		this.copyButton = this.getElement("session-copy-button")

@@ -230,16 +230,18 @@
 .ai-battle-final-rounds .ai{box-shadow:inset 0 0 13px #277ee5}
 .ai-battle-final-rounds .draw{box-shadow:inset 0 0 13px #777}
 #ai-battle-final-result small{position:absolute;right:12px;bottom:5px;color:#eee;font-size:10px}
-.portrait #ai-battle-final-result{
-	top:clamp(80px,14vh,190px);
-	width:min(84vw,680px);
-	padding:10px 14px 12px;
-	border-radius:22px;
+@media (orientation: portrait){
+	#ai-battle-final-result{
+		top:clamp(80px,14vh,190px);
+		width:min(84vw,680px);
+		padding:10px 14px 12px;
+		border-radius:22px;
+	}
+	.ai-battle-final-title{font-size:clamp(24px,4.8vmin,38px)}
+	.ai-battle-final-score{margin-top:5px;font-size:clamp(15px,2.8vmin,22px)}
+	.ai-battle-final-rounds{margin-top:7px;gap:7px}
+	.ai-battle-final-rounds span{padding:3px 8px;font-size:clamp(10px,1.8vmin,14px)}
 }
-.portrait .ai-battle-final-title{font-size:clamp(24px,4.8vmin,38px)}
-.portrait .ai-battle-final-score{margin-top:5px;font-size:clamp(15px,2.8vmin,22px)}
-.portrait .ai-battle-final-rounds{margin-top:7px;gap:7px}
-.portrait .ai-battle-final-rounds span{padding:3px 8px;font-size:clamp(10px,1.8vmin,14px)}
 #screen.view{
 	background-image: none;
 	background-color: #000;

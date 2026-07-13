@@ -358,9 +358,15 @@ var translations = {
 		playerWins: {ja: "プレイヤー勝利", en: "Player wins", cn: "玩家胜", tw: "玩家勝", ko: "플레이어 승"},
 		aiWins: {ja: "AI勝利", en: "AI wins", cn: "AI 胜", tw: "AI 勝", ko: "AI 승"},
 		draw: {ja: "引き分け", en: "Draw", cn: "平局", tw: "平局", ko: "무승부"},
-		matchPlayer: {ja: "五番勝負・プレイヤー勝利", en: "Five rounds · Player wins", cn: "五局战罢 · 玩家胜", tw: "五局戰罷 · 玩家勝", ko: "5구간 · 플레이어 승"},
-		matchAi: {ja: "五番勝負・AI勝利", en: "Five rounds · AI wins", cn: "五局战罢 · AI 胜", tw: "五局戰罷 · AI 勝", ko: "5구간 · AI 승"},
-		matchDraw: {ja: "五番勝負・引き分け", en: "Five rounds · Draw", cn: "五局战罢 · 平局", tw: "五局戰罷 · 平局", ko: "5구간 · 무승부"}
+		matchPlayer: {ja: "五番勝負・プレイヤー勝利", en: "Five rounds · Player wins", cn: "五局战罢 · 玩家胜利", tw: "五局戰罷 · 玩家勝利", ko: "5구간 · 플레이어 승"},
+		matchAi: {ja: "五番勝負・AI勝利", en: "Five rounds · AI wins", cn: "五局战罢 · AI 胜利", tw: "五局戰罷 · AI 勝利", ko: "5구간 · AI 승"},
+		matchDraw: {ja: "五番勝負・引き分け", en: "Five rounds · Draw", cn: "五局战罢 · 平局", tw: "五局戰罷 · 平局", ko: "5구간 · 무승부"},
+		playerLabel: {ja: "プレイヤー", en: "PLAYER", cn: "玩家", tw: "玩家", ko: "플레이어"},
+		aiLabel: {ja: "AI", en: "AI", cn: "AI", tw: "AI", ko: "AI"},
+		winShort: {ja: "勝", en: "W", cn: "胜", tw: "勝", ko: "승"},
+		loseShort: {ja: "敗", en: "L", cn: "负", tw: "負", ko: "패"},
+		drawShort: {ja: "分", en: "D", cn: "平", tw: "平", ko: "무"},
+		drawCount: {ja: "引き分け {count}", en: "Draws: {count}", cn: "平局 {count} 段", tw: "平局 {count} 段", ko: "무승부 {count}구간"}
 	},
 	siteMessages: {
 		title: {

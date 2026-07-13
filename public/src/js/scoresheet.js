@@ -47,6 +47,9 @@ class Scoresheet {
 		this.fadeScreen = document.createElement("div")
 		this.fadeScreen.id = "fade-screen"
 		this.game.appendChild(this.fadeScreen)
+		if(this.aiBattle){
+			this.createAiBattleResult()
+		}
 
 		this.font = strings.font
 		this.numbersFont = "TnT, Meiryo, sans-serif"
@@ -110,6 +113,45 @@ class Scoresheet {
 			gamepadEvents: controller.keyboard.gamepad.gamepadEvents,
 			touchEvents: controller.view.touchEvents
 		})
+	}
+	createAiBattleResult() {
+		var rounds = this.controller.battleCoordinator ? this.controller.battleCoordinator.results.slice(0, 5) : []
+		while(rounds.length < 5){
+			rounds.push("draw")
+		}
+		var match = AIBattleCore.resolveMatch(rounds)
+		var playerWins = rounds.filter(result => result === "player").length
+		var aiWins = rounds.filter(result => result === "ai").length
+		var draws = rounds.length - playerWins - aiWins
+		var resultText = match === "player" ? strings.aiBattle.matchPlayer :
+			(match === "ai" ? strings.aiBattle.matchAi : strings.aiBattle.matchDraw)
+		var banner = document.createElement("div")
+		banner.id = "ai-battle-final-result"
+		banner.className = match
+		banner.setAttribute("role", "status")
+		banner.setAttribute("aria-label", resultText)
+		banner.innerHTML =
+			'<div class="ai-battle-final-title"></div>' +
+			'<div class="ai-battle-final-score"><span class="player"></span><i>VS</i><span class="ai"></span></div>' +
+			'<div class="ai-battle-final-rounds"></div>'
+		banner.querySelector(".ai-battle-final-title").textContent = resultText
+		banner.querySelector(".ai-battle-final-score .player").textContent = strings.aiBattle.playerLabel + " " + playerWins
+		banner.querySelector(".ai-battle-final-score .ai").textContent = aiWins + " " + strings.aiBattle.aiLabel
+		var roundsBox = banner.querySelector(".ai-battle-final-rounds")
+		rounds.forEach(function (result, index) {
+			var marker = document.createElement("span")
+			marker.className = result
+			marker.textContent = (index + 1) + " · " + (result === "player" ? strings.aiBattle.winShort : (result === "ai" ? strings.aiBattle.loseShort : strings.aiBattle.drawShort))
+			roundsBox.appendChild(marker)
+		})
+		if(draws){
+			var drawSummary = document.createElement("small")
+			drawSummary.textContent = strings.aiBattle.drawCount.replace("{count}", draws)
+			banner.appendChild(drawSummary)
+		}
+		this.game.appendChild(banner)
+		this.aiBattleFinalResult = banner
+		requestAnimationFrame(function () { banner.classList.add("visible") })
 	}
 	keyDown(pressed) {
 		if (pressed && this.redrawing) {
@@ -1042,6 +1084,9 @@ class Scoresheet {
 		}
 		if (this.session) {
 			pageEvents.remove(p2, "message")
+		}
+		if(this.aiBattleFinalResult && this.aiBattleFinalResult.parentNode){
+			this.aiBattleFinalResult.parentNode.removeChild(this.aiBattleFinalResult)
 		}
 		if (!this.multiplayer) {
 			delete this.tetsuoHana

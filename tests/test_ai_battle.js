@@ -91,6 +91,61 @@ test("player branch changes never force the AI branch", () => {
 	assert.equal(aiBranchChanges, 0)
 })
 
+test("round result overlay is a game-level sibling of the HUD", () => {
+	function classList() {
+		const values = new Set()
+		return {
+			add(...names) { names.forEach(name => values.add(name)) },
+			remove(...names) { names.forEach(name => values.delete(name)) },
+			toggle(name, enabled) { enabled ? values.add(name) : values.delete(name) }
+		}
+	}
+	function element() {
+		const parts = {
+			".ai-battle-form": {classList: classList()},
+			".ai-battle-player": {style: {}},
+			".ai-battle-ai": {style: {}}
+		}
+		return {
+			children: [],
+			classList: classList(),
+			style: {},
+			appendChild(child) { child.parentNode = this; this.children.push(child) },
+			removeChild(child) { this.children = this.children.filter(item => item !== child); child.parentNode = null },
+			querySelector(selector) { return parts[selector] },
+			setAttribute(name, value) { this[name] = value }
+		}
+	}
+	const game = element()
+	const oldDocument = global.document
+	const oldTimeout = global.setTimeout
+	global.document = {
+		getElementById(id) { return id === "game" ? game : null },
+		createElement() { return element() }
+	}
+	global.setTimeout = callback => { callback(); return 0 }
+	try {
+		const coordinator = Object.create(core.AIBattleCoordinator.prototype)
+		Object.assign(coordinator, {
+			secondary: {aiPlayer: {state: "normal"}},
+			scores: Array.from({length: 5}, () => [0, 0]),
+			threshold: 10,
+			currentSegment: 0,
+			closed: false
+		})
+		coordinator.createHud()
+		assert.equal(game.children.length, 2)
+		assert.equal(coordinator.hud.parentNode, game)
+		assert.equal(coordinator.resultBox.parentNode, game)
+		assert.notEqual(coordinator.resultBox.parentNode, coordinator.hud)
+		coordinator.clean()
+		assert.equal(game.children.length, 0)
+	} finally {
+		global.document = oldDocument
+		global.setTimeout = oldTimeout
+	}
+})
+
 test("AI consumes dense triplets and alternating notes in one frame", () => {
 	const circles = [
 		{type: "don", ms: 90},

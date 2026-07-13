@@ -126,6 +126,7 @@
 	position: fixed;
 	top: 45%;
 	left: 50%;
+	z-index: 20;
 	width: min(62vw, 680px);
 	padding: 10px 20px;
 	border: 2px solid rgba(255,255,255,.92);
@@ -133,10 +134,15 @@
 	background: linear-gradient(90deg, rgba(197,37,31,.93), rgba(22,27,42,.94), rgba(38,100,205,.93));
 	box-shadow: 0 0 0 0 rgba(255,255,255,.5), 0 12px 40px rgba(0,0,0,.48);
 	font-size: clamp(18px, 3.3vmin, 34px);
+	color: #fff;
+	font-family: Meiryo, "Microsoft YaHei", sans-serif;
+	font-weight: 800;
+	text-align: center;
 	letter-spacing: .08em;
 	opacity: 0;
 	transform: translate(-50%,-50%) scale(.78);
 	transition: opacity 160ms ease, transform 230ms cubic-bezier(.2,1.5,.35,1);
+	pointer-events: none;
 }
 .ai-battle-result::before,
 .ai-battle-result::after{

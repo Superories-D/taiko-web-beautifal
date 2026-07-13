@@ -313,11 +313,15 @@
 		hud.innerHTML =
 			'<div class="ai-battle-form"></div>' +
 			'<div class="ai-battle-bar" aria-label="AI battle advantage"><div class="ai-battle-player"></div><div class="ai-battle-ai"></div><i></i></div>' +
-			'<div class="ai-battle-rounds">' + Array.from({length: 5}, function (_, i) { return '<span data-round="' + i + '">' + (i + 1) + '</span>' }).join("") + '</div>' +
-			'<div class="ai-battle-result" aria-live="polite"></div>'
+			'<div class="ai-battle-rounds">' + Array.from({length: 5}, function (_, i) { return '<span data-round="' + i + '">' + (i + 1) + '</span>' }).join("") + '</div>'
 		game.appendChild(hud)
+		var resultBox = document.createElement("div")
+		resultBox.className = "ai-battle-result"
+		resultBox.setAttribute("aria-live", "polite")
+		game.appendChild(resultBox)
 		game.classList.add("ai-battle-active")
 		this.hud = hud
+		this.resultBox = resultBox
 		var form = hud.querySelector(".ai-battle-form")
 		form.textContent = text("form", "AI 状态") + " · " + stateLabel(this.secondary.aiPlayer.state)
 		setTimeout(function () { form.classList.add("quiet") }, 3200)
@@ -338,11 +342,11 @@
 	}
 
 	AIBattleCoordinator.prototype.showRoundResult = function (round, result) {
-		if (!this.hud) return
+		if (!this.hud || !this.resultBox) return
 		var marker = this.hud.querySelector('[data-round="' + round + '"]')
 		marker.classList.add(result)
 		marker.textContent = result === "player" ? "胜" : (result === "ai" ? "负" : "平")
-		var resultBox = this.hud.querySelector(".ai-battle-result")
+		var resultBox = this.resultBox
 		resultBox.className = "ai-battle-result show " + result
 		resultBox.textContent = text("round", "第 {round} 段").replace("{round}", round + 1) + " · " +
 			(result === "player" ? text("playerWins", "玩家胜") : (result === "ai" ? text("aiWins", "AI 胜") : text("draw", "平局")))
@@ -351,9 +355,9 @@
 	}
 
 	AIBattleCoordinator.prototype.showMatchResult = function () {
-		if (!this.hud) return
+		if (!this.hud || !this.resultBox) return
 		var result = resolveMatch(this.results)
-		var resultBox = this.hud.querySelector(".ai-battle-result")
+		var resultBox = this.resultBox
 		resultBox.className = "ai-battle-result show match " + result
 		resultBox.textContent = result === "player" ? text("matchPlayer", "五局战罢 · 玩家胜") :
 			(result === "ai" ? text("matchAi", "五局战罢 · AI 胜") : text("matchDraw", "五局战罢 · 平局"))
@@ -367,7 +371,9 @@
 		var game = document.getElementById("game")
 		if (game) game.classList.remove("ai-battle-active", "ai-battle-player-leading", "ai-battle-ai-leading")
 		if (this.hud && this.hud.parentNode) this.hud.parentNode.removeChild(this.hud)
+		if (this.resultBox && this.resultBox.parentNode) this.resultBox.parentNode.removeChild(this.resultBox)
 		this.hud = null
+		this.resultBox = null
 	}
 
 	return {

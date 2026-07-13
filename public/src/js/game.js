@@ -198,7 +198,7 @@ class Game{
 		}
 		
 		var branches = this.songData.branches
-		if(branches && !this.controller.aiPlayer){
+		if(branches){
 			var force = this.controller.networkMultiplayer && this.controller.multiplayer === 2 ? p2 : this
 			var measures = this.songData.measures
 			if(this.controller.networkMultiplayer && this.controller.multiplayer === 2 || force.branch){

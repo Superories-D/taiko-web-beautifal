@@ -10,11 +10,11 @@
 	var STATES = ["excellent", "great", "normal", "poor", "awful"]
 	var WEIGHTS = [0.08, 0.27, 0.45, 0.15, 0.05]
 	var PROFILES = {
-		excellent: {good: 0.97, ok: 0.025, bad: 0.005, roll: 42, big: 0.98},
-		great: {good: 0.91, ok: 0.07, bad: 0.02, roll: 52, big: 0.94},
-		normal: {good: 0.78, ok: 0.17, bad: 0.05, roll: 65, big: 0.86},
-		poor: {good: 0.58, ok: 0.27, bad: 0.15, roll: 82, big: 0.72},
-		awful: {good: 0.35, ok: 0.35, bad: 0.30, roll: 105, big: 0.55}
+		excellent: {good: 0.995, ok: 0.0045, bad: 0.0005, roll: 34, big: 0.999, instability: 0.12},
+		great: {good: 0.97, ok: 0.025, bad: 0.005, roll: 44, big: 0.985, instability: 0.32},
+		normal: {good: 0.86, ok: 0.11, bad: 0.03, roll: 58, big: 0.92, instability: 0.72},
+		poor: {good: 0.68, ok: 0.23, bad: 0.09, roll: 76, big: 0.78, instability: 1},
+		awful: {good: 0.48, ok: 0.32, bad: 0.20, roll: 98, big: 0.60, instability: 1.12}
 	}
 
 	function hashSeed(value) {
@@ -145,9 +145,12 @@
 		var densityPenalty = gap < 100 ? 0.075 : (gap < 160 ? 0.035 : 0)
 		this.form = this.form * 0.94 + normalRandom(rng) * 0.06
 		var streakPenalty = this.errorStreak >= 2 ? Math.min(0.07, this.errorStreak * 0.012) : 0
-		var good = Math.max(0.08, Math.min(0.995, this.profile.good + this.form * 0.08 - densityPenalty - streakPenalty))
-		var ok = Math.max(0.004, Math.min(0.65, this.profile.ok + densityPenalty * 0.65 + streakPenalty * 0.45))
-		if (good + ok > 0.995) ok = Math.max(0.001, 0.995 - good)
+		var instability = this.profile.instability
+		var appliedDensity = densityPenalty * instability
+		var appliedStreak = streakPenalty * instability
+		var good = Math.max(0.08, Math.min(0.9995, this.profile.good + this.form * 0.08 * instability - appliedDensity - appliedStreak))
+		var ok = Math.max(0.0004, Math.min(0.65, this.profile.ok + appliedDensity * 0.65 + appliedStreak * 0.45))
+		if (good + ok > 0.9995) ok = Math.max(0.0001, 0.9995 - good)
 		var value = rng()
 		var score = value < good ? 450 : (value < good + ok ? 230 : 0)
 		if (score === 0) this.errorStreak++
@@ -274,9 +277,6 @@
 
 	AIBattleCoordinator.prototype.onBranchChange = function (branchMs, activeName) {
 		if (this.closed) return
-		var aiBranches = this.secondary.game.songData.branches || []
-		var aiBranch = aiBranches.find(function (branch) { return branch.ms === branchMs })
-		if (aiBranch) this.secondary.game.setBranch(aiBranch, activeName, true)
 		var keepThrough = this.currentSegment
 		var anchor = this.boundaries[keepThrough]
 		if (anchor == null || keepThrough >= 4) return

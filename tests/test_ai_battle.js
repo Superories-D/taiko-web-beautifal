@@ -64,7 +64,23 @@ test("AI form tiers retain the intended ordering over seeded decisions", () => {
 		return good / total
 	}
 	const rates = core.STATES.map(goodRate)
-	for (let i = 1; i < rates.length; i++) assert.ok(rates[i - 1] > rates[i] + 0.04, rates.join(","))
+	assert.ok(rates[0] > 0.99, rates.join(","))
+	assert.ok(rates[1] > 0.96, rates.join(","))
+	for (let i = 1; i < rates.length; i++) assert.ok(rates[i - 1] > rates[i] + 0.015, rates.join(","))
+})
+
+test("player branch changes never force the AI branch", () => {
+	let aiBranchChanges = 0
+	const coordinator = Object.create(core.AIBattleCoordinator.prototype)
+	Object.assign(coordinator, {
+		closed: false,
+		currentSegment: 0,
+		boundaries: [100, 200, 300, 400, 500],
+		secondary: {game: {setBranch() { aiBranchChanges++ }}},
+		activeNotes() { return [{ms: 210}, {ms: 310}, {ms: 410}, {ms: 510}] }
+	})
+	coordinator.onBranchChange(150, "normal")
+	assert.equal(aiBranchChanges, 0)
 })
 
 test("Easy Settings resets and locks other options while AI is enabled", () => {

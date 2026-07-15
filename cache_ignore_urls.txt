@@ -2,6 +2,15 @@
 /api/scores/*
 /api/playcount/*
 /api/account/*
+/api/ghost
+/api/board/*
+/api/site-messages*
+/api/visits/*
+/api/multiplayer/select
+/api/weekly-challenge/*
+/api/user-upload
+/api/upload
+/api/remove
 /api/login
 /api/register
 /api/logout

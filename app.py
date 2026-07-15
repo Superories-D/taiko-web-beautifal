@@ -2,8 +2,10 @@
 
 import base64
 import bcrypt
+import binascii
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import gzip
 import ipaddress
 try:
     import config
@@ -381,6 +383,10 @@ def ensure_unique_single_field_index(collection, field):
     return ensure_unique_index(collection, [(field, 1)])
 
 
+GHOST_RETENTION_DAYS = 30
+GHOST_RETENTION_SECONDS = GHOST_RETENTION_DAYS * 24 * 60 * 60
+
+
 db.users.create_index('username', unique=True)
 ensure_unique_single_field_index(db.users, 'username_lower')
 db.songs.create_index('id', unique=True)
@@ -411,6 +417,8 @@ db.weekly_challenge_scores.create_index([('week_key', 1), ('score_value', -1), (
 db.weekly_challenge_scores.create_index('week_start')
 ensure_unique_single_field_index(db.multiplayer_servers, 'node_id')
 db.multiplayer_servers.create_index([('enabled', 1), ('node_id', 1)])
+ensure_unique_index(db.ghost_records, [('username', 1), ('song_hash', 1), ('difficulty', 1)])
+db.ghost_records.create_index('last_used_at', expireAfterSeconds=GHOST_RETENTION_SECONDS)
 
 VISIT_RETENTION_DAYS = 400
 VISIT_RETENTION_SECONDS = VISIT_RETENTION_DAYS * 24 * 60 * 60
@@ -1647,6 +1655,7 @@ def remove_user_account_data(username, user_filter=None):
     if deleted.deleted_count != 1:
         return deleted
     db.scores.delete_many({'username': username})
+    db.ghost_records.delete_many({'username': username})
     db.weekly_challenge_scores.delete_many({'username': username})
     db.site_message_reads.delete_many({'username': username})
     db.visit_records.delete_many({'username': username})
@@ -1662,6 +1671,68 @@ def remove_user_account_data(username, user_filter=None):
         '$unset': {'ip_hash': ''}
     })
     return deleted
+
+
+GHOST_MAX_COMPRESSED_BYTES = 512 * 1024
+GHOST_MAX_EVENTS = 100000
+GHOST_DIFFICULTIES = {'easy', 'normal', 'hard', 'oni', 'ura'}
+
+
+def ghost_cutoff(now=None):
+    return (now or datetime.utcnow()) - timedelta(days=GHOST_RETENTION_DAYS)
+
+
+def cleanup_expired_ghosts(now=None):
+    return db.ghost_records.delete_many({'last_used_at': {'$lt': ghost_cutoff(now)}})
+
+
+def decode_ghost_payload(payload, encoding='gzip'):
+    if not isinstance(payload, str) or len(payload) > GHOST_MAX_COMPRESSED_BYTES * 2:
+        raise ValueError('invalid_ghost_payload')
+    try:
+        raw = base64.b64decode(payload.encode('ascii'), validate=True)
+    except (UnicodeEncodeError, ValueError, binascii.Error) as exc:
+        raise ValueError('invalid_ghost_payload') from exc
+    if len(raw) > GHOST_MAX_COMPRESSED_BYTES:
+        raise ValueError('ghost_payload_too_large')
+    if encoding == 'gzip':
+        try:
+            raw = gzip.decompress(raw)
+        except (OSError, EOFError, ValueError) as exc:
+            raise ValueError('invalid_ghost_payload') from exc
+    elif encoding != 'identity':
+        raise ValueError('invalid_ghost_encoding')
+    if len(raw) > GHOST_MAX_COMPRESSED_BYTES * 8:
+        raise ValueError('ghost_payload_too_large')
+    try:
+        data = json.loads(raw.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError('invalid_ghost_payload') from exc
+    if not isinstance(data, dict) or not isinstance(data.get('events'), list) or not data['events']:
+        raise ValueError('invalid_ghost_payload')
+    if len(data['events']) > GHOST_MAX_EVENTS:
+        raise ValueError('ghost_payload_too_large')
+    events = []
+    for event in data['events']:
+        if not isinstance(event, dict):
+            raise ValueError('invalid_ghost_payload')
+        try:
+            event_time = max(0, int(event.get('t', 0)))
+            judgement = int(event.get('j', 0))
+            points = max(0, int(event.get('p', 0)))
+        except (TypeError, ValueError) as exc:
+            raise ValueError('invalid_ghost_payload') from exc
+        if judgement not in (0, 1, 2):
+            raise ValueError('invalid_ghost_payload')
+        events.append({'t': event_time, 'j': judgement, 'p': points})
+    points = max(0, int(data.get('points', events[-1]['p'])))
+    canonical = {'version': 1, 'events': events, 'points': points}
+    return canonical
+
+
+def encode_ghost_payload(data):
+    raw = json.dumps(data, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    return base64.b64encode(gzip.compress(raw, compresslevel=6)).decode('ascii')
 
 
 def normalize_admin_song(song):
@@ -3169,6 +3240,66 @@ def route_api_account_remove():
 
     session.clear()
     return jsonify({'status': 'ok'})
+
+
+@app.route(basedir + 'api/ghost', methods=['GET'])
+@limiter.limit("120 per minute")
+@login_required
+def route_api_ghost_get():
+    song_hash = (request.args.get('hash') or '').strip()
+    difficulty = (request.args.get('difficulty') or '').strip().lower()
+    if not song_hash or len(song_hash) > 500 or difficulty not in GHOST_DIFFICULTIES:
+        return abort(400)
+    cleanup_expired_ghosts()
+    username = session.get('username')
+    ghost = db.ghost_records.find_one({
+        'username': username,
+        'song_hash': song_hash,
+        'difficulty': difficulty
+    })
+    if not ghost:
+        return jsonify({'status': 'ok', 'ghost': None})
+    now = datetime.utcnow()
+    db.ghost_records.update_one({'_id': ghost['_id']}, {'$set': {'last_used_at': now}})
+    return jsonify({
+        'status': 'ok',
+        'ghost': {
+            'payload': ghost.get('payload'),
+            'encoding': 'gzip',
+            'points': ghost.get('points', 0),
+            'updated_at': ghost.get('updated_at').isoformat() if ghost.get('updated_at') else None
+        }
+    })
+
+
+@app.route(basedir + 'api/ghost', methods=['POST'])
+@limiter.limit("30 per minute")
+@login_required
+def route_api_ghost_save():
+    data = request.get_json(silent=True) or {}
+    song_hash = (data.get('hash') or '').strip()
+    difficulty = (data.get('difficulty') or '').strip().lower()
+    if not song_hash or len(song_hash) > 500 or difficulty not in GHOST_DIFFICULTIES:
+        return abort(400)
+    try:
+        canonical = decode_ghost_payload(data.get('payload'), data.get('encoding', 'gzip'))
+    except ValueError as exc:
+        return api_error(str(exc))
+    payload = encode_ghost_payload(canonical)
+    now = datetime.utcnow()
+    username = session.get('username')
+    query = {'username': username, 'song_hash': song_hash, 'difficulty': difficulty}
+    existing = db.ghost_records.find_one(query, {'points': True})
+    if existing and int(existing.get('points', 0)) > canonical['points']:
+        db.ghost_records.update_one(query, {'$set': {'last_used_at': now}})
+        return jsonify({'status': 'ok', 'saved': False, 'points': existing.get('points', 0)})
+    db.ghost_records.update_one(query, {'$set': {
+        'payload': payload,
+        'points': canonical['points'],
+        'updated_at': now,
+        'last_used_at': now
+    }}, upsert=True)
+    return jsonify({'status': 'ok', 'saved': True, 'points': canonical['points']})
 
 
 @app.route(basedir + 'api/scores/save', methods=['POST'])

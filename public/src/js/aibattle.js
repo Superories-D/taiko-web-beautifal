@@ -220,6 +220,7 @@
 		this.primary = primary
 		this.secondary = secondary
 		this.options = options || {}
+		this.isGhost = this.options.mode === "ghost"
 		this.threshold = thresholdForDifficulty(primary.selectedSong.difficulty)
 		this.scores = Array.from({length: 5}, function () { return [0, 0] })
 		this.results = []
@@ -323,7 +324,7 @@
 		this.hud = hud
 		this.resultBox = resultBox
 		var form = hud.querySelector(".ai-battle-form")
-		form.textContent = text("form", "AI 状态") + " · " + stateLabel(this.secondary.aiPlayer.state)
+		form.textContent = this.isGhost ? "幽灵 · 最佳记录" : text("form", "AI 状态") + " · " + stateLabel(this.secondary.aiPlayer.state)
 		setTimeout(function () { form.classList.add("quiet") }, 3200)
 		this.renderAdvantage()
 	}
@@ -349,7 +350,7 @@
 		var resultBox = this.resultBox
 		resultBox.className = "ai-battle-result show " + result
 		resultBox.textContent = text("round", "第 {round} 段").replace("{round}", round + 1) + " · " +
-			(result === "player" ? text("playerWins", "玩家胜") : (result === "ai" ? text("aiWins", "AI 胜") : text("draw", "平局")))
+			(result === "player" ? (this.isGhost ? "玩家领先" : text("playerWins", "玩家胜")) : (result === "ai" ? (this.isGhost ? "幽灵领先" : text("aiWins", "AI 胜")) : text("draw", "平局")))
 		clearTimeout(this.resultTimer)
 		this.resultTimer = setTimeout(function () { resultBox.classList.remove("show") }, 1200)
 	}
@@ -359,8 +360,8 @@
 		var result = resolveMatch(this.results)
 		var resultBox = this.resultBox
 		resultBox.className = "ai-battle-result show match " + result
-		resultBox.textContent = result === "player" ? text("matchPlayer", "五局战罢 · 玩家胜") :
-			(result === "ai" ? text("matchAi", "五局战罢 · AI 胜") : text("matchDraw", "五局战罢 · 平局"))
+		resultBox.textContent = result === "player" ? (this.isGhost ? "五回合 · 玩家获胜" : text("matchPlayer", "五局战罢 · 玩家胜")) :
+			(result === "ai" ? (this.isGhost ? "五回合 · 幽灵获胜" : text("matchAi", "五局战罢 · AI 胜")) : text("matchDraw", "五局战罢 · 平局"))
 		clearTimeout(this.resultTimer)
 		this.resultTimer = setTimeout(function () { resultBox.classList.remove("show") }, 2400)
 	}

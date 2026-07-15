@@ -22,6 +22,13 @@ class UploadModal {
 		this.status = this.div.querySelector(":scope #song-upload-status")
 		this.error = this.div.querySelector(":scope #song-upload-error")
 		this.typeSelect = this.div.querySelector(":scope #song-upload-type")
+		this.tjaInput = this.div.querySelector(":scope #song-upload-tja")
+		this.musicInput = this.div.querySelector(":scope #song-upload-music")
+		this.quality = null
+		this.qualityStatus = document.createElement("p")
+		this.qualityStatus.id = "song-upload-quality"
+		this.qualityStatus.setAttribute("aria-live", "polite")
+		this.form.insertBefore(this.qualityStatus, this.submitButton)
 
 		if (this.songSelect.touchEnabled) {
 			this.container.classList.add("touch-enabled")
@@ -30,6 +37,8 @@ class UploadModal {
 
 		pageEvents.add(this.container, ["mousedown", "touchstart"], this.onClick.bind(this))
 		pageEvents.add(this.form, ["submit"], this.onSubmit.bind(this))
+		pageEvents.add(this.tjaInput, ["change"], this.runQualityCheck.bind(this))
+		pageEvents.add(this.musicInput, ["change"], this.runQualityCheck.bind(this))
 
 		this.songSelect.playSound("se_pause")
 		loader.screen.appendChild(this.div)
@@ -62,6 +71,8 @@ class UploadModal {
 
 		pageEvents.remove(this.container, ["mousedown", "touchstart"])
 		pageEvents.remove(this.form, ["submit"])
+		pageEvents.remove(this.tjaInput, ["change"])
+		pageEvents.remove(this.musicInput, ["change"])
 		this.div.remove()
 		delete this.div
 		delete this.container
@@ -70,6 +81,9 @@ class UploadModal {
 		delete this.status
 		delete this.error
 		delete this.typeSelect
+		delete this.tjaInput
+		delete this.musicInput
+		delete this.qualityStatus
 		cancelTouch = true
 		noResizeRoot = false
 		if (this.songSelect.songs[this.songSelect.selectedSong].courses) {
@@ -86,6 +100,10 @@ class UploadModal {
 		this.submitButton.disabled = true
 
 		try {
+			await this.runQualityCheck()
+			if (this.quality && !this.quality.ok) {
+				throw new Error("上传前质检未通过：" + this.quality.errors.join("、"))
+			}
 			var response = await fetch("/api/user-upload", {
 				method: "POST",
 				body: new FormData(this.form)
@@ -110,6 +128,29 @@ class UploadModal {
 			this.songSelect.playSound("se_cancel")
 		} finally {
 			this.submitButton.disabled = false
+		}
+	}
+
+	async runQualityCheck() {
+		var tja = this.tjaInput && this.tjaInput.files[0]
+		var music = this.musicInput && this.musicInput.files[0]
+		this.quality = null
+		if (!tja) {
+			this.qualityStatus.textContent = "选择 TJA 和音频后自动检查。"
+			this.qualityStatus.className = "song-upload-quality"
+			return
+		}
+		try {
+			var report = PlayerLab.analyzeTja(await tja.text(), music)
+			this.quality = report
+			var text = report.ok ? "质检通过：" + report.courses + " 个难度，" + report.notes + " 个音符。" : "质检失败：" + report.errors.join("；")
+			if (report.warnings.length) text += " 警告：" + report.warnings.join("；")
+			this.qualityStatus.textContent = text
+			this.qualityStatus.className = "song-upload-quality " + (report.ok ? "ok" : "bad")
+		} catch (error) {
+			this.quality = {ok: false, errors: ["无法读取 TJA：" + error.message], warnings: []}
+			this.qualityStatus.textContent = this.quality.errors[0]
+			this.qualityStatus.className = "song-upload-quality bad"
 		}
 	}
 

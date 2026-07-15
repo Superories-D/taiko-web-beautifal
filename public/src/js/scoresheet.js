@@ -5,16 +5,18 @@ class Scoresheet {
 	init(controller, results, multiplayer, touchEnabled) {
 		this.controller = controller
 		this.aiBattle = !!controller.aiBattle
+		this.ghostBattle = !!controller.ghostBattle
+		this.battleMode = this.aiBattle || this.ghostBattle
 		this.resultsObj = results
-		this.player = [this.aiBattle ? 0 : (multiplayer ? (p2.player === 1 ? 0 : 1) : 0)]
+		this.player = [this.battleMode ? 0 : (multiplayer ? (p2.player === 1 ? 0 : 1) : 0)]
 		var player0 = this.player[0]
 		this.results = []
 		this.results[player0] = {}
 		this.rules = []
 		this.rules[player0] = this.controller.game.rules
 		if (multiplayer) {
-			this.player.push(this.aiBattle ? 1 : (p2.player === 2 ? 0 : 1))
-			if(this.aiBattle){
+			this.player.push(this.battleMode ? 1 : (p2.player === 2 ? 0 : 1))
+			if(this.battleMode){
 				var aiScore = this.controller.syncWith.getGlobalScore()
 				var aiResults = {}
 				for(var aiKey in aiScore){
@@ -47,7 +49,7 @@ class Scoresheet {
 		this.fadeScreen = document.createElement("div")
 		this.fadeScreen.id = "fade-screen"
 		this.game.appendChild(this.fadeScreen)
-		if(this.aiBattle){
+		if(this.battleMode){
 			this.createAiBattleResult()
 		}
 
@@ -91,7 +93,7 @@ class Scoresheet {
 		assets.sounds["v_results"].play()
 		loader.playBgm("bgm_result.mp3", [3, false, 0, 0.847, 17.689], () => !this.closed)
 
-		this.session = this.aiBattle ? false : p2.session
+		this.session = this.battleMode ? false : p2.session
 		if (this.session) {
 			if (p2.getMessage("songsel")) {
 				this.toSongsel(true)
@@ -123,11 +125,11 @@ class Scoresheet {
 		var playerWins = rounds.filter(result => result === "player").length
 		var aiWins = rounds.filter(result => result === "ai").length
 		var draws = rounds.length - playerWins - aiWins
-		var resultText = match === "player" ? strings.aiBattle.matchPlayer :
-			(match === "ai" ? strings.aiBattle.matchAi : strings.aiBattle.matchDraw)
+		var resultText = this.ghostBattle ? (match === "player" ? "幽灵对战 · 玩家领先" : (match === "ai" ? "幽灵对战 · 幽灵领先" : "幽灵对战 · 平局")) :
+			(match === "player" ? strings.aiBattle.matchPlayer : (match === "ai" ? strings.aiBattle.matchAi : strings.aiBattle.matchDraw))
 		var banner = document.createElement("div")
 		banner.id = "ai-battle-final-result"
-		banner.className = match
+		banner.className = match + (this.ghostBattle ? " ghost" : "")
 		banner.setAttribute("role", "status")
 		banner.setAttribute("aria-label", resultText)
 		banner.innerHTML =
@@ -136,7 +138,7 @@ class Scoresheet {
 			'<div class="ai-battle-final-rounds"></div>'
 		banner.querySelector(".ai-battle-final-title").textContent = resultText
 		banner.querySelector(".ai-battle-final-score .player").textContent = strings.aiBattle.playerLabel + " " + playerWins
-		banner.querySelector(".ai-battle-final-score .ai").textContent = aiWins + " " + strings.aiBattle.aiLabel
+		banner.querySelector(".ai-battle-final-score .ai").textContent = aiWins + " " + (this.ghostBattle ? "幽灵" : strings.aiBattle.aiLabel)
 		var roundsBox = banner.querySelector(".ai-battle-final-rounds")
 		rounds.forEach(function (result, index) {
 			var marker = document.createElement("span")

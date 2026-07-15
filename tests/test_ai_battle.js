@@ -158,6 +158,13 @@ test("AI battle HUD uses a compact responsive status ribbon", () => {
 	assert.doesNotMatch(css, /\.portrait #ai-battle-hud\s*\{[\s\S]{0,100}?top:\s*max\(42px,\s*5vh\)/)
 })
 
+test("ghost battle results keep the opponent score and label it as 幽灵", () => {
+	const source = fs.readFileSync(path.join(__dirname, "..", "public", "src", "js", "scoresheet.js"), "utf8")
+	assert.match(source, /this\.ghostBattle = !!controller\.ghostBattle/)
+	assert.match(source, /this\.battleMode = this\.aiBattle \|\| this\.ghostBattle/)
+	assert.match(source, /this\.ghostBattle \? "幽灵"/)
+})
+
 test("AI consumes dense triplets and alternating notes in one frame", () => {
 	const circles = [
 		{type: "don", ms: 90},

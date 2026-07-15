@@ -28,6 +28,7 @@ class AdminAccountHelpersTest(unittest.TestCase):
 
         self.assertEqual(result.deleted_count, 1)
         fake_db.scores.delete_many.assert_called_once_with({'username': 'Player'})
+        fake_db.ghost_records.delete_many.assert_called_once_with({'username': 'Player'})
         fake_db.weekly_challenge_scores.delete_many.assert_called_once_with({'username': 'Player'})
         fake_db.site_message_reads.delete_many.assert_called_once_with({'username': 'Player'})
         fake_db.visit_records.delete_many.assert_called_once_with({'username': 'Player'})

@@ -5,14 +5,16 @@ class LoadSong{
 	init(selectedSong, autoPlayEnabled, multiplayer, touchEnabled){
 		this.selectedSong = selectedSong
 		var easySettings = typeof EasySettings !== "undefined" ? EasySettings.getSettings() : {aiBattleEnabled: false}
-		if(typeof AIBattleCore !== "undefined" && AIBattleCore.hasModeConflict(easySettings.aiBattleEnabled, autoPlayEnabled, multiplayer)){
+		this.ghostBattle = !!selectedSong.ghostBattle
+		var aiEnabled = !this.ghostBattle && !!easySettings.aiBattleEnabled
+		if(typeof AIBattleCore !== "undefined" && AIBattleCore.hasModeConflict(aiEnabled, autoPlayEnabled, multiplayer)){
 			if(typeof EasySettings !== "undefined"){
 				EasySettings.showConflict()
 			}
 			setTimeout(function () { new SongSelect(false, false, touchEnabled) }, 0)
 			return
 		}
-		this.aiBattle = !!easySettings.aiBattleEnabled
+		this.aiBattle = aiEnabled
 		this.aiState = easySettings.aiState || "random"
 		this.autoPlayEnabled = autoPlayEnabled
 		this.multiplayer = multiplayer
@@ -414,7 +416,7 @@ class LoadSong{
 		}
 		if(this.selectedSong.donBg !== null){
 			filenames.push("bg_don_" + this.selectedSong.donBg)
-			if(this.multiplayer || this.aiBattle){
+			if(this.multiplayer || this.aiBattle || this.ghostBattle){
 				filenames.push("bg_don2_" + this.selectedSong.donBg)
 			}
 		}
@@ -445,25 +447,29 @@ class LoadSong{
 	setupMultiplayer(){
 		var song = this.selectedSong
 		
-		if(this.aiBattle){
+		if(this.aiBattle || this.ghostBattle){
 			this.clean()
+			if (this.ghostBattle && !PlayerLab.ghostAvailable(song)) {
+				new SongSelect(false, false, this.touchEnabled)
+				return
+			}
 			var seed = [song.hash || song.folder, song.difficulty, Date.now(), Math.random()].join(":")
 			var taikoGame1 = new Controller(song, this.songData, false, 1, this.touchEnabled, {
-				mode: "ai",
+				mode: this.ghostBattle ? "ghost" : "ai",
 				player: 1,
 				aiState: this.aiState,
 				seed: seed
 			})
 			var taikoGame2 = new Controller(song, this.songData, false, 2, this.touchEnabled, {
-				mode: "ai",
+				mode: this.ghostBattle ? "ghost" : "ai",
 				player: 2,
 				aiState: this.aiState,
 				seed: seed
 			})
 			taikoGame1.run(taikoGame2)
-			pageEvents.send("load-song-ai", {
+			pageEvents.send(this.ghostBattle ? "load-song-ghost" : "load-song-ai", {
 				selectedSong: song,
-				aiState: taikoGame2.aiPlayer.state
+				aiState: taikoGame2.aiPlayer && taikoGame2.aiPlayer.state
 			})
 		}else if(this.multiplayer){
 			var loadingText = document.getElementsByClassName("loading-text")[0]

@@ -284,6 +284,7 @@
 #ai-battle-final-result.player{border-color:#ffd2c7;box-shadow:0 0 22px rgba(255,68,52,.62),0 6px 22px rgba(0,0,0,.48)}
 #ai-battle-final-result.ai{border-color:#d4eeff;box-shadow:0 0 22px rgba(50,139,255,.68),0 6px 22px rgba(0,0,0,.48)}
 #ai-battle-final-result.draw{border-color:#fff0a6;box-shadow:0 0 22px rgba(255,210,65,.58),0 6px 22px rgba(0,0,0,.48)}
+#ai-battle-final-result.ghost{background:linear-gradient(100deg,rgba(255,98,63,.96),rgba(16,55,76,.97) 48%,rgba(40,168,181,.96));border-color:#ffe477;box-shadow:0 0 22px rgba(50,216,211,.62),0 6px 22px rgba(0,0,0,.48)}
 #ai-battle-final-result.visible{
 	opacity:1;
 	transform:translate(-50%,0) scale(1);

@@ -515,6 +515,7 @@ class SongSelect {
 		this.topSongsButton = document.getElementById("song-top10-btn")
 		this.weeklyChallengeButton = document.getElementById("weekly-challenge-btn")
 		this.easySettingsButton = document.getElementById("song-easy-settings-btn")
+		this.playerLab = new PlayerLab(this)
 		this.searchButton.hidden = true
 		this.topSongsButton.hidden = true
 		this.weeklyChallengeButton.hidden = true
@@ -1286,6 +1287,7 @@ class SongSelect {
 					this.playSound("v_diffsel", 0.3)
 				}
 				pageEvents.send("song-select-difficulty", currentSong)
+				this.playerLab.showDifficultyControls()
 				// Preload play stats
 				if (currentSong.hash) {
 					playStats.get(currentSong.hash)
@@ -1334,6 +1336,7 @@ class SongSelect {
 		this.pointer(false)
 	}
 	toSongSelect(fromP2) {
+		if (this.playerLab) this.playerLab.hideDifficultyControls()
 		if (p2.session && !fromP2) {
 			if (!this.state.selLock) {
 				this.state.selLock = true
@@ -1360,9 +1363,13 @@ class SongSelect {
 		this.clearHash()
 		pageEvents.send("song-select-back")
 	}
-	toLoadSong(difficulty, shift, ctrl, touch) {
+	toLoadSong(difficulty, shift, ctrl, touch, trainingMode) {
 		var aiBattleEnabled = typeof EasySettings !== "undefined" && EasySettings.isAiBattleEnabled()
 		var blockedMode = p2.session || this.state.options === 1 || this.state.options === 2 || !!shift || !!ctrl
+		if (trainingMode && (blockedMode || aiBattleEnabled)) {
+			if (typeof EasySettings !== "undefined") EasySettings.showConflict("训练模式不能与 AI Battle、自动演奏或多人同时使用。")
+			return
+		}
 		if(aiBattleEnabled && blockedMode){
 			EasySettings.showConflict()
 			return
@@ -1397,6 +1404,7 @@ class SongSelect {
 			multiplayer = ctrl
 		}
 		var diff = this.difficultyId[difficulty]
+		var practiceMode = typeof PlayerLab !== "undefined" && !autoplay && !multiplayer && !aiBattleEnabled && trainingMode !== "ghost" ? PlayerLab.practiceFor(selectedSong) : null
 
 		new LoadSong({
 			"title": selectedSong.title,
@@ -1412,7 +1420,29 @@ class SongSelect {
 			"hash": selectedSong.hash,
 			"lyrics": selectedSong.lyrics,
 			"video": selectedSong.video,
+			"practiceMode": practiceMode,
+			"ghostBattle": trainingMode === "ghost",
 		}, autoplay, multiplayer, touch)
+	}
+	startSelectedTrainingMode(mode) {
+		if (!this.playerLab || this.state.screen !== "difficulty") return
+		var song = this.songs[this.selectedSong]
+		if (mode === "ghost" && PlayerLab.practiceFor(song)) {
+			if (typeof EasySettings !== "undefined") EasySettings.showConflict("请先清除当前歌曲的段落练习，再开始幽灵对战。")
+			return
+		}
+		if (mode === "ghost") {
+			var ghostDifficulty = this.difficultyId[this.selectedDiff - this.diffOptions.length] || "oni"
+			if (this.selectedDiff - this.diffOptions.length === 4) ghostDifficulty = "ura"
+			if (!PlayerLab.ghostAvailable({hash: song.hash || song.id, id: song.id, difficulty: ghostDifficulty})) {
+				if (typeof EasySettings !== "undefined") EasySettings.showConflict("当前难度还没有幽灵记录，请先正常单人游玩一次。")
+				return
+			}
+		}
+		var index = this.selectedDiff - this.diffOptions.length
+		if (index < 0 || index > 4) return
+		if (index === 4) index = 3
+		this.toLoadSong(index, false, false, false, mode)
 	}
 	startWeeklyChallenge(challenge, song) {
 		var touchEnabled = this.touchEnabled
@@ -1439,6 +1469,39 @@ class SongSelect {
 				"challenge_id": challenge.challenge_id
 			}
 		}, false, false, touchEnabled)
+	}
+	startDailyChallenge(challenge) {
+		var song = challenge.song
+		var diff = challenge.difficulty
+		this.startPlayerLabSong(song, diff, {"dailyChallenge": {"dateKey": challenge.dateKey}})
+	}
+	startRecommendedSong(recommendation) {
+		this.startPlayerLabSong(recommendation.song, recommendation.difficulty, {})
+	}
+	startPlayerLabSong(song, diff, extra) {
+		if ((typeof EasySettings !== "undefined" && EasySettings.isAiBattleEnabled()) || (typeof p2 !== "undefined" && p2.session) || this.state.options === 1 || this.state.options === 2) {
+			if (typeof EasySettings !== "undefined") EasySettings.showConflict("每日挑战和推荐只能在关闭 AI Battle、自动演奏及多人模式后开始。")
+			return
+		}
+		var touchEnabled = this.touchEnabled
+		this.playBgm(false)
+		this.playSound("se_don", 0)
+		this.clean()
+		new LoadSong(Object.assign({
+			"title": song.title,
+			"originalTitle": song.originalTitle || song.title,
+			"folder": song.id,
+			"difficulty": diff,
+			"category": song.category,
+			"category_id": song.category_id,
+			"type": song.type,
+			"offset": song.offset,
+			"songSkin": song.songSkin || song.song_skin || {},
+			"stars": song.courses[diff].stars,
+			"hash": song.hash,
+			"lyrics": song.lyrics,
+			"video": song.video,
+		}, extra || {}), false, false, touchEnabled)
 	}
 	toOptions(moveBy) {
 		if (!p2.session) {
@@ -1908,6 +1971,7 @@ class SongSelect {
 			}
 		} else if (screen === "difficulty") {
 			var currentSong = this.songs[this.selectedSong]
+			var difficultyBeforeMove = this.selectedDiff
 			if (this.state.locked) {
 				this.state.locked = 0
 			}
@@ -1937,6 +2001,9 @@ class SongSelect {
 				this.state.move = 0
 			} else if (this.selectedDiff < 0 || this.selectedDiff >= this.diffOptions.length && !currentSong.courses[this.difficultyId[this.selectedDiff - this.diffOptions.length]]) {
 				this.selectedDiff = 0
+			}
+			if (difficultyBeforeMove !== this.selectedDiff && this.playerLab && this.playerLab.controls && !this.playerLab.controls.hidden) {
+				this.playerLab.renderTrainingMode(this.playerLab.trainingMode || "practice")
 			}
 		}
 
@@ -3675,6 +3742,7 @@ class SongSelect {
 		}
 		this.weeklyChallenge.clean()
 		this.uploadModal.clean()
+		this.playerLab.clean()
 		if (this.siteMessages) {
 			this.siteMessages.clean()
 		}
@@ -3713,6 +3781,7 @@ class SongSelect {
 		delete this.topSongs
 		delete this.weeklyChallengeButton
 		delete this.weeklyChallenge
+		delete this.playerLab
 		delete this.siteMessages
 		delete this.uploadModal
 		delete this.selectable

@@ -632,6 +632,11 @@ class Game{
 				this.musicFadeOut++
 			}else if(this.musicFadeOut === 1 && ms >= started + 1600){
 				this.controller.gameEnded()
+				if(this.controller.practiceMode && this.controller.practiceMode.loop){
+					this.musicFadeOut++
+					this.controller.restartSong()
+					return
+				}
 				if(this.controller.networkMultiplayer && !p2.session && this.controller.multiplayer === 1){
 					p2.send("gameend")
 				}

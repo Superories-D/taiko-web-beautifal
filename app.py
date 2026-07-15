@@ -1366,7 +1366,8 @@ def secure_response_headers(response):
     admin_prefix = site_path('admin')
     sensitive_paths = {
         site_path('1128admin1128'),
-        site_path('api/multiplayer/select')
+        site_path('api/multiplayer/select'),
+        site_path('api/ghost')
     }
     if request.path == admin_prefix or request.path.startswith(admin_prefix + '/') or request.path in sensitive_paths:
         response.headers['Cache-Control'] = 'private, no-store, max-age=0'

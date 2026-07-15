@@ -69,6 +69,11 @@ class PlayerLab {
 		}
 	}
 
+	static ghostDifficulties(song) {
+		var order = ["easy", "normal", "hard", "oni", "ura"]
+		return order.filter(diff => song && song.courses && song.courses[diff])
+	}
+
 	static async compressGhost(ghost) {
 		if (typeof CompressionStream === "undefined") return null
 		var stream = new Blob([JSON.stringify(ghost)]).stream().pipeThrough(new CompressionStream("gzip"))
@@ -376,27 +381,53 @@ class PlayerLab {
 			})
 			body.querySelector("[data-practice-clear]").addEventListener("click", () => { state.practice = null; if (state.activeMode === "practice") state.activeMode = null; PlayerLab.saveState(state); body.querySelector(".difficulty-training-status").textContent = "已清除练习区间。" })
 		} else if (mode === "ghost") {
-			var diff = this.getSelectedDifficulty() || "oni", ghostSong = {hash: song.hash || song.id, id: song.id, difficulty: diff}, available = PlayerLab.ghostAvailable(ghostSong)
+			var ghostDifficulties = PlayerLab.ghostDifficulties(song)
+			var selectedDiff = this.ghostDifficulty && ghostDifficulties.indexOf(this.ghostDifficulty) !== -1 ? this.ghostDifficulty : this.getSelectedDifficulty()
+			if (ghostDifficulties.indexOf(selectedDiff) === -1) selectedDiff = ghostDifficulties[0] || null
+			this.ghostDifficulty = selectedDiff
+			var ghostSong = {hash: song.hash || song.id, id: song.id, difficulty: selectedDiff || "oni"}
+			var available = !!selectedDiff && PlayerLab.ghostAvailable(ghostSong)
 			var conflict = trainingConflict
-			body.innerHTML = '<p>' + (conflict ? "幽灵对战不能与 AI Battle、自动演奏或实时多人同时使用。" : (available ? "使用当前歌曲/难度的最佳幽灵，显示五段对战进度。" : "当前难度还没有幽灵记录，请先正常游玩一次。")) + '</p><button type="button" data-ghost-start>' + (conflict ? "查看冲突说明" : (available ? "开始幽灵对战" : "如何生成幽灵")) + '</button><label class="difficulty-training-check"><input data-ghost-record type="checkbox" ' + (state.ghostEnabled !== false ? "checked" : "") + '> 普通游玩时记录新幽灵</label><p class="difficulty-training-status"></p>'
+			var labels = {easy: (this.songSelect.difficulty && this.songSelect.difficulty[0]) || "简单", normal: (this.songSelect.difficulty && this.songSelect.difficulty[1]) || "普通", hard: (this.songSelect.difficulty && this.songSelect.difficulty[2]) || "困难", oni: (this.songSelect.difficulty && this.songSelect.difficulty[3]) || "魔王", ura: "里"}
+			body.innerHTML = '<p>在这里直接选择要挑战的难度，不需要移动外层光标。</p><div class="difficulty-training-ghost-difficulties" role="group" aria-label="幽灵难度"></div><p class="difficulty-training-ghost-info"></p><button type="button" data-ghost-start>' + (conflict ? "查看冲突说明" : (available ? "开始幽灵对战" : "如何生成幽灵")) + '</button><label class="difficulty-training-check"><input data-ghost-record type="checkbox" ' + (state.ghostEnabled !== false ? "checked" : "") + '> 普通游玩时记录新幽灵</label><p class="difficulty-training-status"></p>'
+			var difficultyButtons = body.querySelector(".difficulty-training-ghost-difficulties")
+			ghostDifficulties.forEach(diff => {
+				var button = document.createElement("button")
+				button.type = "button"
+				button.dataset.ghostDifficulty = diff
+				button.textContent = labels[diff] || diff.toUpperCase()
+				button.className = (diff === selectedDiff ? "active " : "") + (PlayerLab.ghostAvailable({hash: ghostSong.hash, id: song.id, difficulty: diff}) ? "has-ghost" : "")
+				button.addEventListener("click", () => { this.ghostDifficulty = diff; this.renderTrainingMode("ghost") })
+				difficultyButtons.appendChild(button)
+			})
+			var ghostInfo = body.querySelector(".difficulty-training-ghost-info")
+			ghostInfo.textContent = conflict ? "幽灵对战不能与 AI Battle、自动演奏或实时多人同时使用。" : (available ? labels[selectedDiff] + "难度已有最佳幽灵，可以开始对战。" : (selectedDiff ? labels[selectedDiff] + "难度还没有幽灵记录，请先正常单人游玩一次。" : "当前歌曲没有可用难度。"))
 			body.querySelector("[data-ghost-record]").addEventListener("change", event => { state.ghostEnabled = event.target.checked; PlayerLab.saveState(state) })
 			body.querySelector("[data-ghost-start]").addEventListener("click", () => {
 				if (conflict) body.querySelector(".difficulty-training-status").textContent = "请先关闭 AI Battle、自动演奏或多人模式。"
-				else if (!available) body.querySelector(".difficulty-training-status").textContent = "先用普通单人模式完成一次当前歌曲/难度，系统会自动保存幽灵。"
-				else this.songSelect.startSelectedTrainingMode("ghost")
+				else if (!selectedDiff || !available) body.querySelector(".difficulty-training-status").textContent = "先用普通单人模式完成一次所选难度，系统会自动保存幽灵。"
+				else this.songSelect.startSelectedTrainingMode("ghost", selectedDiff)
 			})
-			var cloudKey = PlayerLab.ghostKey(ghostSong)
-			if (!available && typeof account !== "undefined" && account.loggedIn && this.ghostSyncKey !== cloudKey) {
+			var cloudKey = String(ghostSong.hash)
+			var missingGhostDifficulties = ghostDifficulties.filter(diff => !PlayerLab.ghostAvailable({hash: ghostSong.hash, id: song.id, difficulty: diff}))
+			if (missingGhostDifficulties.length && typeof account !== "undefined" && account.loggedIn && this.ghostSyncKey !== cloudKey) {
 				this.ghostSyncKey = cloudKey
 				body.querySelector(".difficulty-training-status").textContent = "正在同步登录用户的云端幽灵…"
-				PlayerLab.pullGhost(ghostSong).then(remote => {
-					var localPoints = 0
-					try { localPoints = Number(JSON.parse(localStorage.getItem(PlayerLab.ghostKey(ghostSong)) || "{}").points || 0) } catch (_error) {}
-					if (remote && Number(remote.points || 0) >= localPoints) {
-						localStorage.setItem(PlayerLab.ghostKey(ghostSong), JSON.stringify(remote))
-						if (this.controls && !this.controls.hidden && this.trainingMode === "ghost") this.renderTrainingMode("ghost")
-					}
-				}).catch(() => {})
+				Promise.all(missingGhostDifficulties.map(diff => {
+					var cloudSong = {hash: ghostSong.hash, id: song.id, difficulty: diff}
+					return PlayerLab.pullGhost(cloudSong).then(remote => {
+						var localPoints = 0
+						try { localPoints = Number(JSON.parse(localStorage.getItem(PlayerLab.ghostKey(cloudSong)) || "{}").points || 0) } catch (_error) {}
+						if (remote && Number(remote.points || 0) >= localPoints) {
+							localStorage.setItem(PlayerLab.ghostKey(cloudSong), JSON.stringify(remote))
+							return true
+						}
+						return false
+					}).catch(() => false)
+				})).then(changed => {
+					if (changed.some(Boolean) && this.controls && !this.controls.hidden && this.trainingMode === "ghost") this.renderTrainingMode("ghost")
+					else if (this.controls && !this.controls.hidden && this.trainingMode === "ghost") body.querySelector(".difficulty-training-status").textContent = "云端没有该歌曲的幽灵记录。"
+				})
 			}
 		} else if (mode === "daily") {
 			var daily = PlayerLab.dailyChallenge(this.songSelect.songs), completed = daily && state.dailyRuns && state.dailyRuns[daily.dateKey]

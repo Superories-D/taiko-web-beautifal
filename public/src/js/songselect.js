@@ -1424,24 +1424,32 @@ class SongSelect {
 			"ghostBattle": trainingMode === "ghost",
 		}, autoplay, multiplayer, touch)
 	}
-	startSelectedTrainingMode(mode) {
+	startSelectedTrainingMode(mode, requestedDifficulty) {
 		if (!this.playerLab || this.state.screen !== "difficulty") return
 		var song = this.songs[this.selectedSong]
 		if (mode === "ghost" && PlayerLab.practiceFor(song)) {
 			if (typeof EasySettings !== "undefined") EasySettings.showConflict("请先清除当前歌曲的段落练习，再开始幽灵对战。")
 			return
 		}
+		var difficulty = requestedDifficulty || (this.playerLab && this.playerLab.getSelectedDifficulty())
+		var index = this.difficultyId.indexOf(difficulty)
 		if (mode === "ghost") {
-			var ghostDifficulty = this.difficultyId[this.selectedDiff - this.diffOptions.length] || "oni"
-			if (this.selectedDiff - this.diffOptions.length === 4) ghostDifficulty = "ura"
-			if (!PlayerLab.ghostAvailable({hash: song.hash || song.id, id: song.id, difficulty: ghostDifficulty})) {
+			if (!difficulty || !song.courses || !song.courses[difficulty]) {
+				if (typeof EasySettings !== "undefined") EasySettings.showConflict("请选择当前歌曲已有的难度。")
+				return
+			}
+			if (!PlayerLab.ghostAvailable({hash: song.hash || song.id, id: song.id, difficulty: difficulty})) {
 				if (typeof EasySettings !== "undefined") EasySettings.showConflict("当前难度还没有幽灵记录，请先正常单人游玩一次。")
 				return
 			}
 		}
-		var index = this.selectedDiff - this.diffOptions.length
 		if (index < 0 || index > 4) return
-		if (index === 4) index = 3
+		if (index === 4) {
+			this.state.ura = true
+			index = 3
+		} else if (mode === "ghost") {
+			this.state.ura = false
+		}
 		this.toLoadSong(index, false, false, false, mode)
 	}
 	startWeeklyChallenge(challenge, song) {

@@ -480,3 +480,5 @@
 .version-hide{
     pointer-events: none;
 }
+#difficulty-training-ghost-difficulties{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:8px 0 12px}.difficulty-training-ghost-difficulties button{min-height:48px;margin:0;padding:8px 6px;background:rgba(255,255,255,.86);color:#40120d;border-color:rgba(0,0,0,.78);font-size:clamp(12px,2vmin,15px)}.difficulty-training-ghost-difficulties button.active{background:#fff923;border-color:#fff923;box-shadow:0 0 0 3px rgba(255,112,67,.78),0 .18em 0 rgba(0,0,0,.32)}.difficulty-training-ghost-difficulties button.has-ghost{background:#b6ef52}.difficulty-training-ghost-difficulties button.active.has-ghost{background:#fff923}
+#difficulty-training-ghost-difficulties button:focus-visible{outline:3px solid #fff923;outline-offset:2px}@media(max-width:520px){#difficulty-training-ghost-difficulties{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.difficulty-training-ghost-difficulties button{min-height:44px;padding:7px 4px;font-size:12px}}

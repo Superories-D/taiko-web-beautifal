@@ -67,6 +67,11 @@ test("ghost race records compact judgements and only replaces the best run", () 
 	assert.equal(saved.points, 2000)
 })
 
+test("ghost difficulty choices are listed independently of the outer cursor", () => {
+	assert.deepEqual(PlayerLab.ghostDifficulties({courses: {oni: {stars: 8}, easy: {stars: 2}, ura: {stars: 9}}}), ["easy", "oni", "ura"])
+	assert.deepEqual(PlayerLab.ghostDifficulties({courses: {normal: {stars: 4}, hard: {stars: 6}}}), ["normal", "hard"])
+})
+
 test("daily challenge is deterministic and advances a UTC streak", () => {
 	localStorage.data = {}
 	const songs = [

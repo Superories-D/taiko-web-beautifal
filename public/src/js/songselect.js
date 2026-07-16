@@ -1424,7 +1424,7 @@ class SongSelect {
 			"ghostBattle": trainingMode === "ghost",
 		}, autoplay, multiplayer, touch)
 	}
-	startSelectedTrainingMode(mode, requestedDifficulty) {
+	startSelectedTrainingMode(mode, requestedDifficulty, virtualDrumEnabled) {
 		if (!this.playerLab || this.state.screen !== "difficulty") return
 		var song = this.songs[this.selectedSong]
 		if (mode === "ghost" && PlayerLab.practiceFor(song)) {
@@ -1450,7 +1450,7 @@ class SongSelect {
 		} else if (mode === "ghost") {
 			this.state.ura = false
 		}
-		this.toLoadSong(index, false, false, false, mode)
+		this.toLoadSong(index, false, false, mode === "ghost" && !!virtualDrumEnabled, mode)
 	}
 	startWeeklyChallenge(challenge, song) {
 		var touchEnabled = this.touchEnabled

@@ -72,6 +72,25 @@ test("ghost difficulty choices are listed independently of the outer cursor", ()
 	assert.deepEqual(PlayerLab.ghostDifficulties({courses: {normal: {stars: 4}, hard: {stars: 6}}}), ["normal", "hard"])
 })
 
+test("virtual drum defaults off on desktop and persists the player's choice", () => {
+	localStorage.data = {}
+	assert.equal(PlayerLab.loadState().virtualDrumEnabled, false)
+	PlayerLab.saveState({virtualDrumEnabled: true})
+	assert.equal(PlayerLab.loadState().virtualDrumEnabled, true)
+})
+
+test("virtual drum defaults on for mobile browsers", () => {
+	localStorage.data = {}
+	const originalNavigator = Object.getOwnPropertyDescriptor(global, "navigator")
+	Object.defineProperty(global, "navigator", {configurable: true, value: {userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"}})
+	try {
+		assert.equal(PlayerLab.loadState().virtualDrumEnabled, true)
+	} finally {
+		if (originalNavigator) Object.defineProperty(global, "navigator", originalNavigator)
+		else delete global.navigator
+	}
+})
+
 test("daily challenge is deterministic and advances a UTC streak", () => {
 	localStorage.data = {}
 	const songs = [

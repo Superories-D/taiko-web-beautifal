@@ -8,11 +8,22 @@ class PlayerLab {
 		return "taikoPlayerLab"
 	}
 
+	static isMobileDevice() {
+		if (typeof navigator === "undefined") return false
+		if (navigator.userAgentData && typeof navigator.userAgentData.mobile === "boolean") {
+			return navigator.userAgentData.mobile
+		}
+		if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || "")) {
+			return true
+		}
+		return !!(navigator.maxTouchPoints > 0 && typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches)
+	}
+
 	static loadState() {
 		try {
-			return Object.assign({practice: null, ghostEnabled: true, dailyRuns: {}}, JSON.parse(localStorage.getItem(PlayerLab.storageKey) || "{}"))
+			return Object.assign({practice: null, ghostEnabled: true, virtualDrumEnabled: PlayerLab.isMobileDevice(), dailyRuns: {}}, JSON.parse(localStorage.getItem(PlayerLab.storageKey) || "{}"))
 		} catch (_error) {
-			return {practice: null, ghostEnabled: true, dailyRuns: {}}
+			return {practice: null, ghostEnabled: true, virtualDrumEnabled: PlayerLab.isMobileDevice(), dailyRuns: {}}
 		}
 	}
 
@@ -389,7 +400,7 @@ class PlayerLab {
 			var available = !!selectedDiff && PlayerLab.ghostAvailable(ghostSong)
 			var conflict = trainingConflict
 			var labels = {easy: (this.songSelect.difficulty && this.songSelect.difficulty[0]) || "简单", normal: (this.songSelect.difficulty && this.songSelect.difficulty[1]) || "普通", hard: (this.songSelect.difficulty && this.songSelect.difficulty[2]) || "困难", oni: (this.songSelect.difficulty && this.songSelect.difficulty[3]) || "魔王", ura: "里"}
-			body.innerHTML = '<p>在这里直接选择要挑战的难度，不需要移动外层光标。</p><div class="difficulty-training-ghost-difficulties" role="group" aria-label="幽灵难度"></div><p class="difficulty-training-ghost-info"></p><button type="button" data-ghost-start>' + (conflict ? "查看冲突说明" : (available ? "开始幽灵对战" : "如何生成幽灵")) + '</button><label class="difficulty-training-check"><input data-ghost-record type="checkbox" ' + (state.ghostEnabled !== false ? "checked" : "") + '> 普通游玩时记录新幽灵</label><p class="difficulty-training-status"></p>'
+			body.innerHTML = '<p>在这里直接选择要挑战的难度，不需要移动外层光标。</p><div class="difficulty-training-ghost-difficulties" role="group" aria-label="幽灵难度"></div><p class="difficulty-training-ghost-info"></p><button type="button" data-ghost-start>' + (conflict ? "查看冲突说明" : (available ? "开始幽灵对战" : "如何生成幽灵")) + '</button><label class="difficulty-training-check"><input data-ghost-record type="checkbox" ' + (state.ghostEnabled !== false ? "checked" : "") + '> 普通游玩时记录新幽灵</label><label class="difficulty-training-check"><input data-ghost-virtual-drum type="checkbox" ' + (state.virtualDrumEnabled ? "checked" : "") + '> 开启虚拟鼓</label><p class="difficulty-training-status"></p>'
 			var difficultyButtons = body.querySelector(".difficulty-training-ghost-difficulties")
 			ghostDifficulties.forEach(diff => {
 				var button = document.createElement("button")
@@ -403,10 +414,11 @@ class PlayerLab {
 			var ghostInfo = body.querySelector(".difficulty-training-ghost-info")
 			ghostInfo.textContent = conflict ? "幽灵对战不能与 AI Battle、自动演奏或实时多人同时使用。" : (available ? labels[selectedDiff] + "难度已有最佳幽灵，可以开始对战。" : (selectedDiff ? labels[selectedDiff] + "难度还没有幽灵记录，请先正常单人游玩一次。" : "当前歌曲没有可用难度。"))
 			body.querySelector("[data-ghost-record]").addEventListener("change", event => { state.ghostEnabled = event.target.checked; PlayerLab.saveState(state) })
+			body.querySelector("[data-ghost-virtual-drum]").addEventListener("change", event => { state.virtualDrumEnabled = event.target.checked; PlayerLab.saveState(state) })
 			body.querySelector("[data-ghost-start]").addEventListener("click", () => {
 				if (conflict) body.querySelector(".difficulty-training-status").textContent = "请先关闭 AI Battle、自动演奏或多人模式。"
 				else if (!selectedDiff || !available) body.querySelector(".difficulty-training-status").textContent = "先用普通单人模式完成一次所选难度，系统会自动保存幽灵。"
-				else this.songSelect.startSelectedTrainingMode("ghost", selectedDiff)
+				else this.songSelect.startSelectedTrainingMode("ghost", selectedDiff, state.virtualDrumEnabled)
 			})
 			var cloudKey = String(ghostSong.hash)
 			var missingGhostDifficulties = ghostDifficulties.filter(diff => !PlayerLab.ghostAvailable({hash: ghostSong.hash, id: song.id, difficulty: diff}))

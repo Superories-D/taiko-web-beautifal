@@ -6,6 +6,9 @@
 	background-size: calc(100vh / 720 * 512);
 	background-position: center;
 }
+#game.ai-battle-active.game-paused #canvas{
+	z-index: 6;
+}
 #game.ai-battle-active::after{
 	content: "";
 	position: absolute;

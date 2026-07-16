@@ -139,14 +139,15 @@
 				pageEvents.add(this.touchPauseBtn, "touchend", () => {
 					this.controller.togglePause()
 				})
-				if(this.multiplayer){
+				if(!this.controller.pauseEnabled){
 					this.touchPauseBtn.style.display = "none"
 				}
 			}
 		}
 		if(this.multiplayer){
 			this.gameDiv.classList.add("multiplayer")
-		}else{
+		}
+		if(this.controller.pauseEnabled){
 			pageEvents.add(this.canvas, "mousedown", this.onmousedown.bind(this))
 		}
 	}
@@ -163,6 +164,12 @@
 		this.refresh()
 	}
 	refresh(){
+		// AI/ghost battles render both players onto the same canvas. Once the
+		// local game is paused, the primary view owns the full-screen pause
+		// overlay; do not let the secondary view paint over it afterwards.
+		if(this.player === 2 && this.controller.syncWith && this.controller.syncWith.pauseEnabled && this.controller.game.paused){
+			return
+		}
 		var ctx = this.ctx
 		
 		var winW = innerWidth
@@ -209,7 +216,7 @@
 				this.canvas.style.height = (winH / this.pixelRatio) + "px"
 				this.titleCache.resize(640, 90, ratio)
 			}
-			if(!this.multiplayer){
+			if(this.controller.pauseEnabled){
 				this.pauseCache.resize(81 * this.pauseOptions.length * 2, 464, ratio)
 			}
 			if(this.portrait){
@@ -1070,7 +1077,7 @@
 		}
 		
 		// Pause screen
-		if(!this.multiplayer && this.controller.game.paused){
+		if(this.controller.pauseEnabled && this.controller.game.paused){
 			ctx.fillStyle = "rgba(0, 0, 0, 0.5)"
 			ctx.fillRect(0, 0, winW, winH)
 			
@@ -2281,7 +2288,7 @@
 		this.lastMousemove = this.getMS()
 		this.cursorHidden = false
 		
-		if(!this.multiplayer && this.controller.game.paused){
+		if(this.controller.pauseEnabled && this.controller.game.paused){
 			var mouse = this.mouseOffset(event.offsetX, event.offsetY)
 			var moveTo = this.pauseMouse(mouse.x, mouse.y)
 			if(moveTo === null && this.state.moveHover === this.state.pausePos){
@@ -2372,7 +2379,7 @@
 				delete this.touchPauseBtn
 			}
 		}
-		if(!this.multiplayer){
+		if(this.controller.pauseEnabled){
 			pageEvents.remove(this.canvas, "mousedown")
 			this.songBg.parentNode.removeChild(this.songBg)
 			this.songStage.parentNode.removeChild(this.songStage)

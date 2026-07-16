@@ -28,6 +28,9 @@ class Controller{
 			this.saveScore = false
 		}
 		this.multiplayer = multiplayer
+		// AI/ghost battles use the two-player renderer internally, but they are
+		// still local games and must keep the normal pause menu available.
+		this.pauseEnabled = !this.networkMultiplayer && this.multiplayer !== 2
 		if(this.aiBattle || this.ghostBattle){
 			this.saveScore = false
 			this.autoPlayEnabled = false

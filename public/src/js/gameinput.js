@@ -97,7 +97,7 @@ class GameInput{
 		}
 	}
 	checkMenuKeys(){
-		if(!this.controller.multiplayer && !this.locked && this.controller.view.pauseOptions.length !== 0){
+		if(this.controller.pauseEnabled && !this.locked && this.controller.view.pauseOptions.length !== 0){
 			var moveMenu = 0
 			var ms = this.game.getAccurateTime()
 			this.gamepadMenu.play((pressed, name) => {

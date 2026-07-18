@@ -15,11 +15,13 @@ services:
       REDIS_URI: redis://redis:6379/0
       TAIKO_WEB_SONGS_DIR: /data/songs
       TAIKO_WEB_NOTICE_UPLOADS_DIR: /data/notice_uploads
+      TAIKO_WEB_SECRET_KEY_FILE: /run/secrets/taiko-web-secret-key
     ports:
       - "80:80"
     restart: unless-stopped
     volumes:
       - ./config.py:/app/config.py:ro
+      - ./.taiko-secret-key:/run/secrets/taiko-web-secret-key:ro
       - ${TAIKO_WEB_DATA_DIR:-/srv/taiko-web-data}/songs:/data/songs
       - ${TAIKO_WEB_DATA_DIR:-/srv/taiko-web-data}/notice_uploads:/data/notice_uploads
 

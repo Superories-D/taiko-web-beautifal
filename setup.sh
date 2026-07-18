@@ -430,10 +430,22 @@ ensure_base_sync_tools() {
 
 sync_source() {
   mkdir -p "$INSTALL_DIR"
+  # A deployment may keep the checkout directly in INSTALL_DIR.  rsync
+  # refuses to copy a directory onto itself, so treat that as an already
+  # synchronized source instead of failing an otherwise safe update.
+  local source_real install_real
+  source_real=$(CDPATH= cd -- "$SRC_DIR" && pwd -P)
+  install_real=$(CDPATH= cd -- "$INSTALL_DIR" && pwd -P)
+  if [ "$source_real" = "$install_real" ]; then
+    log "Source and install directories are identical; skipping self-sync."
+    return 0
+  fi
   rsync -a --delete \
     --exclude '.git' \
     --exclude '.venv' \
     --exclude '.env' \
+    --exclude '.taiko-secret-key' \
+    --exclude 'flask_session' \
     --exclude 'backups' \
     --exclude 'config.py' \
     --exclude 'public/songs' \
@@ -442,6 +454,42 @@ sync_source() {
     --exclude 'taiko-editor/build' \
     --exclude 'taiko-editor/dist' \
     "$SRC_DIR/" "$INSTALL_DIR/"
+}
+
+ensure_persistent_secret_key() {
+  mkdir -p "$INSTALL_DIR"
+  local secret_path="$INSTALL_DIR/.taiko-secret-key"
+  if [ -s "$secret_path" ] && [ "$(wc -c <"$secret_path")" -ge 32 ]; then
+    chmod 600 "$secret_path" 2>/dev/null || true
+    return 0
+  fi
+
+  # Older container installs generated the key inside the app container.
+  # Preserve it before the container is recreated so existing sessions remain
+  # valid after an update.
+  if command -v docker >/dev/null 2>&1 &&
+    docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^taiko-web-app$'; then
+    local recovered_path="${secret_path}.recovered.$$"
+    if docker cp taiko-web-app:/app/.taiko-secret-key "$recovered_path" >/dev/null 2>&1 &&
+      [ -s "$recovered_path" ] && [ "$(wc -c <"$recovered_path")" -ge 32 ]; then
+      chmod 600 "$recovered_path"
+      mv -f "$recovered_path" "$secret_path"
+      log "Preserved the existing container session key."
+      return 0
+    fi
+    rm -f "$recovered_path" 2>/dev/null || true
+  fi
+
+  local generated
+  generated=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+  if [ "${#generated}" -lt 32 ]; then
+    echo "Could not create a persistent session key." >&2
+    return 1
+  fi
+  umask 077
+  printf '%s\n' "$generated" >"$secret_path"
+  chmod 600 "$secret_path"
+  log "Created a persistent session key."
 }
 
 ensure_config() {
@@ -902,11 +950,52 @@ reparse_uploaded_categories_direct() {
   fi
 }
 
+backfill_song_bpm_container() {
+  if [ "${TAIKO_WEB_UPDATE_BACKFILL_BPM:-1}" = "0" ]; then
+    log "BPM backfill skipped by TAIKO_WEB_UPDATE_BACKFILL_BPM=0."
+    return 0
+  fi
+  if ! command -v docker >/dev/null 2>&1 ||
+    ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^taiko-web-app$'; then
+    log "BPM backfill skipped; app container is not running."
+    return 0
+  fi
+  log "Backfilling BPM ranges for existing songs."
+  if docker exec taiko-web-app python /app/tools/backfill_bpm.py; then
+    log "BPM backfill completed."
+  else
+    log "BPM backfill failed; update will continue. Rerun tools/backfill_bpm.py after checking the application logs."
+  fi
+}
+
+backfill_song_bpm_direct() {
+  if [ "${TAIKO_WEB_UPDATE_BACKFILL_BPM:-1}" = "0" ]; then
+    log "BPM backfill skipped by TAIKO_WEB_UPDATE_BACKFILL_BPM=0."
+    return 0
+  fi
+  if [ ! -x "$INSTALL_DIR/.venv/bin/python3" ]; then
+    log "BPM backfill skipped; Python virtualenv is missing."
+    return 0
+  fi
+  log "Backfilling BPM ranges for existing songs."
+  if (
+    cd "$INSTALL_DIR"
+    TAIKO_WEB_SONGS_DIR="$DATA_DIR/songs" \
+      TAIKO_WEB_MONGO_HOST="${TAIKO_WEB_MONGO_HOST:-127.0.0.1:27017}" \
+      "$INSTALL_DIR/.venv/bin/python3" "$INSTALL_DIR/tools/backfill_bpm.py"
+  ); then
+    log "BPM backfill completed."
+  else
+    log "BPM backfill failed; update will continue. Rerun tools/backfill_bpm.py after checking the application logs."
+  fi
+}
+
 deploy_direct() {
   begin_update_guard
   log "Starting direct deployment."
   ensure_base_sync_tools
   apt_install python3 python3-venv python3-pip git ffmpeg libcap2-bin
+  ensure_persistent_secret_key
   load_existing_env
   ensure_data_dirs
   if mongo_data_exists; then
@@ -938,6 +1027,7 @@ deploy_container() {
   log "Starting container deployment."
   ensure_base_sync_tools
   ensure_docker
+  ensure_persistent_secret_key
   load_existing_env
   ensure_data_dirs
   if mongo_data_exists; then
@@ -966,6 +1056,7 @@ upgrade_container() {
   log "Starting container-only upgrade."
   ensure_base_sync_tools
   ensure_docker
+  ensure_persistent_secret_key
   prepare_mongodb_update "$skip_backup"
   sync_source
   ensure_config
@@ -975,6 +1066,7 @@ upgrade_container() {
     compose_up_or_recreate_named up -d --build --force-recreate --remove-orphans
   )
   check_mongodb_health "$UPDATE_BEFORE_SONGS_COUNT" "$LAST_BACKUP_DIR"
+  backfill_song_bpm_container
   reparse_uploaded_categories_container
   ensure_admin_user
   log "Container upgrade completed."
@@ -990,6 +1082,7 @@ upgrade_direct() {
   log "Starting direct upgrade."
   ensure_base_sync_tools
   apt_install python3 python3-venv python3-pip git ffmpeg libcap2-bin
+  ensure_persistent_secret_key
   prepare_mongodb_update "$skip_backup"
   ensure_direct_datastores
   remove_container_stack
@@ -1008,6 +1101,7 @@ upgrade_direct() {
   systemctl enable "$SERVICE_NAME"
   systemctl restart "$SERVICE_NAME"
   check_mongodb_health "$UPDATE_BEFORE_SONGS_COUNT" "$LAST_BACKUP_DIR"
+  backfill_song_bpm_direct
   reparse_uploaded_categories_direct
   ensure_admin_user
   log "Direct upgrade completed."

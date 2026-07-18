@@ -98,8 +98,10 @@ sudo bash setup.sh upgrade-direct
 
 这个命令会：
 - 同步最新代码到 `/srv/taiko-web`（保留 `config.py` 与数据目录）
+- 保留会话密钥与文件会话；源码目录与安装目录相同时会安全跳过自同步
 - 更新虚拟环境依赖（`requirements.txt`）
 - 校验并拉起 Redis / Mongo（Mongo 不可直装时继续使用 `taiko-web-mongo-direct` 容器）
+- 幂等回填已有歌曲的 BPM 范围（紧急情况下可设置 `TAIKO_WEB_UPDATE_BACKFILL_BPM=0` 暂时跳过）
 - 重写并重载 `systemd` 服务后重启 `taiko-web`
 
 常用检查命令：

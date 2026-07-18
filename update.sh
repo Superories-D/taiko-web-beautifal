@@ -10,6 +10,11 @@ SCRIPT_DIR=$(CDPATH= cd -- "${SCRIPT_PATH%/*}" && pwd)
 INSTALL_DIR=${INSTALL_DIR:-/srv/taiko-web}
 UPDATE_MODE=${TAIKO_WEB_UPDATE_MODE:-auto}
 
+if [ ! -r "$SCRIPT_DIR/setup.sh" ]; then
+  echo "Update source is incomplete: $SCRIPT_DIR/setup.sh is missing or unreadable." >&2
+  exit 1
+fi
+
 detect_update_mode() {
   if command -v docker >/dev/null 2>&1 &&
     docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^taiko-web-app$'; then

@@ -5,6 +5,7 @@
 /venv
 /env
 /backups
+/.taiko-secret-key
 /flask_session
 /taiko-editor/.venv
 /taiko-editor/build

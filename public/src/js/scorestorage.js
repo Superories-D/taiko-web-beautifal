@@ -288,6 +288,7 @@ class ScoreStorage{
 						account.loggedIn = false
 						delete account.username
 						delete account.displayName
+						delete account.publicId
 						delete account.don
 						this.load()
 						pageEvents.send("logout")

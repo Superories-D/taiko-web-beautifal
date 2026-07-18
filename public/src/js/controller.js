@@ -6,6 +6,7 @@ class Controller{
 		this.selectedSong = selectedSong
 		this.songData = songData
 		this.battleOptions = battleOptions || {}
+		this.asyncChallenge = selectedSong.asyncChallenge || null
 		this.aiBattle = this.battleOptions.mode === "ai"
 		this.ghostBattle = this.battleOptions.mode === "ghost"
 		this.networkMultiplayer = !!multiplayer && !this.aiBattle && !this.ghostBattle
@@ -121,7 +122,7 @@ class Controller{
 		
 		this.game = new Game(this, this.selectedSong, this.parsedSongData)
 		this.view = new View(this)
-		if (typeof PlayerLab !== "undefined" && !this.ghostBattle) {
+		if (typeof PlayerLab !== "undefined" && (!this.ghostBattle || this.asyncChallenge)) {
 			PlayerLab.startGhost(this)
 		}
 		this.mekadon = new Mekadon(this, this.game)
@@ -147,6 +148,9 @@ class Controller{
 	}
 	isLeaderboardEligible(){
 		if(this.selectedSong.practiceMode){
+			return false
+		}
+		if(this.asyncChallenge){
 			return false
 		}
 		if(this.autoPlayEnabled){
@@ -345,7 +349,7 @@ class Controller{
 	}
 	displayResults(){
 		if(typeof PlayerLab !== "undefined"){
-			if(!this.ghostBattle) PlayerLab.finishGhost(this)
+			if(!this.ghostBattle || this.asyncChallenge) PlayerLab.finishGhost(this)
 			PlayerLab.completeDaily(this)
 		}
 		if(this.multiplayer !== 2){
@@ -509,7 +513,7 @@ class Controller{
 		}
 	}
 	recordBattleJudgement(score, circle){
-		if(typeof PlayerLab !== "undefined" && !this.ghostBattle && !this.aiBattle){
+		if(typeof PlayerLab !== "undefined" && (!this.ghostBattle || this.asyncChallenge) && !this.aiBattle){
 			PlayerLab.recordGhost(this, score, circle)
 		}
 		if((this.aiBattle || this.ghostBattle) && this.battleCoordinator){

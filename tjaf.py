@@ -11,6 +11,7 @@ class Tja:
         self.subtitle_ja: Optional[str] = None
         self.wave: Optional[str] = None
         self.offset: Optional[float] = None
+        self.bpm_values = []
         self.courses: Dict[str, Dict[str, Optional[int]]] = {}
         self._parse()
 
@@ -20,6 +21,16 @@ class Tja:
         for raw in lines:
             line = raw.strip()
             if not line:
+                continue
+            # TJA files use both ``#BPMCHANGE:180`` and ``#BPMCHANGE 180``.
+            bpm_change = re.match(r'^#BPMCHANGE\s+([-+]?\d+(?:\.\d+)?)$', line, re.IGNORECASE)
+            if bpm_change:
+                try:
+                    bpm = float(bpm_change.group(1))
+                    if 1 <= bpm <= 1000:
+                        self.bpm_values.append(bpm)
+                except ValueError:
+                    pass
                 continue
             if ":" in line:
                 k, v = line.split(":", 1)
@@ -40,6 +51,13 @@ class Tja:
                         self.offset = float(val)
                     except ValueError:
                         self.offset = None
+                elif key in ("BPM", "#BPMCHANGE"):
+                    try:
+                        bpm = float(re.split(r"\s+", val)[0])
+                        if 1 <= bpm <= 1000:
+                            self.bpm_values.append(bpm)
+                    except ValueError:
+                        pass
                 elif key == "COURSE":
                     course_map = {
                         "EASY": "easy",
@@ -76,7 +94,7 @@ class Tja:
         courses_out: Dict[str, Optional[Dict[str, Optional[int]]]] = {}
         for name in ["easy", "normal", "hard", "oni", "ura"]:
             courses_out[name] = self.courses.get(name) or None
-        return {
+        output = {
             "id": song_id,
             "type": "tja",
             "title": self.title,
@@ -110,3 +128,7 @@ class Tja:
             "order": song_id,
             "created_ns": created_ns,
         }
+        if self.bpm_values:
+            output["bpm_min"] = min(self.bpm_values)
+            output["bpm_max"] = max(self.bpm_values)
+        return output

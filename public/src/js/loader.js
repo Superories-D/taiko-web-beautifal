@@ -1599,6 +1599,7 @@ class Loader{
 						account.loggedIn = true
 						account.username = response.username
 						account.displayName = response.display_name
+						account.publicId = response.public_id || account.publicId
 						account.don = response.don
 						scoreStorage.load(response.scores)
 						pageEvents.send("login", account.username)
@@ -2132,7 +2133,9 @@ class Loader{
 		})
 	}
 	getCsrfToken(){
-		return this.ajax("api/csrftoken").then(response => {
+		// CSRF tokens are session-bound.  A cache/dedupe hit from before login
+		// would otherwise submit the old session's token on the first write.
+		return this.ajax("api/csrftoken?refresh=" + Date.now()).then(response => {
 			var json = JSON.parse(response)
 			if(json.status === "ok"){
 				return Promise.resolve(json.token)

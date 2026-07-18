@@ -16,7 +16,8 @@
 			</div>
 			<div id="site-message-list"></div>
 		</div>
-	</div>
+		</div>
+	<div id="song-option-buttons" aria-label="Song options">
 	<button id="weekly-challenge-btn" type="button" aria-label="Weekly Challenge" title="Weekly Challenge"></button>
 	<button id="song-search-btn" type="button" aria-label="Search Songs" title="Search Songs"></button>
 	<button id="song-top10-btn" type="button" aria-label="Top 10 Songs" title="Top 10 Songs">
@@ -25,5 +26,59 @@
 	<button id="song-easy-settings-btn" type="button" aria-label="Easy Settings" title="Easy Settings">
 		<span>Easy</span>
 	</button>
+		<button id="song-library-btn" class="song-option-button" type="button" aria-label="Library and Discover" title="Library and Discover"><span aria-hidden="true">★</span><span class="song-option-label">Library</span></button>
+		<button id="song-social-btn" class="song-option-button" type="button" aria-label="Friends and Challenges" title="Friends and Challenges"><span aria-hidden="true">VS</span><span class="song-option-label">Friends</span></button>
+	</div>
 	<div id="touch-full-btn"></div>
+</div>
+
+<div id="library-overlay" hidden>
+	<section id="library-panel" role="dialog" aria-modal="true" aria-labelledby="library-title">
+		<header class="library-header">
+			<h2 id="library-title">Library and Discover</h2>
+			<button id="library-close" type="button" aria-label="Close" title="Close">×</button>
+		</header>
+		<nav id="library-tabs" class="hub-tabs" role="tablist" aria-label="Library sections">
+			<button type="button" data-library-tab="favorites" role="tab">Favorites</button>
+			<button type="button" data-library-tab="playlists" role="tab">Playlists</button>
+			<button type="button" data-library-tab="recent" role="tab">Recent</button>
+			<button type="button" data-library-tab="discover" role="tab">Discover</button>
+		</nav>
+		<div class="hub-toolbar">
+			<input id="library-filter" type="search" autocomplete="off" placeholder="Filter songs">
+			<button id="library-favorite-current" type="button" aria-pressed="false">Favorite</button>
+			<button id="library-add-current" type="button">Add current</button>
+			<button id="library-new-playlist" type="button">New playlist</button>
+		</div>
+		<div id="library-filters" class="library-filters" aria-label="Song filters">
+			<select id="library-category"><option value="">All categories</option></select>
+			<select id="library-maker"><option value="">All makers</option></select>
+			<select id="library-difficulty"><option value="">All difficulties</option><option value="easy">Easy</option><option value="normal">Normal</option><option value="hard">Hard</option><option value="oni">Oni</option><option value="ura">Ura</option></select>
+			<label>★ <input id="library-stars-min" type="number" min="1" max="20" placeholder="Min"></label>
+			<label>★ max <input id="library-stars-max" type="number" min="1" max="20" placeholder="Max"></label>
+			<label>BPM <input id="library-bpm-min" type="number" min="1" max="1000" placeholder="Min"></label>
+			<label>BPM max <input id="library-bpm-max" type="number" min="1" max="1000" placeholder="Max"></label>
+			<select id="library-progress"><option value="">All progress</option><option value="played">Played</option><option value="unplayed">Unplayed</option><option value="favorite">Favorites</option><option value="branch">Branch charts</option></select>
+		</div>
+		<div id="library-status" class="hub-status" role="status" aria-live="polite"></div>
+		<div id="library-list" class="hub-list" tabindex="0"></div>
+	</section>
+</div>
+
+<div id="social-overlay" hidden>
+	<section id="social-panel" role="dialog" aria-modal="true" aria-labelledby="social-title">
+		<header class="social-header">
+			<h2 id="social-title">Friends and Challenges</h2>
+			<button id="social-close" type="button" aria-label="Close" title="Close">×</button>
+		</header>
+		<nav id="social-tabs" class="hub-tabs" role="tablist" aria-label="Social sections">
+			<button type="button" data-social-tab="challenges" role="tab">Challenges</button>
+			<button type="button" data-social-tab="following" role="tab">Following</button>
+			<button type="button" data-social-tab="search" role="tab">Find players</button>
+			<button type="button" data-social-tab="blocked" role="tab">Blocked</button>
+		</nav>
+		<div class="hub-toolbar"><input id="social-filter" type="search" autocomplete="off" placeholder="Search players"></div>
+		<div id="social-status" class="hub-status" role="status" aria-live="polite"></div>
+		<div id="social-list" class="hub-list" tabindex="0"></div>
+	</section>
 </div>

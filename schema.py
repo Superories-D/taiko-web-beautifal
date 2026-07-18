@@ -124,3 +124,50 @@ weekly_challenge_submit = {
     },
     'required': ['challenge_id', 'difficulty', 'score']
 }
+
+library_favorite = {
+    'type': 'object',
+    'properties': {'song_hash': {'type': 'string', 'minLength': 1, 'maxLength': 500}},
+    'required': ['song_hash'],
+    'additionalProperties': False,
+}
+
+playlist_create = {
+    'type': 'object',
+    'properties': {
+        'name': {'type': 'string', 'minLength': 1, 'maxLength': 40},
+        'description': {'type': 'string', 'maxLength': 200},
+        'song_hashes': {'type': 'array', 'maxItems': 200, 'items': {'type': 'string', 'maxLength': 500}},
+    },
+    'required': ['name'],
+    'additionalProperties': False,
+}
+
+challenge_create = {
+    'type': 'object',
+    'properties': {
+        'recipient_public_id': {'type': 'string', 'pattern': '^[a-f0-9]{32}$'},
+        'song_hash': {'type': 'string', 'minLength': 1, 'maxLength': 500},
+        'difficulty': {'enum': ['easy', 'normal', 'hard', 'oni', 'ura']},
+        'rule_version': {'const': 'standard-v1'},
+    },
+    'required': ['recipient_public_id', 'song_hash', 'difficulty', 'rule_version'],
+    'additionalProperties': False,
+}
+
+challenge_result = {
+    'type': 'object',
+    'properties': {
+        'score': {'type': 'integer', 'minimum': 0, 'maximum': 1000000000},
+        'good': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+        'ok': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+        'bad': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+        'max_combo': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+        'drumroll': {'type': 'integer', 'minimum': 0, 'maximum': 10000000},
+        'clear': {'type': 'boolean'},
+        'ghost_payload': {'type': 'string', 'maxLength': 1400000},
+        'ghost_encoding': {'const': 'gzip'},
+    },
+    'required': ['score', 'good', 'ok', 'bad', 'max_combo', 'drumroll', 'clear', 'ghost_payload', 'ghost_encoding'],
+    'additionalProperties': False,
+}

@@ -1029,6 +1029,10 @@ class Scoresheet {
 				}
 			}
 		}
+		if (this.controller.asyncChallenge && this.controller.player === 1 && !this.challengeSubmitted && typeof SocialHub !== "undefined") {
+			this.challengeSubmitted = true
+			SocialHub.submitChallengeResult(this.controller, this.resultsObj).catch(() => {})
+		}
 		this.scoreSaved = true
 	}
 

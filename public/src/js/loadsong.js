@@ -449,7 +449,7 @@ class LoadSong{
 		
 		if(this.aiBattle || this.ghostBattle){
 			this.clean()
-			if (this.ghostBattle && !PlayerLab.ghostAvailable(song)) {
+			if (this.ghostBattle && !song.asyncChallenge && !PlayerLab.ghostAvailable(song)) {
 				new SongSelect(false, false, this.touchEnabled)
 				return
 			}

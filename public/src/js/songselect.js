@@ -284,6 +284,9 @@ class SongSelect {
 		this.search = new Search(this)
 		this.weeklyChallenge = new WeeklyChallenge(this)
 		this.uploadModal = new UploadModal(this)
+		this.library = new LibraryHub(this)
+		this.social = new SocialHub(this)
+		this.challengeRun = null
 		this.features = gameConfig.features || {}
 		this.siteMessagesEnabled = !!this.features.site_messages
 		this.topSongsEnabled = !!this.features.top_songs
@@ -515,14 +518,42 @@ class SongSelect {
 		this.topSongsButton = document.getElementById("song-top10-btn")
 		this.weeklyChallengeButton = document.getElementById("weekly-challenge-btn")
 		this.easySettingsButton = document.getElementById("song-easy-settings-btn")
+		this.libraryButton = document.getElementById("song-library-btn")
+		this.socialButton = document.getElementById("song-social-btn")
+		if (strings.librarySocial) {
+			this.libraryButton.setAttribute("aria-label", strings.librarySocial.libraryTitle)
+			this.libraryButton.title = strings.librarySocial.libraryTitle
+			this.libraryButton.querySelector(".song-option-label").textContent = strings.librarySocial.favorites
+			this.socialButton.setAttribute("aria-label", strings.librarySocial.socialTitle)
+			this.socialButton.title = strings.librarySocial.socialTitle
+			this.socialButton.querySelector(".song-option-label").textContent = strings.librarySocial.following
+		}
 		this.playerLab = new PlayerLab(this)
 		this.searchButton.hidden = true
 		this.topSongsButton.hidden = true
 		this.weeklyChallengeButton.hidden = true
 		this.easySettingsButton.hidden = true
+		this.libraryButton.hidden = true
+		this.socialButton.hidden = true
 		pageEvents.add(this.searchButton, ["click", "touchend"], this.openSearchFromButton.bind(this))
 		pageEvents.add(this.weeklyChallengeButton, ["click", "touchend"], this.openWeeklyChallengeFromButton.bind(this))
 		pageEvents.add(this.easySettingsButton, ["click", "touchend"], this.openEasySettingsFromButton.bind(this))
+		var optionTap = typeof hubBindTap === "function" ? hubBindTap : (target, callback) => {
+			var lastTouch = 0
+			var touch = event => { lastTouch = Date.now(); if (event.cancelable) event.preventDefault(); callback(event) }
+			var click = event => { if (Date.now() - lastTouch >= 750) callback(event) }
+			pageEvents.add(target, "touchend", touch); pageEvents.add(target, "click", click)
+			return () => { pageEvents.remove(target, "touchend"); pageEvents.remove(target, "click") }
+		}
+		this.optionTapCleanups = []
+		this.optionTapCleanups.push(optionTap(this.libraryButton, event => {
+			event.stopPropagation()
+			if (this.state.screen === "song") this.library.display()
+		}))
+		this.optionTapCleanups.push(optionTap(this.socialButton, event => {
+			event.stopPropagation()
+			if (this.state.screen === "song") this.social.display()
+		}))
 		if (this.topSongsEnabled) {
 			pageEvents.add(this.topSongsButton, ["click", "touchend"], this.openTopSongsFromButton.bind(this))
 			this.topSongs = new TopSongs(this)
@@ -532,6 +563,20 @@ class SongSelect {
 		if (typeof window !== "undefined" && window.EasySettings) {
 			window.EasySettings.initUI(this)
 		}
+		try {
+			if (new URLSearchParams(location.search).get("playlist")) {
+				setTimeout(() => { if (!this.closed) this.library.display() }, 0)
+			}
+			if (account.loggedIn && localStorage.getItem("taikoPendingHub") === "social") {
+				localStorage.removeItem("taikoPendingHub")
+				var pendingState = {}
+				try { pendingState = JSON.parse(localStorage.getItem("taikoPendingHubState") || "{}") || {} } catch (_error) {}
+				localStorage.removeItem("taikoPendingHubState")
+				var pendingSong = this.songs.findIndex(song => String(song.hash || song.id) === String(pendingState.songHash || ""))
+				if (pendingSong !== -1) this.setSelectedSong(pendingSong)
+				setTimeout(() => { if (!this.closed) this.social.display() }, 0)
+			}
+		} catch (_error) {}
 		if (this.siteMessagesEnabled) {
 			this.siteMessages = new SiteMessages(this)
 		} else {
@@ -658,6 +703,7 @@ class SongSelect {
 		}
 
 		this.selectedSong = songIdx
+		if (this.library && this.library.updateSelection) this.library.updateSelection(this.songs[songIdx])
 	}
 
 	getEasySettings() {
@@ -837,6 +883,10 @@ class SongSelect {
 			this.topSongs.keyPress(pressed, name, event, repeat, ctrl)
 		} else if (this.weeklyChallenge.opened) {
 			this.weeklyChallenge.keyPress(pressed, name, event, repeat, ctrl)
+		} else if (this.library && this.library.opened) {
+			if (name === "back") this.library.remove(true)
+		} else if (this.social && this.social.opened) {
+			if (name === "back") this.social.remove(true)
 		} else if (this.search.opened) {
 			this.search.keyPress(pressed, name, event, repeat, ctrl)
 		} else if (this.state.screen === "song") {
@@ -949,14 +999,25 @@ class SongSelect {
 		}
 	}
 
+	closeSongExtras(owner) {
+		if (this.search && this.search.opened && owner !== this.search) this.search.remove()
+		if (this.topSongs && this.topSongs.opened && owner !== this.topSongs) this.topSongs.remove()
+		if (this.weeklyChallenge && this.weeklyChallenge.opened && owner !== this.weeklyChallenge) this.weeklyChallenge.remove()
+		if (this.library && this.library.opened && owner !== this.library) this.library.remove()
+		if (this.social && this.social.opened && owner !== this.social) this.social.remove()
+		if (typeof window !== "undefined" && window.EasySettings && window.EasySettings.isOpen && window.EasySettings.isOpen() && owner !== window.EasySettings) window.EasySettings.close()
+	}
+
 	updateSearchButtonVisibility() {
-		if (!this.songSelect || !this.searchButton || !this.topSongsButton || !this.weeklyChallengeButton || !this.easySettingsButton) {
+		if (!this.songSelect || !this.searchButton || !this.topSongsButton || !this.weeklyChallengeButton || !this.easySettingsButton || !this.libraryButton || !this.socialButton) {
 			return
 		}
 		var visible = this.state.screen === "song" &&
 			!this.search.opened &&
 			!(this.topSongs && this.topSongs.opened) &&
 			!this.weeklyChallenge.opened &&
+			!(this.library && this.library.opened) &&
+			!(this.social && this.social.opened) &&
 			!this.uploadModal.opened &&
 			!(typeof window !== "undefined" && window.EasySettings && window.EasySettings.isOpen && window.EasySettings.isOpen()) &&
 			!(this.siteMessages && this.siteMessages.isOpen())
@@ -965,10 +1026,14 @@ class SongSelect {
 		this.topSongsButton.hidden = !visible || !this.topSongsEnabled
 		this.weeklyChallengeButton.hidden = !challengeVisible
 		this.easySettingsButton.hidden = !visible
+		this.libraryButton.hidden = !visible
+		this.socialButton.hidden = !visible
 		this.songSelect.classList.toggle("search-button-visible", visible)
 		this.songSelect.classList.toggle("top10-button-visible", visible && this.topSongsEnabled)
 		this.songSelect.classList.toggle("weekly-challenge-visible", challengeVisible)
 		this.songSelect.classList.toggle("easy-settings-button-visible", visible)
+		this.songSelect.classList.toggle("library-button-visible", visible)
+		this.songSelect.classList.toggle("social-button-visible", visible)
 	}
 
 	changeType(delta) {
@@ -1266,6 +1331,8 @@ class SongSelect {
 				this.topSongs.remove()
 			}
 			this.weeklyChallenge.remove()
+			if (this.library) this.library.remove()
+			if (this.social) this.social.remove()
 			if (currentSong.courses) {
 				if (currentSong.unloaded) {
 					return
@@ -1403,7 +1470,7 @@ class SongSelect {
 		} else if (p2.socket && p2.socket.readyState === 1 && !assets.customSongs) {
 			multiplayer = ctrl
 		}
-		var diff = this.difficultyId[difficulty]
+		var diff = this.challengeRun ? this.challengeRun.difficulty : this.difficultyId[difficulty]
 		var practiceMode = typeof PlayerLab !== "undefined" && !autoplay && !multiplayer && !aiBattleEnabled && trainingMode !== "ghost" ? PlayerLab.practiceFor(selectedSong) : null
 
 		new LoadSong({
@@ -1421,8 +1488,10 @@ class SongSelect {
 			"lyrics": selectedSong.lyrics,
 			"video": selectedSong.video,
 			"practiceMode": practiceMode,
-			"ghostBattle": trainingMode === "ghost",
+			"ghostBattle": trainingMode === "ghost" || !!this.challengeRun,
+			"asyncChallenge": this.challengeRun || null,
 		}, autoplay, multiplayer, touch)
+		this.challengeRun = null
 	}
 	startSelectedTrainingMode(mode, requestedDifficulty, virtualDrumEnabled) {
 		if (!this.playerLab || this.state.screen !== "difficulty") return
@@ -3749,6 +3818,8 @@ class SongSelect {
 			this.topSongs.clean()
 		}
 		this.weeklyChallenge.clean()
+		if (this.library) this.library.clean()
+		if (this.social) this.social.clean()
 		this.uploadModal.clean()
 		this.playerLab.clean()
 		if (this.siteMessages) {
@@ -3778,6 +3849,7 @@ class SongSelect {
 			pageEvents.remove(this.topSongsButton, ["click", "touchend"])
 		}
 		pageEvents.remove(this.weeklyChallengeButton, ["click", "touchend"])
+		if (this.optionTapCleanups) this.optionTapCleanups.splice(0).forEach(cleanup => cleanup())
 		pageEvents.remove(p2, "message")
 		if (this.touchEnabled && fullScreenSupported) {
 			pageEvents.remove(this.touchFullBtn, "click")
@@ -3788,6 +3860,10 @@ class SongSelect {
 		delete this.easySettingsButton
 		delete this.topSongs
 		delete this.weeklyChallengeButton
+		delete this.libraryButton
+		delete this.socialButton
+		delete this.library
+		delete this.social
 		delete this.weeklyChallenge
 		delete this.playerLab
 		delete this.siteMessages

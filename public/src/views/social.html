@@ -1,0 +1,19 @@
+<div id="social-overlay" hidden>
+	<section id="social-panel" role="dialog" aria-modal="true" aria-labelledby="social-title">
+		<header class="social-header">
+			<h2 id="social-title">Friends and Challenges</h2>
+			<button id="social-close" type="button" aria-label="Close" title="Close">×</button>
+		</header>
+		<nav id="social-tabs" class="hub-tabs" role="tablist" aria-label="Social sections">
+			<button type="button" data-social-tab="challenges" role="tab">Challenges</button>
+			<button type="button" data-social-tab="following" role="tab">Following</button>
+			<button type="button" data-social-tab="search" role="tab">Find players</button>
+			<button type="button" data-social-tab="blocked" role="tab">Blocked</button>
+		</nav>
+		<div class="hub-toolbar">
+			<input id="social-filter" type="search" autocomplete="off" placeholder="Search players">
+		</div>
+		<div id="social-status" class="hub-status" role="status" aria-live="polite"></div>
+		<div id="social-list" class="hub-list" tabindex="0"></div>
+	</section>
+</div>

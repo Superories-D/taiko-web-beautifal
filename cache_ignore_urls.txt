@@ -8,6 +8,9 @@
 /api/visits/*
 /api/multiplayer/select
 /api/weekly-challenge/*
+/api/library/*
+/api/social/*
+/api/challenges/*
 /api/user-upload
 /api/upload
 /api/remove

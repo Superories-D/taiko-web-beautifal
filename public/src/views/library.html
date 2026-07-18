@@ -1,0 +1,32 @@
+<div id="library-overlay" hidden>
+	<section id="library-panel" role="dialog" aria-modal="true" aria-labelledby="library-title">
+		<header class="library-header">
+			<h2 id="library-title">Library and Discover</h2>
+			<button id="library-close" type="button" aria-label="Close" title="Close">×</button>
+		</header>
+		<nav id="library-tabs" class="hub-tabs" role="tablist" aria-label="Library sections">
+			<button type="button" data-library-tab="favorites" role="tab">Favorites</button>
+			<button type="button" data-library-tab="playlists" role="tab">Playlists</button>
+			<button type="button" data-library-tab="recent" role="tab">Recent</button>
+			<button type="button" data-library-tab="discover" role="tab">Discover</button>
+		</nav>
+		<div class="hub-toolbar">
+			<input id="library-filter" type="search" autocomplete="off" placeholder="Filter songs">
+			<button id="library-favorite-current" type="button" aria-pressed="false">Favorite</button>
+			<button id="library-add-current" type="button">Add current</button>
+			<button id="library-new-playlist" type="button">New playlist</button>
+		</div>
+		<div id="library-filters" class="library-filters" aria-label="Song filters">
+			<select id="library-category"><option value="">All categories</option></select>
+			<select id="library-maker"><option value="">All makers</option></select>
+			<select id="library-difficulty"><option value="">All difficulties</option><option value="easy">Easy</option><option value="normal">Normal</option><option value="hard">Hard</option><option value="oni">Oni</option><option value="ura">Ura</option></select>
+			<label>★ <input id="library-stars-min" type="number" min="1" max="20" placeholder="Min"></label>
+			<label>★ max <input id="library-stars-max" type="number" min="1" max="20" placeholder="Max"></label>
+			<label>BPM <input id="library-bpm-min" type="number" min="1" max="1000" placeholder="Min"></label>
+			<label>BPM max <input id="library-bpm-max" type="number" min="1" max="1000" placeholder="Max"></label>
+			<select id="library-progress"><option value="">All progress</option><option value="played">Played</option><option value="unplayed">Unplayed</option><option value="favorite">Favorites</option><option value="branch">Branch charts</option></select>
+		</div>
+		<div id="library-status" class="hub-status" role="status" aria-live="polite"></div>
+		<div id="library-list" class="hub-list" tabindex="0"></div>
+	</section>
+</div>

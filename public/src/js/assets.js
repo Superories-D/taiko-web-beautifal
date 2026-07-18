@@ -48,7 +48,9 @@ var assets = {
 		"idb.js",
 		"plugins.js",
 		"search.js",
-		"uploadmodal.js"
+		"uploadmodal.js",
+		"library.js",
+		"social.js"
 	],
 	"css": [
 		"main.css",
@@ -59,7 +61,8 @@ var assets = {
 		"songbg.css",
 		"view.css",
 		"search.css",
-		"easysettings.css"
+		"easysettings.css",
+		"library_social.css"
 	],
 	"img": [
 		"notes.png",
@@ -174,7 +177,9 @@ var assets = {
 		"customsongs.html",
 		"search.html",
 		"upload.html",
-		"weekly_challenge.html"
+		"weekly_challenge.html",
+		"library.html",
+		"social.html"
 	],
 
 	"songs": [],

@@ -127,7 +127,8 @@ class PlayerLab {
 			this.events = []
 			this.index = 0
 			try {
-				var ghost = JSON.parse(localStorage.getItem(PlayerLab.ghostKey(controller.selectedSong)) || "null")
+				var challenge = controller.asyncChallenge
+				var ghost = challenge && challenge.opponentGhost ? challenge.opponentGhost : JSON.parse(localStorage.getItem(PlayerLab.ghostKey(controller.selectedSong)) || "null")
 				this.events = ghost && Array.isArray(ghost.events) ? ghost.events : []
 			} catch (_error) {}
 		}
@@ -167,11 +168,11 @@ class PlayerLab {
 
 	static startGhost(controller) {
 		var state = PlayerLab.loadState()
-		if (!state.ghostEnabled || controller.autoPlayEnabled || controller.multiplayer || controller.practiceMode || controller.selectedSong.dailyChallenge) return null
+		var challenge = controller.asyncChallenge
+		if (!challenge && (!state.ghostEnabled || controller.autoPlayEnabled || controller.multiplayer || controller.practiceMode || controller.selectedSong.dailyChallenge)) return null
 		var previous = null
-		try {
-			previous = JSON.parse(localStorage.getItem(PlayerLab.ghostKey(controller.selectedSong)) || "null")
-		} catch (_error) {}
+		if (challenge && challenge.opponentGhost) previous = challenge.opponentGhost
+		else try { previous = JSON.parse(localStorage.getItem(PlayerLab.ghostKey(controller.selectedSong)) || "null") } catch (_error) {}
 		controller.ghostRace = {previous: previous, events: [], index: 0, finished: false}
 		return controller.ghostRace
 	}
@@ -195,6 +196,10 @@ class PlayerLab {
 		race.finished = true
 		var result = {version: 1, recordedAt: new Date().toISOString(), events: race.events, points: race.events[race.events.length - 1].p}
 		var previousPoints = race.previous && Number(race.previous.points) || -1
+		if (controller.asyncChallenge) {
+			controller.challengeGhostResult = result
+			return true
+		}
 		if (result.points >= previousPoints) {
 			localStorage.setItem(PlayerLab.ghostKey(controller.selectedSong), JSON.stringify(result))
 			PlayerLab.syncGhost(controller.selectedSong, result).catch(() => {})

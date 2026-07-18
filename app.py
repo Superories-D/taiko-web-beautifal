@@ -31,6 +31,7 @@ from flask_limiter import Limiter
 
 import flask
 import tjaf
+from library_social import register_library_social_routes
 
 # ----
 
@@ -42,7 +43,7 @@ from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError
 from ffmpy import FFmpeg
 from bson import ObjectId
 from pymongo import MongoClient, UpdateOne
-from pymongo.errors import DuplicateKeyError, PyMongoError
+from pymongo.errors import DuplicateKeyError, PyMongoError, OperationFailure
 from redis import Redis
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
@@ -383,12 +384,30 @@ def ensure_unique_single_field_index(collection, field):
     return ensure_unique_index(collection, [(field, 1)])
 
 
+def ensure_sparse_unique_index(collection, field):
+    """Create a sparse unique index, upgrading an older non-sparse index safely."""
+    name = '{}_unique_sparse'.format(field)
+    try:
+        existing = next((index for index in collection.list_indexes() if index.get('key') == {field: 1}), None)
+        if existing and existing.get('unique') and existing.get('sparse'):
+            return True
+        if existing:
+            collection.drop_index(existing.get('name'))
+        collection.create_index(field, name=name, unique=True, sparse=True)
+        return True
+    except (PyMongoError, OperationFailure):
+        app.logger.exception('Unable to ensure sparse unique index %s.%s', collection.name, field)
+        return False
+
+
 GHOST_RETENTION_DAYS = 30
 GHOST_RETENTION_SECONDS = GHOST_RETENTION_DAYS * 24 * 60 * 60
 
 
 db.users.create_index('username', unique=True)
 ensure_unique_single_field_index(db.users, 'username_lower')
+db.users.update_many({'public_id': None}, {'$unset': {'public_id': ''}})
+ensure_sparse_unique_index(db.users, 'public_id')
 db.songs.create_index('id', unique=True)
 db.songs.create_index('hash')
 db.songs.create_index('title')
@@ -419,6 +438,36 @@ ensure_unique_single_field_index(db.multiplayer_servers, 'node_id')
 db.multiplayer_servers.create_index([('enabled', 1), ('node_id', 1)])
 ensure_unique_index(db.ghost_records, [('username', 1), ('song_hash', 1), ('difficulty', 1)])
 db.ghost_records.create_index('last_used_at', expireAfterSeconds=GHOST_RETENTION_SECONDS)
+ensure_unique_index(db.song_favorites, [('username', 1), ('song_hash', 1)])
+db.song_favorites.create_index([('username', 1), ('created_at', -1)])
+ensure_unique_index(db.song_playlists, [('playlist_id', 1)])
+db.song_playlists.create_index([('owner_username', 1), ('updated_at', -1)])
+# Sparse indexes still index an explicitly stored null value.  Older ai3
+# development data used ``share_token: null`` for private playlists, which
+# would allow only one private playlist under the unique index.  Normalize
+# those documents before ensuring the index so private playlists omit the
+# field entirely.
+db.song_playlists.update_many({'share_token': None}, {'$unset': {'share_token': ''}})
+ensure_sparse_unique_index(db.song_playlists, 'share_token')
+try:
+    db.song_playlists.create_index(
+        [('owner_username', 1), ('source_import_key', 1)],
+        name='owner_source_import_unique',
+        unique=True,
+        partialFilterExpression={'source_import_key': {'$type': 'string'}},
+    )
+except (PyMongoError, OperationFailure):
+    app.logger.exception('Unable to ensure idempotent playlist import index')
+ensure_unique_index(db.library_imports, [('username', 1), ('import_key', 1)])
+ensure_unique_index(db.user_follows, [('follower_username', 1), ('target_username', 1)])
+db.user_follows.create_index([('target_username', 1), ('created_at', -1)])
+ensure_unique_index(db.user_blocks, [('blocker_username', 1), ('blocked_username', 1)])
+ensure_unique_single_field_index(db.async_challenges, 'challenge_id')
+db.async_challenges.create_index([('sender_username', 1), ('created_at', -1)])
+db.async_challenges.create_index([('recipient_username', 1), ('created_at', -1)])
+db.async_challenges.create_index('purge_at', expireAfterSeconds=0)
+ensure_unique_index(db.async_challenge_results, [('challenge_id', 1), ('username', 1)])
+db.async_challenge_results.create_index('purge_at', expireAfterSeconds=0)
 
 VISIT_RETENTION_DAYS = 400
 VISIT_RETENTION_SECONDS = VISIT_RETENTION_DAYS * 24 * 60 * 60
@@ -1658,6 +1707,38 @@ def remove_user_account_data(username, user_filter=None):
     db.scores.delete_many({'username': username})
     db.ghost_records.delete_many({'username': username})
     db.weekly_challenge_scores.delete_many({'username': username})
+    db.song_favorites.delete_many({'username': username})
+    db.song_playlists.delete_many({'owner_username': username})
+    db.library_imports.delete_many({'username': username})
+    db.user_follows.delete_many({'$or': [
+        {'follower_username': username},
+        {'target_username': username},
+    ]})
+    db.user_blocks.delete_many({'$or': [
+        {'blocker_username': username},
+        {'blocked_username': username},
+    ]})
+    active_challenge_query = {'$or': [
+        {'sender_username': username},
+        {'recipient_username': username},
+    ], 'status': {'$in': ['pending', 'active']}}
+    active_challenge_ids = [doc.get('challenge_id') for doc in db.async_challenges.find(active_challenge_query, {'challenge_id': 1}) if doc.get('challenge_id')]
+    db.async_challenges.delete_many(active_challenge_query)
+    if active_challenge_ids:
+        db.async_challenge_results.delete_many({'challenge_id': {'$in': active_challenge_ids}})
+    deleted_marker = '__deleted_user__:' + hashlib.sha256(str(username).encode('utf-8')).hexdigest()[:16]
+    db.async_challenges.update_many(
+        {'sender_username': username, 'status': {'$nin': ['pending', 'active']}},
+        {'$set': {'sender_username': deleted_marker}},
+    )
+    db.async_challenges.update_many(
+        {'recipient_username': username, 'status': {'$nin': ['pending', 'active']}},
+        {'$set': {'recipient_username': deleted_marker}},
+    )
+    db.async_challenge_results.update_many(
+        {'username': username},
+        {'$set': {'username': deleted_marker}},
+    )
     db.site_message_reads.delete_many({'username': username})
     db.visit_records.delete_many({'username': username})
     # Old deployments may have stored account names on public leaderboard rows.
@@ -1774,11 +1855,28 @@ def normalize_public_song(song):
     song['music_type'] = song.get('music_type') or 'mp3'
     song['preview'] = safe_float_value(song.get('preview'), 0)
     song['volume'] = safe_float_value(song.get('volume'), 1.0)
+    song['bpm_min'] = safe_float_value(song.get('bpm_min'), None)
+    song['bpm_max'] = safe_float_value(song.get('bpm_max'), song['bpm_min'])
     song['lyrics'] = bool(song.get('lyrics'))
     song['hash'] = song.get('hash') or song['title']
     song.setdefault('song_type', '')
     song.setdefault('order', song.get('id'))
     return song
+
+
+def read_song_bpm_range(song_id):
+    """Read BPM metadata from the stored TJA chart when available."""
+    chart_path = SONGS_DIR / str(song_id) / 'main.tja'
+    for encoding in ('utf-8-sig', 'cp932', 'shift_jis'):
+        try:
+            chart_text = chart_path.read_text(encoding=encoding)
+            parsed = tjaf.Tja(chart_text)
+            if parsed.bpm_values:
+                return min(parsed.bpm_values), max(parsed.bpm_values)
+            return None
+        except (UnicodeDecodeError, OSError):
+            continue
+    return None
 
 
 def build_id_map(items):
@@ -2636,6 +2734,9 @@ def route_admin_songs_new_post():
     
     output['id'] = seq_new
     output['order'] = seq_new
+    bpm_range = read_song_bpm_range(seq_new)
+    if bpm_range:
+        output['bpm_min'], output['bpm_max'] = bpm_range
     
     db.songs.insert_one(output)
     if not hash_error:
@@ -2694,7 +2795,11 @@ def route_admin_songs_id_post(song_id):
         except HashException as e:
             hash_error = True
             flash('An error occurred: %s' % str(e), 'error')
-    
+
+    bpm_range = read_song_bpm_range(song_id)
+    if bpm_range:
+        output['bpm_min'], output['bpm_max'] = bpm_range
+
     db.songs.update_one({'id': song_id}, {'$set': output})
     if not hash_error:
         flash('Changes saved.')
@@ -3084,6 +3189,7 @@ def route_api_register():
     don = get_default_don()
     
     session_id = os.urandom(24).hex()
+    public_id = uuid.uuid4().hex
     db.users.insert_one({
         'username': username,
         'username_lower': username.lower(),
@@ -3092,6 +3198,7 @@ def route_api_register():
         'don': don,
         'user_level': 1,
         'session_id': session_id,
+        'public_id': public_id,
         'created_at': datetime.utcnow(),
         'last_login_at': datetime.utcnow()
     })
@@ -3099,7 +3206,7 @@ def route_api_register():
     session['session_id'] = session_id
     session['username'] = username
     session.permanent = True
-    return jsonify({'status': 'ok', 'username': username, 'display_name': username, 'don': don})
+    return jsonify({'status': 'ok', 'username': username, 'display_name': username, 'public_id': public_id, 'don': don})
 
 
 @app.route(basedir + 'api/login', methods=['POST'])
@@ -3123,6 +3230,10 @@ def route_api_login():
     
     don = get_db_don(result)
     session_id = ensure_user_session_id(result)
+    public_id = result.get('public_id')
+    if not isinstance(public_id, str) or len(public_id) != 32:
+        public_id = uuid.uuid4().hex
+        db.users.update_one({'_id': result['_id']}, {'$set': {'public_id': public_id}})
     
     session['session_id'] = session_id
     session['username'] = result['username']
@@ -3133,6 +3244,7 @@ def route_api_login():
         'status': 'ok',
         'username': result['username'],
         'display_name': get_user_display_name(result, result['username']),
+        'public_id': public_id,
         'don': don
     })
 
@@ -3355,12 +3467,17 @@ def route_api_scores_get():
     if not user:
         session.clear()
         return api_error('not_logged_in')
+    public_id = user.get('public_id')
+    if not isinstance(public_id, str) or len(public_id) != 32:
+        public_id = uuid.uuid4().hex
+        db.users.update_one({'_id': user['_id']}, {'$set': {'public_id': public_id}})
     don = get_db_don(user)
     return jsonify({
         'status': 'ok',
         'scores': scores,
         'username': user.get('username') or username,
         'display_name': get_user_display_name(user, username),
+        'public_id': public_id,
         'don': don
     })
 
@@ -4114,6 +4231,19 @@ def api_upload_file():
 @app.route("/api/remove", methods=["POST"])
 def remove():
     return flask.jsonify({ "success": False, "reason": "Remove is disabled" }), 403
+
+
+register_library_social_routes(
+    app,
+    db,
+    limiter,
+    csrf,
+    basedir,
+    login_required,
+    serialize_public_song,
+    decode_ghost_payload,
+    encode_ghost_payload,
+)
 
 if __name__ == '__main__':
     import argparse

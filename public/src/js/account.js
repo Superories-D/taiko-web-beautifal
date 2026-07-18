@@ -385,6 +385,7 @@ class Account{
 			account.loggedIn = true
 			account.username = response.username
 			account.displayName = response.display_name
+			account.publicId = response.public_id || account.publicId
 			account.don = response.don
 			var loadScores = scores => {
 				scoreStorage.load(scores)
@@ -442,6 +443,7 @@ class Account{
 		account.loggedIn = false
 		delete account.username
 		delete account.displayName
+		delete account.publicId
 		delete account.don
 		var loadScores = () => {
 			scoreStorage.load()

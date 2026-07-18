@@ -62,6 +62,8 @@ class SocialHub {
 		this.panel.querySelector('[data-social-tab="following"]').textContent = s.following
 		this.panel.querySelector('[data-social-tab="search"]').textContent = s.findPlayers
 		this.panel.querySelector('[data-social-tab="blocked"]').textContent = s.blocked
+		this.panel.querySelector("#social-tabs").setAttribute("aria-label", s.socialSections || s.socialTitle)
+		this.filter.setAttribute("aria-label", s.searchPlayers || s.filter)
 		this.closeButton.setAttribute("aria-label", s.close || "Close")
 		this.closeButton.title = s.close || "Close"
 	}
@@ -127,7 +129,7 @@ class SocialHub {
 			if (!this.list.children.length) this.list.innerHTML = '<div class="hub-empty">' + (strings.librarySocial ? strings.librarySocial.emptySocial : "Nothing here yet.") + "</div>"
 			this.setStatus("")
 		} catch (error) {
-			this.setStatus(error && error.message === "not_logged_in" ? "Sign in to use challenges." : (strings.librarySocial ? strings.librarySocial.failed : "Unable to load."), true)
+			this.setStatus(error && error.message === "not_logged_in" ? this.label("signInSocial", "Sign in to use friends and challenges.") : this.friendlyError(error), true)
 		}
 	}
 
@@ -137,22 +139,19 @@ class SocialHub {
 		challenges.filter(challenge => !query || String(challenge.song_hash).toLowerCase().includes(query) || String(challenge.status).toLowerCase().includes(query)).forEach(challenge => {
 			var card = document.createElement("article")
 			card.className = "hub-card"
-			var title = challenge.song_hash + " · " + String(challenge.difficulty || "oni").toUpperCase()
-			var result = (challenge.results || []).map(item => (item.player && item.player.display_name || "Player") + ": " + item.score).join("  ·  ")
-			card.innerHTML = '<div class="hub-card-title">' + this.escape(title) + '</div><div class="hub-card-meta">' + this.escape(challenge.status || "active") + ' · ' + this.escape(result || "No scores yet") + '</div><div class="hub-card-actions">' +
+			var song = this.songSelect.songs.find(item => String(item.hash || item.id) === String(challenge.song_hash))
+			var title = (song && (song.title || song.originalTitle) || challenge.song_hash) + " · " + String(challenge.difficulty || "oni").toUpperCase()
+			var result = (challenge.results || []).map(item => (item.player && item.player.display_name || this.label("player", "Player")) + ": " + Number(item.score || 0).toLocaleString()).join("  ·  ")
+			var canPlay = challenge.status === "pending" || challenge.status === "active"
+			card.innerHTML = '<div class="hub-card-title">' + this.escape(title) + '</div><div class="hub-card-meta">' + this.escape(this.statusLabel(challenge.status)) + ' · ' + this.escape(result || this.label("noScores", "No scores yet")) + '</div><div class="hub-card-actions">' +
 				(challenge.role === "recipient" && challenge.status === "pending" ? '<button type="button" data-social-action="accept" data-challenge-id="' + this.escape(challenge.challenge_id) + '">' + this.label("accept", "Accept") + '</button>' : '') +
-				(challenge.status === "pending" || challenge.status === "active" ? '<button type="button" data-social-action="play" data-challenge-id="' + this.escape(challenge.challenge_id) + '">' + this.label("play", "Play") + '</button>' : '') +
+				(canPlay ? '<button type="button" data-social-action="play" data-challenge-id="' + this.escape(challenge.challenge_id) + '">' + this.label("play", "Play") + '</button>' : '<button type="button" data-social-action="replay" data-challenge-id="' + this.escape(challenge.challenge_id) + '">' + this.label("replay", "Replay") + '</button>') +
 				(challenge.role === "recipient" && challenge.status === "pending" ? '<button type="button" data-social-action="decline" data-challenge-id="' + this.escape(challenge.challenge_id) + '">' + this.label("decline", "Decline") + '</button>' : '') +
 				(challenge.role === "sender" && challenge.status === "pending" ? '<button type="button" data-social-action="cancel" data-challenge-id="' + this.escape(challenge.challenge_id) + '">' + this.label("cancel", "Cancel") + '</button>' : '') + '</div>'
 			var meta = card.querySelector(".hub-card-meta")
 			var countdown = document.createElement("span")
 			countdown.dataset.countdown = challenge.expires_at || ""
 			meta.appendChild(countdown)
-			if (["pending", "active"].indexOf(challenge.status) === -1) {
-				var playButton = card.querySelector('[data-social-action="play"]')
-				playButton.dataset.socialAction = "replay"
-				playButton.textContent = this.label("replay", "Replay")
-			}
 			this.list.appendChild(card)
 		})
 	}
@@ -162,8 +161,8 @@ class SocialHub {
 			var card = document.createElement("article")
 			card.className = "hub-card"
 			if (user.blocked) {
-				card.innerHTML = '<div class="hub-card-title">' + this.escape(user.display_name || "Player") + '</div><div class="hub-card-meta">' + this.escape(user.public_id || "") + '</div><div class="hub-card-actions"><button type="button" data-social-action="unblock" data-public-id="' + this.escape(user.public_id) + '">' + this.label("unblock", "Unblock") + '</button></div>'
-			} else card.innerHTML = '<div class="hub-card-title">' + this.escape(user.display_name || "Player") + '</div><div class="hub-card-meta">' + this.escape(user.public_id || "") + '</div><div class="hub-card-actions">' +
+				card.innerHTML = '<div class="hub-card-title">' + this.escape(user.display_name || this.label("player", "Player")) + '</div><div class="hub-card-meta">' + this.escape(user.public_id || "") + '</div><div class="hub-card-actions"><button type="button" data-social-action="unblock" data-public-id="' + this.escape(user.public_id) + '">' + this.label("unblock", "Unblock") + '</button></div>'
+			} else card.innerHTML = '<div class="hub-card-title">' + this.escape(user.display_name || this.label("player", "Player")) + '</div><div class="hub-card-meta">' + this.escape(user.public_id || "") + '</div><div class="hub-card-actions">' +
 				'<button type="button" data-social-action="follow" data-following="' + String(!!user.following) + '" data-public-id="' + this.escape(user.public_id) + '">' + (user.following ? this.label("unfollow", "Unfollow") : this.label("follow", "Follow")) + '</button>' +
 				'<button type="button" data-social-action="challenge" data-public-id="' + this.escape(user.public_id) + '"' + (user.following ? '' : ' disabled') + '>' + this.label("challenge", "Challenge") + '</button>' +
 				'<button type="button" data-social-action="profile" data-public-id="' + this.escape(user.public_id) + '">' + this.label("profile", "Profile") + '</button>' +
@@ -191,7 +190,7 @@ class SocialHub {
 				return
 			}
 			if (action === "play") { await this.playChallenge(challengeId); }
-		} catch (error) { this.setStatus(error && error.message || "Action failed", true) }
+		} catch (error) { this.setStatus(this.friendlyError(error), true) }
 	}
 
 	async showProfile(publicId) {
@@ -199,12 +198,12 @@ class SocialHub {
 		var profile = data.profile || {}
 		var stats = profile.challenge_stats || {}
 		var scores = (profile.top_scores || []).map(item => this.escape(item.song_hash) + " " + this.escape(item.difficulty || "") + ": " + Number(item.score || 0).toLocaleString()).join("<br>")
-		this.list.innerHTML = '<article class="hub-card hub-profile"><div class="hub-card-title">' + this.escape(profile.display_name || "Player") + '</div><div class="hub-card-meta">' + this.escape(profile.public_id || "") + '</div><div>' + this.escape(profile.rank_summary || "") + '</div><div>W ' + Number(stats.wins || 0) + ' / L ' + Number(stats.losses || 0) + '</div><div class="hub-profile-scores">' + (scores || "No public scores") + '</div></article>'
+		this.list.innerHTML = '<article class="hub-card hub-profile"><div class="hub-card-title">' + this.escape(profile.display_name || this.label("player", "Player")) + '</div><div class="hub-card-meta">' + this.escape(profile.public_id || "") + '</div><div>' + this.escape(profile.rank_summary || "") + '</div><div>' + this.escape(this.label("wins", "Wins")) + ' ' + Number(stats.wins || 0) + ' / ' + this.escape(this.label("losses", "Losses")) + ' ' + Number(stats.losses || 0) + '</div><div class="hub-profile-scores">' + (scores || this.escape(this.label("noPublicScores", "No public scores"))) + '</div></article>'
 	}
 
 	async replayChallenge(challenge) {
 		var target = challenge.role === "sender" ? challenge.recipient : challenge.sender
-		if (!target || !target.public_id) throw new Error("Player is no longer available")
+		if (!target || !target.public_id) throw new Error("player_unavailable")
 		await this.request("api/challenges", "POST", {
 			recipient_public_id: target.public_id,
 			song_hash: challenge.song_hash,
@@ -217,7 +216,7 @@ class SocialHub {
 
 	async createChallenge(publicId) {
 		var song = this.songSelect.songs[this.songSelect.selectedSong]
-		if (!song || !song.courses) { this.setStatus("Select a song first.", true); return }
+		if (!song || !song.courses) { this.setStatus(this.label("selectSongFirst", "Select a song first."), true); return }
 		var difficulty = prompt(this.label("difficultyPrompt", "Difficulty (easy, normal, hard, oni, ura)"), "oni")
 		if (["easy", "normal", "hard", "oni", "ura"].indexOf(difficulty) === -1 || !song.courses[difficulty]) return
 		await this.request("api/challenges", "POST", {recipient_public_id: publicId, song_hash: String(song.hash || song.id), difficulty: difficulty, rule_version: "standard-v1"})
@@ -228,12 +227,12 @@ class SocialHub {
 	async playChallenge(id) {
 		var data = await this.request("api/challenges/" + encodeURIComponent(id))
 		var challenge = data.challenge
-		if (["pending", "active"].indexOf(challenge.status) === -1) { this.setStatus("Challenge is closed.", true); return }
+		if (["pending", "active"].indexOf(challenge.status) === -1) { this.setStatus(this.label("challengeClosed", "This challenge is closed."), true); return }
 		if (challenge.opponent_result && challenge.opponent_result.ghost_payload) {
 			challenge.opponentGhost = await PlayerLab.decompressGhost(challenge.opponent_result.ghost_payload)
 		}
 		var index = this.songSelect.songs.findIndex(song => String(song.hash || song.id) === String(challenge.song_hash))
-		if (index === -1) { this.setStatus("Song is no longer available.", true); return }
+		if (index === -1) { this.setStatus(this.label("songUnavailable", "This song is no longer available."), true); return }
 		challenge.challenge = true
 		if (typeof EasySettings !== "undefined") EasySettings.enforceMultiplayerSettings(true)
 		SocialHub.activeChallenge = challenge
@@ -275,11 +274,24 @@ class SocialHub {
 			var days = Math.floor(seconds / 86400); seconds %= 86400
 			var hours = Math.floor(seconds / 3600); seconds %= 3600
 			var minutes = Math.floor(seconds / 60)
-			node.textContent = days ? " · " + days + "d " + hours + "h" : " · " + hours + "h " + minutes + "m"
+			node.textContent = days ? " · " + days + this.label("dayShort", "d") + " " + hours + this.label("hourShort", "h") : " · " + hours + this.label("hourShort", "h") + " " + minutes + this.label("minuteShort", "m")
 		})
 	}
 
 	setStatus(text, error) { if (this.status) { this.status.textContent = text || ""; this.status.classList.toggle("error", !!error) } }
+	statusLabel(status) {
+		var keys = {pending: "statusPending", active: "statusActive", declined: "statusDeclined", cancelled: "statusCancelled", expired: "statusExpired"}
+		return this.label(keys[status] || "statusActive", status || "Active")
+	}
+	friendlyError(error) {
+		var message = error && error.message
+		if (message === "not_logged_in") return this.label("signInSocial", "Sign in to use friends and challenges.")
+		if (message === "not_following" || message === "follow_required") return this.label("mustFollow", "Follow this player before challenging them.")
+		if (message === "blocked" || message === "relationship_blocked") return this.label("relationshipBlocked", "This action is unavailable because one player is blocked.")
+		if (message === "player_unavailable" || message === "user_not_found") return this.label("playerUnavailable", "This player is no longer available.")
+		if (message === "song_not_found") return this.label("songUnavailable", "This song is no longer available.")
+		return this.label("actionFailed", "Action failed.")
+	}
 	label(key, fallback) { var value = strings.librarySocial && strings.librarySocial[key]; return value || fallback }
 	escape(value) { return String(value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])) }
 }

@@ -32,6 +32,8 @@ class LibraryHub {
 		this.newPlaylist = document.getElementById("library-new-playlist")
 		this.favoriteCurrent = document.getElementById("library-favorite-current")
 		this.addCurrent = document.getElementById("library-add-current")
+		this.filterToggle = document.getElementById("library-filter-toggle")
+		this.filtersPanel = document.getElementById("library-filters")
 		this.categoryFilter = document.getElementById("library-category")
 		this.makerFilter = document.getElementById("library-maker")
 		this.difficultyFilter = document.getElementById("library-difficulty")
@@ -43,6 +45,8 @@ class LibraryHub {
 		this.closeButton = document.getElementById("library-close")
 		this.tapCleanups = []
 		this.renderVersion = 0
+		this.filtersOpen = false
+		this.favoriteSyncedAt = 0
 		this.bind()
 	}
 
@@ -88,8 +92,9 @@ class LibraryHub {
 			if (action) this.action(action.dataset.libraryAction, action.dataset.songHash, action.dataset.playlistId)
 		}))
 		pageEvents.add(this.filter, "input", () => this.render())
-		;[this.categoryFilter, this.makerFilter, this.difficultyFilter, this.starsFilter, this.starsMaxFilter, this.bpmFilter, this.bpmMaxFilter, this.progressFilter].forEach(input => pageEvents.add(input, ["change", "input"], () => this.render()))
+		;[this.categoryFilter, this.makerFilter, this.difficultyFilter, this.starsFilter, this.starsMaxFilter, this.bpmFilter, this.bpmMaxFilter, this.progressFilter].forEach(input => pageEvents.add(input, ["change", "input"], () => { this.updateFilterToggle(); this.render() }))
 		this.tapCleanups.push(hubBindTap(this.newPlaylist, event => this.createPlaylist()))
+		this.tapCleanups.push(hubBindTap(this.filterToggle, event => this.toggleFilters()))
 		this.tapCleanups.push(hubBindTap(this.favoriteCurrent, event => {
 			var song = this.currentSong()
 			if (song) this.toggleFavorite(String(song.hash || song.id))
@@ -132,8 +137,9 @@ class LibraryHub {
 		this.panel.querySelector('[data-library-tab="discover"]').textContent = s.discover
 		this.filter.placeholder = s.filterSongs || s.filter
 		this.newPlaylist.textContent = s.newPlaylist || "New playlist"
-		this.favoriteCurrent.textContent = s.favorite
+		this.favoriteCurrent.textContent = this.isFavorite(this.currentSong()) ? (s.removeFavorite || s.favorite) : (s.favoriteCurrent || s.favorite)
 		this.addCurrent.textContent = s.addCurrent || s.add
+		this.updateFilterToggle()
 		this.categoryFilter.options[0].textContent = s.allCategories || "All categories"
 		this.makerFilter.options[0].textContent = s.allMakers || "All makers"
 		this.difficultyFilter.options[0].textContent = s.allDifficulties || "All difficulties"
@@ -150,13 +156,33 @@ class LibraryHub {
 		return this.songSelect && this.songSelect.songs && this.songSelect.songs[this.songSelect.selectedSong]
 	}
 
+	isFavorite(songOrHash) {
+		var hash = songOrHash && typeof songOrHash === "object" ? String(songOrHash.hash || songOrHash.id || "") : String(songOrHash || "")
+		return !!hash && this.state.favorites.indexOf(hash) !== -1
+	}
+
+	async syncFavorites(force) {
+		if (!account.loggedIn) return this.state.favorites
+		if (!force && Date.now() - this.favoriteSyncedAt < 30000) return this.state.favorites
+		if (this.favoriteSyncPending) return this.favoriteSyncPending
+		this.favoriteSyncPending = this.request("api/library/favorites").then(data => {
+			this.state.favorites = Array.isArray(data.song_hashes) ? data.song_hashes.slice() : []
+			this.favoriteSyncedAt = Date.now()
+			this.updateSelection(this.currentSong())
+			return this.state.favorites
+		}).finally(() => { this.favoriteSyncPending = null })
+		return this.favoriteSyncPending
+	}
+
 	updateSelection(song) {
 		var hash = song && song.courses ? String(song.hash || song.id) : null
-		var active = !!hash && this.state.favorites.indexOf(hash) !== -1
+		var active = !!hash && this.isFavorite(hash)
 		if (this.favoriteCurrent) {
 			this.favoriteCurrent.disabled = !hash
 			this.favoriteCurrent.setAttribute("aria-pressed", String(active))
 			this.favoriteCurrent.classList.toggle("active", active)
+			var s = strings.librarySocial || {}
+			this.favoriteCurrent.textContent = active ? (s.removeFavorite || s.favorite) : (s.favoriteCurrent || s.favorite || "Favorite")
 		}
 		if (this.addCurrent) this.addCurrent.disabled = !hash
 		var entry = document.getElementById("song-library-btn")
@@ -164,6 +190,27 @@ class LibraryHub {
 			entry.setAttribute("aria-pressed", String(active))
 			entry.classList.toggle("favorite-active", active)
 		}
+		if (this.songSelect && this.songSelect.playerLab && this.songSelect.playerLab.updateDifficultyFavorite) {
+			this.songSelect.playerLab.updateDifficultyFavorite(song)
+		}
+	}
+
+	toggleFilters() {
+		if (!this.filtersPanel || this.tab === "playlists") return
+		this.filtersOpen = !this.filtersOpen
+		this.filtersPanel.hidden = !this.filtersOpen
+		this.updateFilterToggle()
+	}
+
+	updateFilterToggle() {
+		if (!this.filterToggle) return
+		var s = strings.librarySocial || {}
+		var activeCount = [this.categoryFilter, this.makerFilter, this.difficultyFilter, this.starsFilter, this.starsMaxFilter, this.bpmFilter, this.bpmMaxFilter, this.progressFilter].filter(input => input && input.value).length
+		this.filterToggle.hidden = this.tab === "playlists"
+		this.filterToggle.setAttribute("aria-expanded", String(this.filtersOpen && this.tab !== "playlists"))
+		this.filterToggle.textContent = (this.filtersOpen ? (s.hideFilters || "Hide filters") : (s.moreFilters || "More filters")) + (activeCount ? " (" + activeCount + ")" : "")
+		this.filterToggle.classList.toggle("active", activeCount > 0)
+		if (this.filtersPanel) this.filtersPanel.hidden = !this.filtersOpen || this.tab === "playlists"
 	}
 
 	remove() {
@@ -188,6 +235,9 @@ class LibraryHub {
 		this.tab = tab
 		this.panel.querySelectorAll("[data-library-tab]").forEach(button => button.classList.toggle("active", button.dataset.libraryTab === tab))
 		this.newPlaylist.hidden = tab !== "playlists"
+		this.favoriteCurrent.hidden = tab === "playlists"
+		this.addCurrent.hidden = tab !== "playlists"
+		this.updateFilterToggle()
 		this.render()
 	}
 
@@ -239,6 +289,7 @@ class LibraryHub {
 		if (!account.loggedIn) return null
 		var result = await Promise.all([this.request("api/library/favorites"), this.request("api/library/playlists"), this.request("api/library/discover")])
 		this.state.favorites = Array.isArray(result[0].song_hashes) ? result[0].song_hashes.slice() : []
+		this.favoriteSyncedAt = Date.now()
 		return {favorites: result[0], playlists: result[1], discover: result[2]}
 	}
 
@@ -343,19 +394,22 @@ class LibraryHub {
 			title.textContent = song.title || song.originalTitle || hash
 			var meta = document.createElement("div")
 			meta.className = "hub-card-meta"
-			meta.textContent = [song.category, song.maker && song.maker.name, song.bpm_min ? (song.bpm_min + "–" + (song.bpm_max || song.bpm_min) + " BPM") : ""].filter(Boolean).join(" · ")
+			meta.textContent = [song.category, song.maker && song.maker.name].filter(Boolean).join(" · ")
 			var actions = document.createElement("div")
 			var score = typeof scoreStorage !== "undefined" && scoreStorage.scores ? scoreStorage.scores[hash] : null
-			var scoreSummary = Object.keys(song.courses || {}).filter(diff => song.courses[diff]).map(diff => {
-				var item = score && score[diff]
-				return diff.toUpperCase() + " " + Number(song.courses[diff].stars || 0) + "★" + (item && item.points != null ? " · " + Number(item.points).toLocaleString() : "") + (item && item.crown ? " · " + item.crown : "")
-			}).join(" / ")
-			if (scoreSummary) meta.textContent += " · " + scoreSummary
+			var stars = Object.values(song.courses || {}).filter(Boolean).map(course => Number(course.stars || 0)).filter(Number.isFinite)
+			var best = Object.values(score || {}).filter(item => item && item.points != null).reduce((value, item) => Math.max(value, Number(item.points) || 0), 0)
+			var summary = []
+			if (stars.length) summary.push((strings.librarySocial && strings.librarySocial.upTo || "Up to") + " " + Math.max.apply(Math, stars) + "★")
+			if (best) summary.push((strings.librarySocial && strings.librarySocial.bestScore || "Best") + " " + best.toLocaleString())
+			if (summary.length) meta.textContent += (meta.textContent ? " · " : "") + summary.join(" · ")
 			actions.className = "hub-card-actions"
+			var favorite = this.isFavorite(hash)
+			var labels = strings.librarySocial || {}
 			actions.innerHTML = '<button type="button" data-library-action="play" data-song-hash="' + this.escape(hash) + '">' + (strings.librarySocial ? strings.librarySocial.play : "Play") + '</button>' +
-				'<button type="button" data-library-action="favorite" data-song-hash="' + this.escape(hash) + '">' + (this.state.favorites.indexOf(hash) !== -1 ? "★" : "☆") + '</button>' +
+				'<button class="hub-icon-action" type="button" data-library-action="favorite" data-song-hash="' + this.escape(hash) + '" aria-label="' + this.escape(favorite ? (labels.removeFavorite || "Remove favorite") : (labels.favorite || "Favorite")) + '" aria-pressed="' + String(favorite) + '">' + (favorite ? "★" : "☆") + '</button>' +
 				'<button type="button" data-library-action="add" data-song-hash="' + this.escape(hash) + '">' + (strings.librarySocial ? strings.librarySocial.add : "Add") + '</button>'
-			actions.insertAdjacentHTML("afterbegin", '<button type="button" data-library-action="preview" data-song-hash="' + this.escape(hash) + '">' + (strings.librarySocial ? strings.librarySocial.preview : "Preview") + '</button>')
+			actions.insertAdjacentHTML("afterbegin", '<button class="hub-icon-action" type="button" data-library-action="preview" data-song-hash="' + this.escape(hash) + '" aria-label="' + this.escape(strings.librarySocial ? strings.librarySocial.preview : "Preview") + '">▶</button>')
 			card.append(title, meta, actions)
 			this.list.appendChild(card)
 		})
@@ -368,11 +422,13 @@ class LibraryHub {
 		filtered.forEach(playlist => {
 			var card = document.createElement("article")
 			card.className = "hub-card"
-			card.innerHTML = '<div class="hub-card-title">' + this.escape(playlist.name) + '</div><div class="hub-card-meta">' + ((playlist.song_hashes || playlist.songHashes || []).length) + ' songs</div><div class="hub-card-actions">' +
-				'<button type="button" data-library-action="open-playlist" data-playlist-id="' + this.escape(playlist.playlist_id || playlist.localId) + '">Open</button>' +
-				'<button type="button" data-library-action="delete-playlist" data-playlist-id="' + this.escape(playlist.playlist_id || playlist.localId) + '">Delete</button>' +
-				(playlist.playlist_id ? '<button type="button" data-library-action="share-playlist" data-playlist-id="' + this.escape(playlist.playlist_id) + '">Copy link</button>' : '') +
-				(playlist.playlist_id && playlist.shared ? '<button type="button" data-library-action="unshare-playlist" data-playlist-id="' + this.escape(playlist.playlist_id) + '">Stop sharing</button>' : '') + '</div>'
+			var s = strings.librarySocial || {}
+			var count = (playlist.song_hashes || playlist.songHashes || []).length
+			card.innerHTML = '<div class="hub-card-title">' + this.escape(playlist.name) + '</div><div class="hub-card-meta">' + count + ' ' + this.escape(s.songs || "songs") + '</div><div class="hub-card-actions">' +
+				'<button type="button" data-library-action="open-playlist" data-playlist-id="' + this.escape(playlist.playlist_id || playlist.localId) + '">' + this.escape(s.open || "Open") + '</button>' +
+				(playlist.playlist_id ? '<button class="hub-secondary-action" type="button" data-library-action="share-playlist" data-playlist-id="' + this.escape(playlist.playlist_id) + '">' + this.escape(s.share || "Share") + '</button>' : '') +
+				'<button class="hub-secondary-action" type="button" data-library-action="delete-playlist" data-playlist-id="' + this.escape(playlist.playlist_id || playlist.localId) + '">' + this.escape(s.delete || "Delete") + '</button>' +
+				(playlist.playlist_id && playlist.shared ? '<button class="hub-secondary-action" type="button" data-library-action="unshare-playlist" data-playlist-id="' + this.escape(playlist.playlist_id) + '">' + this.escape(s.stopSharing || "Stop sharing") + '</button>' : '') + '</div>'
 			this.list.appendChild(card)
 		})
 		return filtered.length
@@ -406,6 +462,7 @@ class LibraryHub {
 		if (wasFavorite) this.state.favorites = this.state.favorites.filter(value => value !== hash)
 		else this.state.favorites.push(hash)
 		this.saveLocal()
+		this.favoriteSyncedAt = Date.now()
 		this.updateSelection(this.currentSong())
 		try {
 			if (account.loggedIn) await this.request("api/library/favorites" + (wasFavorite ? "/" + encodeURIComponent(hash) : ""), wasFavorite ? "DELETE" : "POST", wasFavorite ? undefined : {song_hash: hash})

@@ -341,6 +341,19 @@ class PlayerLab {
 			;["mousedown", "mouseup", "touchstart", "touchend", "pointerdown", "pointerup", "click"].forEach(type => this.trainingTrigger.addEventListener(type, event => event.stopPropagation()))
 			this.trainingTrigger.addEventListener("click", () => this.openDifficultyControls())
 		}
+		if (!this.favoriteTrigger) {
+			this.favoriteTrigger = document.createElement("button")
+			this.favoriteTrigger.id = "difficulty-favorite-trigger"
+			this.favoriteTrigger.type = "button"
+			this.favoriteTrigger.setAttribute("aria-pressed", "false")
+			loader.screen.appendChild(this.favoriteTrigger)
+			;["mousedown", "mouseup", "touchstart", "touchend", "pointerdown", "pointerup"].forEach(type => this.favoriteTrigger.addEventListener(type, event => event.stopPropagation()))
+			this.favoriteTrigger.addEventListener("click", () => this.toggleDifficultyFavorite())
+		}
+		this.updateDifficultyFavorite(song)
+		if (this.songSelect.library && this.songSelect.library.syncFavorites) {
+			this.songSelect.library.syncFavorites().then(() => this.updateDifficultyFavorite(song)).catch(() => {})
+		}
 		if (!this.controls) {
 			this.controls = document.createElement("section")
 			this.controls.id = "difficulty-training-controls"
@@ -356,9 +369,35 @@ class PlayerLab {
 			this.controls.querySelectorAll("[data-training-mode]").forEach(button => button.addEventListener("click", () => this.renderTrainingMode(button.dataset.trainingMode)))
 		}
 		this.trainingTrigger.hidden = false
+		this.favoriteTrigger.hidden = false
 		this.controls.hidden = true
 		this.currentTrainingSong = song
 		this.renderTrainingMode(this.trainingMode || "practice")
+	}
+
+	updateDifficultyFavorite(song) {
+		if (!this.favoriteTrigger) return
+		var library = this.songSelect && this.songSelect.library
+		if (this.songSelect && this.songSelect.songs) song = this.songSelect.songs[this.songSelect.selectedSong] || song
+		var hash = song && (song.hash || song.id)
+		var active = !!(library && hash && library.isFavorite && library.isFavorite(String(hash)))
+		var labels = (typeof strings !== "undefined" && strings.librarySocial) || {}
+		var text = active ? "★" : "☆"
+		this.favoriteTrigger.textContent = text
+		this.favoriteTrigger.setAttribute("aria-pressed", String(active))
+		this.favoriteTrigger.setAttribute("aria-label", active ? (labels.removeFavorite || "Remove favorite") : (labels.favoriteCurrent || labels.favorite || "Favorite"))
+		this.favoriteTrigger.title = active ? (labels.removeFavorite || "Remove favorite") : (labels.favoriteCurrent || labels.favorite || "Favorite")
+		this.favoriteTrigger.classList.toggle("favorite-active", active)
+	}
+
+	toggleDifficultyFavorite() {
+		var song = this.songSelect && this.songSelect.songs && this.songSelect.songs[this.songSelect.selectedSong]
+		var library = this.songSelect && this.songSelect.library
+		var hash = song && (song.hash || song.id)
+		if (!song || !hash || !library || !library.toggleFavorite) return
+		var result = library.toggleFavorite(String(hash))
+		this.updateDifficultyFavorite(song)
+		if (result && typeof result.finally === "function") result.finally(() => this.updateDifficultyFavorite(song))
 	}
 
 	openDifficultyControls() {
@@ -374,6 +413,7 @@ class PlayerLab {
 	hideDifficultyControls() {
 		if (this.controls) this.controls.hidden = true
 		if (this.trainingTrigger) this.trainingTrigger.hidden = true
+		if (this.favoriteTrigger) this.favoriteTrigger.hidden = true
 	}
 
 	renderTrainingMode(mode) {
@@ -580,8 +620,10 @@ class PlayerLab {
 		this.remove()
 		if (this.controls) this.controls.remove()
 		if (this.trainingTrigger) this.trainingTrigger.remove()
+		if (this.favoriteTrigger) this.favoriteTrigger.remove()
 		this.controls = null
 		this.trainingTrigger = null
+		this.favoriteTrigger = null
 		this.songSelect = null
 	}
 }

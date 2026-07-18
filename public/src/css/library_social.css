@@ -1,5 +1,48 @@
 /* Shared six-button song-select rail.  The original buttons keep their IDs so
    existing keyboard/touch handlers remain compatible. */
+#difficulty-favorite-trigger {
+	display: grid;
+	place-items: center;
+	position: absolute;
+	left: calc(clamp(12px, 1.8vw, 36px) + clamp(56px, 7vmin, 78px) + 14px);
+	top: 50%;
+	z-index: 12;
+	box-sizing: border-box;
+	width: clamp(56px, 7vmin, 78px);
+	height: clamp(56px, 7vmin, 78px);
+	min-width: 44px;
+	min-height: 44px;
+	padding: 0 0 .08em;
+	border: 0;
+	border-radius: 50%;
+	background: rgba(255,255,255,.22);
+	box-shadow: 0 0 0 3px rgba(0,0,0,.45), 0 4px 10px rgba(0,0,0,.25);
+	color: #fff7b2;
+	cursor: pointer;
+	font: 900 clamp(34px, 5.2vmin, 56px)/1 "Arial Black", sans-serif;
+	-webkit-text-stroke: 2px #2b1400;
+	text-shadow: 0 2px 0 rgba(255,255,255,.6);
+	touch-action: manipulation;
+	transform: translateY(-50%);
+	transition: transform .12s ease, background-color .12s ease, color .12s ease;
+}
+
+#difficulty-favorite-trigger.favorite-active {
+	background: rgba(255,249,35,.48);
+	color: #fff923;
+	box-shadow: 0 0 0 3px rgba(0,0,0,.45), 0 0 18px rgba(255,249,35,.85);
+}
+
+#difficulty-favorite-trigger:hover,
+#difficulty-favorite-trigger:focus-visible {
+	background: rgba(255,249,35,.48);
+	transform: translateY(-50%) scale(1.06);
+	outline: 3px solid #fff;
+	outline-offset: 2px;
+}
+
+#difficulty-favorite-trigger[hidden] { display: none !important; }
+
 #song-option-buttons {
 	position: absolute;
 	right: var(--song-option-right);
@@ -205,6 +248,7 @@
 	margin-top: 8px;
 	flex: 0 0 auto;
 }
+.library-filters[hidden] { display: none !important; }
 .library-filters select,
 .library-filters label {
 	box-sizing: border-box;
@@ -254,9 +298,13 @@
 .hub-card-meta { min-height: 1.2em; color: #ffdca8; font-size: 12px; }
 .hub-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
 .hub-card-actions button { flex: 1 1 90px; min-height: 40px; padding: 7px 8px; font-size: 12px; }
+.hub-card-actions .hub-icon-action { flex: 0 0 44px; min-width: 44px; padding: 7px; font-size: 20px; }
+.hub-card-actions .hub-icon-action[aria-pressed="true"] { border-color: #fff923; color: #fff923; }
+.hub-card-actions .hub-secondary-action { flex: 0 1 auto; border-color: rgba(255,255,255,.22); background: rgba(255,255,255,.08); color: #f1dfe2; }
 .hub-empty { grid-column: 1 / -1; padding: 30px 10px; color: #ffdca8; text-align: center; }
 
 @media (max-width: 700px) and (orientation: portrait) {
+	#difficulty-favorite-trigger { left: 76px; width: 56px; height: 56px; font-size: 38px; }
 	#song-option-buttons {
 		right: calc(env(safe-area-inset-right, 0px) + max(1.8vmin, 8px));
 		bottom: calc(env(safe-area-inset-bottom, 0px) + max(1.8vmin, 8px) + 56px);
@@ -271,6 +319,10 @@
 	.hub-tabs button { min-height: 44px; padding: 7px 4px; font-size: 12px; }
 	.hub-list { grid-template-columns: 1fr; }
 	.library-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 96px; overflow: auto; }
+}
+
+@media (max-width: 420px) {
+	#difficulty-favorite-trigger { left: 68px; width: 50px; height: 50px; font-size: 34px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

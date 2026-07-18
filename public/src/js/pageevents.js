@@ -107,7 +107,7 @@ class PageEvents{
 		if(keyObj && (
 			keyObj.type === "both"
 			|| keyObj.type === "down" && event.type === "keydown"
-			|| keyObj.type === "up" && event.type === "up"
+			|| keyObj.type === "up" && event.type === "keyup"
 		)){
 			keyObj.callback(event)
 		}

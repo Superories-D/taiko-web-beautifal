@@ -19,7 +19,7 @@ class PageEvents{
 			type.forEach(type => this.add(target, type, callback, symbol))
 			return
 		}
-		this.remove(target, type)
+		this.remove(target, type, symbol)
 		var addedEvent = this.allEvents.get(symbol || target)
 		if(!addedEvent){
 			addedEvent = new Map()

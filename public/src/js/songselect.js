@@ -286,6 +286,7 @@ class SongSelect {
 		this.uploadModal = new UploadModal(this)
 		this.library = new LibraryHub(this)
 		this.social = new SocialHub(this)
+		this.feedback = typeof FeedbackAnalytics !== "undefined" ? new FeedbackAnalytics(this) : null
 		this.challengeRun = null
 		this.features = gameConfig.features || {}
 		this.siteMessagesEnabled = !!this.features.site_messages
@@ -520,6 +521,7 @@ class SongSelect {
 		this.easySettingsButton = document.getElementById("song-easy-settings-btn")
 		this.libraryButton = document.getElementById("song-library-btn")
 		this.socialButton = document.getElementById("song-social-btn")
+		this.feedbackButton = document.getElementById("song-feedback-btn")
 		if (strings.librarySocial) {
 			this.libraryButton.setAttribute("aria-label", strings.librarySocial.libraryTitle)
 			this.libraryButton.title = strings.librarySocial.libraryTitle
@@ -535,6 +537,7 @@ class SongSelect {
 		this.easySettingsButton.hidden = true
 		this.libraryButton.hidden = true
 		this.socialButton.hidden = true
+		if (this.feedbackButton) this.feedbackButton.hidden = true
 		pageEvents.add(this.searchButton, ["click", "touchend"], this.openSearchFromButton.bind(this))
 		pageEvents.add(this.weeklyChallengeButton, ["click", "touchend"], this.openWeeklyChallengeFromButton.bind(this))
 		pageEvents.add(this.easySettingsButton, ["click", "touchend"], this.openEasySettingsFromButton.bind(this))
@@ -554,6 +557,12 @@ class SongSelect {
 			event.stopPropagation()
 			if (this.state.screen === "song") this.social.display()
 		}))
+		if (this.feedbackButton && this.feedback) {
+			this.optionTapCleanups.push(optionTap(this.feedbackButton, event => {
+				event.stopPropagation()
+				if (this.state.screen === "song") this.feedback.displaySelected()
+			}))
+		}
 		if (this.topSongsEnabled) {
 			pageEvents.add(this.topSongsButton, ["click", "touchend"], this.openTopSongsFromButton.bind(this))
 			this.topSongs = new TopSongs(this)
@@ -1028,12 +1037,14 @@ class SongSelect {
 		this.easySettingsButton.hidden = !visible
 		this.libraryButton.hidden = !visible
 		this.socialButton.hidden = !visible
+		if (this.feedbackButton) this.feedbackButton.hidden = !visible
 		this.songSelect.classList.toggle("search-button-visible", visible)
 		this.songSelect.classList.toggle("top10-button-visible", visible && this.topSongsEnabled)
 		this.songSelect.classList.toggle("weekly-challenge-visible", challengeVisible)
 		this.songSelect.classList.toggle("easy-settings-button-visible", visible)
 		this.songSelect.classList.toggle("library-button-visible", visible)
 		this.songSelect.classList.toggle("social-button-visible", visible)
+		this.songSelect.classList.toggle("feedback-button-visible", visible)
 	}
 
 	changeType(delta) {

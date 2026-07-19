@@ -28,6 +28,7 @@ class Game{
 			return (type === "don" || type === "ka" || type === "daiDon" || type === "daiKa") && (!circle.branch || circle.branch.active)
 		}).length
 		this.soulPoints = this.rules.soulPoints(combo)
+		this.performanceTracker = typeof PerformanceAnalytics !== "undefined" ? PerformanceAnalytics.createTracker(this.songData.circles) : null
 		this.paused = false
 		this.started = false
 		this.mainMusicPlaying = false
@@ -318,6 +319,7 @@ class Game{
 		this.controller.displayScore(0, true)
 		this.updateCombo(0)
 		this.updateGlobalScore(0, 1)
+		this.recordPerformance(0, circle, null)
 		this.controller.recordBattleJudgement(0, circle)
 		if(this.controller.networkMultiplayer && this.controller.multiplayer === 1){
 			p2.send("note", {
@@ -394,6 +396,7 @@ class Game{
 		var keyTime = this.controller.getKeyTime()
 		var currentTime = circle.daiFailed ? circle.daiFailed.ms : keysDon ? keyTime["don"] : keyTime["ka"]
 		var relative = currentTime - circle.ms - this.controller.audioLatency
+		var timingOffset = relative
 		
 		if(relative >= this.rules.ok){
 			var fixedNote = this.fixNoteStream(keysDon)
@@ -450,6 +453,7 @@ class Game{
 			}
 			this.updateCombo(score)
 			this.updateGlobalScore(score, typeDai && keyDai ? 2 : 1, circle.gogoTime)
+			this.recordPerformance(score, circle, timingOffset)
 			this.controller.recordBattleJudgement(score, circle)
 			this.updateCurrentCircle()
 			if(circle.section){
@@ -845,6 +849,11 @@ class Game{
 			multiplier *= 1.2
 		}
 		this.globalScore.points += Math.floor(score * multiplier / 10) * 10
+	}
+	recordPerformance(score, circle, offset){
+		if(this.performanceTracker && !this.controller.autoPlayEnabled && !this.controller.multiplayer && !this.controller.aiBattle && !this.controller.ghostBattle){
+			this.performanceTracker.record(score, circle, offset)
+		}
 	}
 	setBranch(currentBranch, activeName, skipBattleSync){
 		var pastActive = currentBranch.active

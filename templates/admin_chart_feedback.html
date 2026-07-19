@@ -1,0 +1,56 @@
+{% extends 'admin.html' %}
+{% block content %}
+<div class="admin-page-header">
+    <div>
+        <h1>Chart Feedback</h1>
+        <p class="admin-kicker">Player reports require a manual moderation decision.</p>
+    </div>
+    <form method="get" class="admin-inline-form">
+        <select name="status" onchange="this.form.submit()">
+            <option value="all"{% if current_status == 'all' %} selected{% endif %}>All states</option>
+            {% for state in report_states %}
+            <option value="{{state}}"{% if current_status == state %} selected{% endif %}>{{state|title}}</option>
+            {% endfor %}
+        </select>
+    </form>
+</div>
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div class="message{% if category == 'error' %} message-error{% endif %}">{{ message }}</div>
+{% endfor %}
+
+{% if reports %}
+{% for report in reports %}
+<article class="admin-message chart-report-card">
+    <div class="admin-message-meta">
+        <strong>
+            {% if report.song_id %}<a href="{{config.basedir}}admin/songs/{{report.song_id}}">{{report.song_title}}</a>{% else %}{{report.song_title}}{% endif %}
+        </strong>
+        <span>{{report.difficulty|upper}}</span>
+        <span>{{report.reason_label}}</span>
+        <span>{{report.status|title}}</span>
+        <span>{{report.updated_at}}</span>
+    </div>
+    <p><strong>Reporter:</strong> {{report.reporter_username}}</p>
+    {% if report.position_ms is not none %}<p><strong>Position:</strong> {{'%.2f'|format(report.position_ms / 1000)}} seconds</p>{% endif %}
+    {% if report.description %}<div class="admin-message-body">{{report.description}}</div>{% endif %}
+    <form method="post" action="{{config.basedir}}admin/chart-feedback/{{report.report_id}}?status={{current_status}}" class="song-form chart-report-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Status
+            <select name="status">
+                {% for state in report_states %}<option value="{{state}}"{% if report.status == state %} selected{% endif %}>{{state|title}}</option>{% endfor %}
+            </select>
+        </label>
+        <label>Resolution
+            <input type="text" name="resolution" maxlength="300" value="{{report.resolution or ''}}">
+        </label>
+        <button type="submit" name="action" value="update">Save decision</button>
+        <button type="submit" name="action" value="hide-rating">Hide rating</button>
+        <button type="submit" name="action" value="show-rating">Show rating</button>
+        <button type="submit" name="action" value="disable-song" onclick="return confirm('Disable this song for all players?')">Disable song</button>
+    </form>
+</article>
+{% endfor %}
+{% else %}
+<div class="admin-message empty-message">No reports in this state.</div>
+{% endif %}
+{% endblock %}

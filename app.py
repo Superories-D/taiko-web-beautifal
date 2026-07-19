@@ -32,6 +32,12 @@ from flask_limiter import Limiter
 import flask
 import tjaf
 from library_social import register_library_social_routes
+from feedback_analytics import (
+    PERFORMANCE_RETENTION_DAYS,
+    REPORT_STATES,
+    rating_summary,
+    register_feedback_analytics_routes,
+)
 
 # ----
 
@@ -468,6 +474,17 @@ db.async_challenges.create_index([('recipient_username', 1), ('created_at', -1)]
 db.async_challenges.create_index('purge_at', expireAfterSeconds=0)
 ensure_unique_index(db.async_challenge_results, [('challenge_id', 1), ('username', 1)])
 db.async_challenge_results.create_index('purge_at', expireAfterSeconds=0)
+ensure_unique_index(db.chart_ratings, [('song_hash', 1), ('difficulty', 1), ('username', 1)])
+db.chart_ratings.create_index([('song_hash', 1), ('difficulty', 1), ('updated_at', -1)])
+ensure_unique_index(db.chart_rating_summaries, [('song_hash', 1), ('difficulty', 1)])
+ensure_unique_single_field_index(db.chart_reports, 'report_id')
+db.chart_reports.create_index([('status', 1), ('updated_at', -1)])
+db.chart_reports.create_index([('song_hash', 1), ('difficulty', 1), ('status', 1)])
+db.chart_reports.create_index([('reporter_username', 1), ('updated_at', -1)])
+ensure_unique_index(db.performance_runs, [('username', 1), ('run_id', 1)])
+db.performance_runs.create_index([('username', 1), ('finished_at', -1)])
+db.performance_runs.create_index([('username', 1), ('song_hash', 1), ('difficulty', 1), ('finished_at', -1)])
+db.performance_runs.create_index('finished_at', expireAfterSeconds=PERFORMANCE_RETENTION_DAYS * 24 * 60 * 60)
 
 VISIT_RETENTION_DAYS = 400
 VISIT_RETENTION_SECONDS = VISIT_RETENTION_DAYS * 24 * 60 * 60
@@ -841,7 +858,7 @@ def find_enabled_song_by_identity(song_hash):
             {'id': {'$in': song_ids}},
             {'title': song_hash}
         ]
-    }, {'_id': True})
+    })
 
 
 def build_public_top_songs_cache_rows(limit=TOP_SONGS_CACHE_MAX_ROWS):
@@ -1696,6 +1713,9 @@ def admin_user_data_counts(username):
         'board_posts': db.board_posts.count_documents({'username': username}),
         'message_reads': db.site_message_reads.count_documents({'username': username}),
         'visits': db.visit_records.count_documents({'username': username}),
+        'ratings': db.chart_ratings.count_documents({'username': username}),
+        'reports': db.chart_reports.count_documents({'reporter_username': username}),
+        'performance_runs': db.performance_runs.count_documents({'username': username}),
     }
 
 
@@ -1741,6 +1761,14 @@ def remove_user_account_data(username, user_filter=None):
     )
     db.site_message_reads.delete_many({'username': username})
     db.visit_records.delete_many({'username': username})
+    rated_charts = list(db.chart_ratings.find({'username': username}, {
+        'song_hash': True, 'difficulty': True, '_id': False
+    }))
+    db.chart_ratings.delete_many({'username': username})
+    for rated_chart in rated_charts:
+        rating_summary(db, rated_chart.get('song_hash'), rated_chart.get('difficulty'))
+    db.chart_reports.delete_many({'reporter_username': username})
+    db.performance_runs.delete_many({'username': username})
     # Old deployments may have stored account names on public leaderboard rows.
     db.leaderboard.delete_many({'username': username})
     # Keep aggregate song statistics and board conversations, but detach identity.
@@ -2573,6 +2601,80 @@ def route_admin_messages():
     user = db.users.find_one({'username': session['username']})
     return render_template('admin_messages.html',
         messages=messages, admin=user, config=get_config())
+
+
+@app.route(basedir + 'admin/chart-feedback')
+@admin_required(level=50)
+def route_admin_chart_feedback():
+    status = (request.args.get('status') or 'open').strip()
+    query = {}
+    if status != 'all':
+        if status not in REPORT_STATES:
+            return abort(400)
+        query['status'] = status
+    reports = list(db.chart_reports.find(query).sort('updated_at', -1).limit(250))
+    for report in reports:
+        song = find_enabled_song_by_identity(report.get('song_hash')) or db.songs.find_one({
+            '$or': [{'hash': report.get('song_hash')}, {'id': report.get('song_hash')}]
+        })
+        report['song_title'] = (song or {}).get('title') or report.get('song_hash')
+        report['song_id'] = (song or {}).get('id')
+        report['reason_label'] = str(report.get('reason') or 'other').replace('_', ' ').title()
+    return render_template(
+        'admin_chart_feedback.html', reports=reports, current_status=status,
+        report_states=REPORT_STATES, config=get_config()
+    )
+
+
+@app.route(basedir + 'admin/chart-feedback/<report_id>', methods=['POST'])
+@admin_required(level=50)
+def route_admin_chart_feedback_post(report_id):
+    if not re.fullmatch(r'[a-f0-9]{32}', report_id or ''):
+        return abort(404)
+    report = db.chart_reports.find_one({'report_id': report_id})
+    if not report:
+        return abort(404)
+    action = (request.form.get('action') or 'update').strip()
+    if action == 'hide-rating':
+        db.chart_rating_summaries.update_one({
+            'song_hash': report.get('song_hash'),
+            'difficulty': report.get('difficulty'),
+        }, {'$set': {'hidden': True, 'updated_at': datetime.utcnow()}}, upsert=True)
+        flash('Public rating summary hidden.')
+    elif action == 'show-rating':
+        db.chart_rating_summaries.update_one({
+            'song_hash': report.get('song_hash'),
+            'difficulty': report.get('difficulty'),
+        }, {'$set': {'hidden': False, 'updated_at': datetime.utcnow()}}, upsert=True)
+        flash('Public rating summary restored.')
+    elif action == 'disable-song':
+        song = find_enabled_song_by_identity(report.get('song_hash'))
+        if not song:
+            flash('Song is already disabled or unavailable.', 'error')
+        else:
+            db.songs.update_one({'_id': song['_id']}, {'$set': {'enabled': False}})
+            invalidate_song_derived_caches()
+            db.chart_reports.update_one({'report_id': report_id}, {'$set': {
+                'status': 'confirmed',
+                'resolution': 'Song disabled pending review.',
+                'resolved_by': session.get('username'),
+                'updated_at': datetime.utcnow(),
+            }})
+            flash('Song disabled and report confirmed.')
+    else:
+        status = (request.form.get('status') or '').strip()
+        resolution = (request.form.get('resolution') or '').strip()
+        if status not in REPORT_STATES or len(resolution) > 300:
+            flash('Invalid report update.', 'error')
+        else:
+            db.chart_reports.update_one({'report_id': report_id}, {'$set': {
+                'status': status,
+                'resolution': resolution or None,
+                'resolved_by': session.get('username') if status in ('confirmed', 'rejected', 'resolved') else None,
+                'updated_at': datetime.utcnow(),
+            }})
+            flash('Report updated.')
+    return redirect(basedir + 'admin/chart-feedback?status=' + (request.args.get('status') or 'open'))
 
 
 @app.route(basedir + 'admin/messages', methods=['POST'])
@@ -4243,6 +4345,17 @@ register_library_social_routes(
     serialize_public_song,
     decode_ghost_payload,
     encode_ghost_payload,
+)
+
+register_feedback_analytics_routes(
+    app,
+    db,
+    limiter,
+    csrf,
+    basedir,
+    login_required,
+    find_enabled_song_by_identity,
+    schema,
 )
 
 if __name__ == '__main__':

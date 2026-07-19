@@ -15,6 +15,7 @@
                 <div class="admin-brand">Taiko Admin</div>
                 <a href="{{config.basedir}}admin/overview"{% if request.path.endswith('/admin/overview') %} class="active"{% endif %}>Overview</a>
                 <a href="{{config.basedir}}admin/messages"{% if '/admin/messages' in request.path %} class="active"{% endif %}>Messages</a>
+                <a href="{{config.basedir}}admin/chart-feedback"{% if '/admin/chart-feedback' in request.path %} class="active"{% endif %}>Chart Feedback</a>
                 <a href="{{config.basedir}}admin/multiplayer"{% if '/admin/multiplayer' in request.path %} class="active"{% endif %}>Multiplayer</a>
                 <a href="{{config.basedir}}admin/songs"{% if '/admin/songs' in request.path %} class="active"{% endif %}>Songs</a>
                 <a href="{{config.basedir}}admin/users"{% if '/admin/users' in request.path %} class="active"{% endif %}>Users</a>

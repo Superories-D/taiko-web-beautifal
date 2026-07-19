@@ -2277,6 +2277,31 @@ translations.librarySocial = {
 	hourShort: {ja:"時間",en:"h",cn:"小时",tw:"小時",ko:"시간"},
 	minuteShort: {ja:"分",en:"m",cn:"分钟",tw:"分鐘",ko:"분"}
 }
+translations.feedbackAnalytics = {
+		title: {ja:"譜面フィードバック",en:"Chart feedback",cn:"谱面反馈",tw:"譜面回饋",ko:"채보 피드백"},
+		analysis: {ja:"プレイ分析",en:"Performance analysis",cn:"成绩分析",tw:"成績分析",ko:"플레이 분석"},
+		rating: {ja:"譜面を評価",en:"Rate this chart",cn:"评价谱面",tw:"評價譜面",ko:"채보 평가"},
+		report: {ja:"問題を報告",en:"Report a problem",cn:"举报问题",tw:"舉報問題",ko:"문제 신고"},
+		login: {ja:"評価・報告にはログインしてください。",en:"Sign in to rate or report.",cn:"请登录后评分或举报。",tw:"請登入後評分或舉報。",ko:"평가 또는 신고하려면 로그인하세요."},
+		playRequired: {ja:"標準プレイを1回完了してください。",en:"Complete a standard play first.",cn:"请先完成一次标准游玩。",tw:"請先完成一次標準遊玩。",ko:"먼저 표준 플레이를 완료하세요."},
+		noRating: {ja:"まだ評価はありません",en:"No ratings yet",cn:"暂无评分",tw:"暫無評分",ko:"아직 평가가 없습니다"},
+		submit: {ja:"送信",en:"Submit",cn:"提交",tw:"提交",ko:"제출"},
+		close: {ja:"閉じる",en:"Close",cn:"关闭",tw:"關閉",ko:"닫기"},
+		stars: {ja:"評価",en:"ratings",cn:"份评分",tw:"份評分",ko:"개 평가"},
+		accuracy: {ja:"精度",en:"Accuracy",cn:"准确率",tw:"準確率",ko:"정확도"},
+		weakest: {ja:"練習推奨区間",en:"Weakest section",cn:"最弱区间",tw:"最弱區間",ko:"취약 구간"},
+		practice: {ja:"この区間を練習",en:"Practice this section",cn:"练习此区间",tw:"練習此區間",ko:"이 구간 연습"},
+		sync: {ja:"音ズレ",en:"Audio sync",cn:"音画同步",tw:"音畫同步",ko:"음원 싱크"},
+		readability: {ja:"見やすさ",en:"Readability",cn:"可读性",tw:"可讀性",ko:"가독성"},
+		fun: {ja:"楽しさ",en:"Fun",cn:"趣味性",tw:"趣味性",ko:"재미"},
+		difficulty: {ja:"難易度",en:"Difficulty",cn:"难度标注",tw:"難度標註",ko:"난이도"},
+		reason: {ja:"理由",en:"Reason",cn:"原因",tw:"原因",ko:"이유"},
+		details: {ja:"詳細",en:"Details",cn:"详细说明",tw:"詳細說明",ko:"상세 설명"},
+		position: {ja:"位置（秒）",en:"Position (seconds)",cn:"位置（秒）",tw:"位置（秒）",ko:"위치(초)"},
+		thanks: {ja:"フィードバックありがとうございます。",en:"Thanks for the feedback.",cn:"感谢你的反馈。",tw:"感謝你的回饋。",ko:"피드백 감사합니다."},
+		reportSent: {ja:"報告を送信しました。",en:"Report submitted.",cn:"举报已提交。",tw:"舉報已提交。",ko:"신고가 제출되었습니다."},
+		unavailable: {ja:"フィードバックを読み込めません。",en:"Feedback is temporarily unavailable.",cn:"暂时无法加载反馈。",tw:"暫時無法載入回饋。",ko:"피드백을 불러올 수 없습니다."}
+}
 var allStrings = {}
 function separateStrings() {
 	for (var j in languageList) {

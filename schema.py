@@ -171,3 +171,64 @@ challenge_result = {
     'required': ['score', 'good', 'ok', 'bad', 'max_combo', 'drumroll', 'clear', 'ghost_payload', 'ghost_encoding'],
     'additionalProperties': False,
 }
+
+chart_rating = {
+    'type': 'object',
+    'properties': {
+        'song_hash': {'type': 'string', 'minLength': 1, 'maxLength': 500},
+        'difficulty': {'enum': ['easy', 'normal', 'hard', 'oni', 'ura']},
+        'stars': {'type': 'integer', 'minimum': 1, 'maximum': 5},
+        'tag': {'enum': ['sync', 'readability', 'fun', 'difficulty', None]},
+    },
+    'required': ['song_hash', 'difficulty', 'stars'],
+    'additionalProperties': False,
+}
+
+chart_report = {
+    'type': 'object',
+    'properties': {
+        'song_hash': {'type': 'string', 'minLength': 1, 'maxLength': 500},
+        'difficulty': {'enum': ['easy', 'normal', 'hard', 'oni', 'ura']},
+        'reason': {'enum': ['audio_sync', 'invalid_notes', 'display', 'metadata', 'copyright', 'inappropriate', 'other']},
+        'position_ms': {'type': ['integer', 'null'], 'minimum': 0, 'maximum': 86400000},
+        'description': {'type': 'string', 'maxLength': 300},
+    },
+    'required': ['song_hash', 'difficulty', 'reason'],
+    'additionalProperties': False,
+}
+
+performance_run = {
+    'type': 'object',
+    'properties': {
+        'run_id': {'type': 'string', 'pattern': '^[a-f0-9]{32}$'},
+        'song_hash': {'type': 'string', 'minLength': 1, 'maxLength': 500},
+        'difficulty': {'enum': ['easy', 'normal', 'hard', 'oni', 'ura']},
+        'score': {'type': 'integer', 'minimum': 0, 'maximum': 1000000000},
+        'good': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+        'ok': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+        'bad': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+        'max_combo': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+        'drumroll': {'type': 'integer', 'minimum': 0, 'maximum': 10000000},
+        'gauge': {'type': 'integer', 'minimum': 0, 'maximum': 10000},
+        'buckets': {
+            'type': 'array', 'minItems': 1, 'maxItems': 24,
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'start_ms': {'type': 'integer', 'minimum': 0, 'maximum': 86400000},
+                    'end_ms': {'type': 'integer', 'minimum': 1, 'maximum': 86400000},
+                    'good': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+                    'ok': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+                    'bad': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+                    'offset_sum_ms': {'type': 'integer', 'minimum': -1000000000, 'maximum': 1000000000},
+                    'offset_count': {'type': 'integer', 'minimum': 0, 'maximum': 1000000},
+                },
+                'required': ['start_ms', 'end_ms', 'good', 'ok', 'bad', 'offset_sum_ms', 'offset_count'],
+                'additionalProperties': False,
+            },
+        },
+        'rule_version': {'const': 'standard-v1'},
+    },
+    'required': ['run_id', 'song_hash', 'difficulty', 'score', 'good', 'ok', 'bad', 'max_combo', 'drumroll', 'gauge', 'buckets', 'rule_version'],
+    'additionalProperties': False,
+}

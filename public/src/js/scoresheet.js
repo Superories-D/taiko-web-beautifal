@@ -975,6 +975,14 @@ class Scoresheet {
 	}
 
 	saveScore() {
+		if (!this.analysisAttempted && typeof FeedbackAnalytics !== "undefined") {
+			this.analysisAttempted = true
+			try {
+				this.analysisResult = FeedbackAnalytics.finishResult(this.controller, this.resultsObj)
+			} catch (error) {
+				if (typeof errorMessage === "function") errorMessage(error && error.stack || String(error))
+			}
+		}
 		var leaderboardEligible = !this.controller.isLeaderboardEligible || this.controller.isLeaderboardEligible()
 		if (this.controller.saveScore && leaderboardEligible) {
 			if (this.resultsObj.points < 0) {
@@ -1075,6 +1083,8 @@ class Scoresheet {
 
 	clean() {
 		this.closed = true
+		var feedbackButton = document.getElementById("feedback-result-button")
+		if (feedbackButton && feedbackButton.parentNode) feedbackButton.parentNode.removeChild(feedbackButton)
 		this.keyboard.clean()
 		this.gamepad.clean()
 		this.draw.clean()

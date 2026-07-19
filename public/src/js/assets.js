@@ -8,6 +8,7 @@ var assets = {
 		"topsongs.js",
 		"weeklychallenge.js",
 		"playerlab.js",
+		"feedbackanalytics.js",
 		"titlescreen.js",
 		"scoresheet.js",
 		"easysettings.js",

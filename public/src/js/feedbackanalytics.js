@@ -69,6 +69,7 @@ class FeedbackAnalytics {
 		this.songSelect = songSelect || null
 		this.overlay = null
 		this.resultController = null
+		this.displayRequest = 0
 	}
 
 	labels() {
@@ -170,12 +171,26 @@ class FeedbackAnalytics {
 		this.overlay = document.createElement("div")
 		this.overlay.id = "feedback-analytics-overlay"
 		this.overlay.hidden = true
-		this.overlay.addEventListener("click", event => { if (event.target === this.overlay) this.close() })
+		this.overlay.addEventListener("mousedown", event => this.onOverlayClose(event))
+		this.overlay.addEventListener("touchstart", event => this.onOverlayClose(event), {passive: false})
+		this.overlay.addEventListener("click", event => this.onOverlayClose(event))
 		document.body.appendChild(this.overlay)
 		return this.overlay
 	}
 
+	onOverlayClose(event) {
+		var target = event && event.target
+		var closeButton = target && target.closest ? target.closest(".feedback-close") : null
+		var primaryPress = event && (event.type === "touchstart" || event.type === "click" || event.which === 1)
+		if (!primaryPress || (target !== this.overlay && !closeButton)) return
+		if (event.cancelable) event.preventDefault()
+		if (event.stopPropagation) event.stopPropagation()
+		var owner = this.overlay && this.overlay.feedbackAnalyticsOwner
+		;(owner || this).close()
+	}
+
 	close() {
+		this.displayRequest++
 		if (this.overlay) this.overlay.hidden = true
 	}
 
@@ -194,6 +209,7 @@ class FeedbackAnalytics {
 
 	showRun(result) {
 		var labels = this.labels(), overlay = this.ensureOverlay()
+		overlay.feedbackAnalyticsOwner = this
 		overlay.innerHTML = ""
 		var panel = document.createElement("section")
 		panel.id = "feedback-analytics-panel"
@@ -297,6 +313,7 @@ class FeedbackAnalytics {
 
 	async displaySelected() {
 		if (!this.songSelect || this.songSelect.state.screen !== "song") return
+		var displayRequest = ++this.displayRequest
 		var song = this.songSelect.songs[this.songSelect.selectedSong]
 		if (!song || song.action) return
 		var index = this.songSelect.selectedDiff - this.songSelect.diffOptions.length
@@ -317,7 +334,8 @@ class FeedbackAnalytics {
 		try {
 			var data = await FeedbackAnalytics.api("api/performance/history?hash=" + encodeURIComponent(songHash) + "&difficulty=" + encodeURIComponent(difficulty) + "&limit=1")
 			var latest = data.runs && data.runs[0]
-			if (!latest || !this.songSelect || this.songSelect.songs[this.songSelect.selectedSong] !== song) return
+			if (!latest || displayRequest !== this.displayRequest || !this.overlay || this.overlay.hidden ||
+				!this.songSelect || this.songSelect.songs[this.songSelect.selectedSong] !== song) return
 			latest.worst = PerformanceAnalytics.worstBucket(latest)
 			this.showRun(latest)
 		} catch (_error) {}

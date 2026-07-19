@@ -69,6 +69,52 @@ test("local run lookup returns the latest run for a selected chart", () => {
   delete global.localStorage
 })
 
+test("mobile touch on the feedback close button closes immediately", () => {
+  const ui = new FeedbackAnalytics()
+  ui.overlay = {hidden: false, feedbackAnalyticsOwner: ui}
+  let prevented = false
+  let stopped = false
+  const closeButton = {closest: selector => selector === ".feedback-close" ? closeButton : null}
+  ui.onOverlayClose({
+    type: "touchstart",
+    target: closeButton,
+    cancelable: true,
+    preventDefault() { prevented = true },
+    stopPropagation() { stopped = true }
+  })
+  assert.equal(ui.overlay.hidden, true)
+  assert.equal(prevented, true)
+  assert.equal(stopped, true)
+})
+
+test("closing feedback prevents a pending mobile history request from reopening it", async () => {
+  const song = {hash: "slow-chart", courses: {oni: {}}}
+  const ui = new FeedbackAnalytics({
+    state: {screen: "song"}, songs: [song], selectedSong: 0,
+    selectedDiff: 0, diffOptions: [], difficultyId: ["oni"]
+  })
+  const shown = []
+  ui.showRun = result => {
+    shown.push(result)
+    ui.overlay = {hidden: false, feedbackAnalyticsOwner: ui}
+  }
+  let finishRequest
+  const originalApi = FeedbackAnalytics.api
+  FeedbackAnalytics.api = () => new Promise(resolve => { finishRequest = resolve })
+  global.account = {loggedIn: true}
+  try {
+    const pending = ui.displaySelected()
+    ui.close()
+    finishRequest({runs: [{song_hash: "slow-chart", difficulty: "oni", buckets: []}]})
+    await pending
+    assert.equal(shown.length, 1)
+    assert.equal(ui.overlay.hidden, true)
+  } finally {
+    FeedbackAnalytics.api = originalApi
+    delete global.account
+  }
+})
+
 test("analytics failures cannot interrupt the original score-save lifecycle", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "public", "src", "js", "scoresheet.js"), "utf8")
   let captured = ""

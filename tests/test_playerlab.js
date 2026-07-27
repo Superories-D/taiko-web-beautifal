@@ -1,5 +1,8 @@
 const test = require("node:test")
 const assert = require("node:assert/strict")
+const fs = require("node:fs")
+const path = require("node:path")
+const vm = require("node:vm")
 
 global.localStorage = {
 	data: {},
@@ -32,6 +35,7 @@ test("practice mode trims and rebases chart data", () => {
 	assert.equal(controller.offset, 8750)
 	assert.equal(controller.saveScore, false)
 	assert.equal(controller.practiceMode.loop, true)
+	assert.deepEqual(controller.selectedSong.practiceMode, {start: 10, end: 20, loop: true})
 })
 
 test("practice mode rejects an empty range without changing score eligibility", () => {
@@ -44,6 +48,64 @@ test("practice mode rejects an empty range without changing score eligibility", 
 	assert.equal(PlayerLab.applyPractice(controller), false)
 	assert.equal(controller.saveScore, true)
 	assert.equal(controller.selectedSong.practiceMode, null)
+})
+
+test("saved practice ranges are drafts and do not arm a refreshed training session", () => {
+	localStorage.data = {}
+	const song = {id: 42}
+	localStorage.setItem(PlayerLab.storageKey, JSON.stringify({
+		practice: {songId: 42, start: 12, end: 24, loop: true},
+		activeMode: "practice"
+	}))
+
+	const refreshed = new PlayerLab({})
+	assert.deepEqual(PlayerLab.practiceFor(song), {songId: 42, start: 12, end: 24, loop: true})
+	assert.equal(refreshed.hasArmedPractice(song), false)
+	assert.equal("activeMode" in PlayerLab.loadState(), false)
+	assert.equal("activeMode" in JSON.parse(localStorage.getItem(PlayerLab.storageKey)), false)
+})
+
+test("an armed practice range is consumed once while its draft remains saved", () => {
+	localStorage.data = {}
+	const song = {id: 7}
+	const playerLab = new PlayerLab({})
+	playerLab.savePractice(song, {start: 5, end: 15, loop: false})
+
+	assert.equal(playerLab.hasArmedPractice(song), true)
+	assert.deepEqual(playerLab.consumeArmedPractice(song), {songId: 7, start: 5, end: 15, loop: false})
+	assert.equal(playerLab.consumeArmedPractice(song), null)
+	assert.deepEqual(PlayerLab.practiceFor(song), {songId: 7, start: 5, end: 15, loop: false})
+})
+
+test("clearing or leaving practice cancels the pending run", () => {
+	localStorage.data = {}
+	const song = {id: 9}
+	const playerLab = new PlayerLab({})
+	playerLab.savePractice(song, {start: 1, end: 8, loop: true})
+	playerLab.cancelArmedPractice()
+	assert.equal(playerLab.hasArmedPractice(song), false)
+	assert.ok(PlayerLab.practiceFor(song))
+
+	playerLab.armPractice(song, PlayerLab.practiceFor(song))
+	playerLab.clearPractice()
+	assert.equal(playerLab.hasArmedPractice(song), false)
+	assert.equal(PlayerLab.practiceFor(song), null)
+})
+
+test("training UI strings exist for every supported language", () => {
+	const source = fs.readFileSync(path.join(__dirname, "../public/src/js/strings.js"), "utf8")
+	const context = {}
+	vm.runInNewContext(source, context)
+	const keys = Object.keys(context.translations.playerLab)
+	for (const language of ["ja", "en", "cn", "tw", "ko"]) {
+		assert.ok(context.allStrings[language].playerLab)
+		for (const key of keys) {
+			assert.equal(typeof context.translations.playerLab[key][language], "string")
+			assert.notEqual(context.translations.playerLab[key][language].trim(), "")
+			assert.equal(typeof context.allStrings[language].playerLab[key], "string")
+			assert.notEqual(context.allStrings[language].playerLab[key].trim(), "")
+		}
+	}
 })
 
 test("ghost race records compact judgements and only replaces the best run", () => {

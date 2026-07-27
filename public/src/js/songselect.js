@@ -1414,7 +1414,10 @@ class SongSelect {
 		this.pointer(false)
 	}
 	toSongSelect(fromP2) {
-		if (this.playerLab) this.playerLab.hideDifficultyControls()
+		if (this.playerLab) {
+			this.playerLab.cancelArmedPractice()
+			this.playerLab.hideDifficultyControls()
+		}
 		if (p2.session && !fromP2) {
 			if (!this.state.selLock) {
 				this.state.selLock = true
@@ -1445,14 +1448,13 @@ class SongSelect {
 		var aiBattleEnabled = typeof EasySettings !== "undefined" && EasySettings.isAiBattleEnabled()
 		var blockedMode = p2.session || this.state.options === 1 || this.state.options === 2 || !!shift || !!ctrl
 		if (trainingMode && (blockedMode || aiBattleEnabled)) {
-			if (typeof EasySettings !== "undefined") EasySettings.showConflict("训练模式不能与 AI Battle、自动演奏或多人同时使用。")
+			if (typeof EasySettings !== "undefined") EasySettings.showConflict(strings.playerLab.modeConflict)
 			return
 		}
 		if(aiBattleEnabled && blockedMode){
 			EasySettings.showConflict()
 			return
 		}
-		this.clean()
 		var selectedSong = this.songs[this.selectedSong]
 		assets.sounds["v_diffsel"].stop()
 		this.playSound("se_don", 0, p2.session ? p2.player : false)
@@ -1482,7 +1484,8 @@ class SongSelect {
 			multiplayer = ctrl
 		}
 		var diff = this.challengeRun ? this.challengeRun.difficulty : this.difficultyId[difficulty]
-		var practiceMode = typeof PlayerLab !== "undefined" && !autoplay && !multiplayer && !aiBattleEnabled && trainingMode !== "ghost" ? PlayerLab.practiceFor(selectedSong) : null
+		var practiceMode = typeof PlayerLab !== "undefined" && this.playerLab && !autoplay && !multiplayer && !aiBattleEnabled && !trainingMode ? this.playerLab.consumeArmedPractice(selectedSong) : null
+		this.clean()
 
 		new LoadSong({
 			"title": selectedSong.title,
@@ -1507,19 +1510,19 @@ class SongSelect {
 	startSelectedTrainingMode(mode, requestedDifficulty, virtualDrumEnabled) {
 		if (!this.playerLab || this.state.screen !== "difficulty") return
 		var song = this.songs[this.selectedSong]
-		if (mode === "ghost" && PlayerLab.practiceFor(song)) {
-			if (typeof EasySettings !== "undefined") EasySettings.showConflict("请先清除当前歌曲的段落练习，再开始幽灵对战。")
+		if (mode === "ghost" && this.playerLab.hasArmedPractice(song)) {
+			if (typeof EasySettings !== "undefined") EasySettings.showConflict(strings.playerLab.clearPracticeBeforeGhost)
 			return
 		}
 		var difficulty = requestedDifficulty || (this.playerLab && this.playerLab.getSelectedDifficulty())
 		var index = this.difficultyId.indexOf(difficulty)
 		if (mode === "ghost") {
 			if (!difficulty || !song.courses || !song.courses[difficulty]) {
-				if (typeof EasySettings !== "undefined") EasySettings.showConflict("请选择当前歌曲已有的难度。")
+				if (typeof EasySettings !== "undefined") EasySettings.showConflict(strings.playerLab.selectAvailableDifficulty)
 				return
 			}
 			if (!PlayerLab.ghostAvailable({hash: song.hash || song.id, id: song.id, difficulty: difficulty})) {
-				if (typeof EasySettings !== "undefined") EasySettings.showConflict("当前难度还没有幽灵记录，请先正常单人游玩一次。")
+				if (typeof EasySettings !== "undefined") EasySettings.showConflict(PlayerLab.format(strings.playerLab.ghostMissing, this.difficulty[index] || difficulty.toUpperCase()))
 				return
 			}
 		}
@@ -1568,7 +1571,7 @@ class SongSelect {
 	}
 	startPlayerLabSong(song, diff, extra) {
 		if ((typeof EasySettings !== "undefined" && EasySettings.isAiBattleEnabled()) || (typeof p2 !== "undefined" && p2.session) || this.state.options === 1 || this.state.options === 2) {
-			if (typeof EasySettings !== "undefined") EasySettings.showConflict("每日挑战和推荐只能在关闭 AI Battle、自动演奏及多人模式后开始。")
+			if (typeof EasySettings !== "undefined") EasySettings.showConflict(strings.playerLab.dailyRecommendConflict)
 			return
 		}
 		var touchEnabled = this.touchEnabled

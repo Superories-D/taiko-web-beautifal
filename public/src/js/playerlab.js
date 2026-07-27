@@ -2,6 +2,7 @@ class PlayerLab {
 	constructor(songSelect) {
 		this.songSelect = songSelect
 		this.opened = false
+		this.armedPractice = null
 	}
 
 	static get storageKey() {
@@ -21,19 +22,74 @@ class PlayerLab {
 
 	static loadState() {
 		try {
-			return Object.assign({practice: null, ghostEnabled: true, virtualDrumEnabled: PlayerLab.isMobileDevice(), dailyRuns: {}}, JSON.parse(localStorage.getItem(PlayerLab.storageKey) || "{}"))
+			var state = Object.assign({practice: null, ghostEnabled: true, virtualDrumEnabled: PlayerLab.isMobileDevice(), dailyRuns: {}}, JSON.parse(localStorage.getItem(PlayerLab.storageKey) || "{}"))
+			var legacyActiveMode = Object.prototype.hasOwnProperty.call(state, "activeMode")
+			delete state.activeMode
+			if (legacyActiveMode) localStorage.setItem(PlayerLab.storageKey, JSON.stringify(state))
+			return state
 		} catch (_error) {
 			return {practice: null, ghostEnabled: true, virtualDrumEnabled: PlayerLab.isMobileDevice(), dailyRuns: {}}
 		}
 	}
 
 	static saveState(state) {
-		localStorage.setItem(PlayerLab.storageKey, JSON.stringify(state))
+		var storedState = Object.assign({}, state)
+		delete storedState.activeMode
+		localStorage.setItem(PlayerLab.storageKey, JSON.stringify(storedState))
 	}
 
 	static practiceFor(song) {
+		if (!song) return null
 		var practice = PlayerLab.loadState().practice
 		return practice && String(practice.songId) === String(song.id || song.folder) ? practice : null
+	}
+
+	static format(message, ...values) {
+		return String(message || "").replace(/%(\d+)/g, (_match, index) => {
+			var value = values[Number(index) - 1]
+			return typeof value === "undefined" || value === null ? "" : String(value)
+		})
+	}
+
+	armPractice(song, config) {
+		if (!song || !config) return null
+		this.armedPractice = Object.assign({}, config, {songId: song.id || song.folder})
+		return Object.assign({}, this.armedPractice)
+	}
+
+	hasArmedPractice(song) {
+		return !!(song && this.armedPractice && String(this.armedPractice.songId) === String(song.id || song.folder))
+	}
+
+	consumeArmedPractice(song) {
+		if (!this.hasArmedPractice(song)) return null
+		var practice = Object.assign({}, this.armedPractice)
+		this.armedPractice = null
+		return practice
+	}
+
+	cancelArmedPractice() {
+		this.armedPractice = null
+	}
+
+	savePractice(song, config) {
+		var state = PlayerLab.loadState()
+		state.practice = {
+			songId: song.id || song.folder,
+			start: config.start,
+			end: config.end,
+			loop: config.loop !== false
+		}
+		PlayerLab.saveState(state)
+		this.armPractice(song, state.practice)
+		return Object.assign({}, state.practice)
+	}
+
+	clearPractice() {
+		var state = PlayerLab.loadState()
+		state.practice = null
+		PlayerLab.saveState(state)
+		this.cancelArmedPractice()
 	}
 
 	static applyPractice(controller) {
@@ -331,12 +387,14 @@ class PlayerLab {
 		if (!this.songSelect || !this.songSelect.state || this.songSelect.state.screen !== "difficulty") return
 		var song = this.songSelect.songs[this.songSelect.selectedSong]
 		if (!song || !song.courses) return
+		var text = strings.playerLab
 		if (!this.trainingTrigger) {
 			this.trainingTrigger = document.createElement("button")
 			this.trainingTrigger.id = "difficulty-training-trigger"
 			this.trainingTrigger.type = "button"
-			this.trainingTrigger.innerHTML = "<span>训练</span>"
-			this.trainingTrigger.setAttribute("aria-label", "打开训练选项")
+			this.trainingTrigger.innerHTML = "<span></span>"
+			this.trainingTrigger.querySelector("span").textContent = text.trigger
+			this.trainingTrigger.setAttribute("aria-label", text.openOptions)
 			loader.screen.appendChild(this.trainingTrigger)
 			;["mousedown", "mouseup", "touchstart", "touchend", "pointerdown", "pointerup", "click"].forEach(type => this.trainingTrigger.addEventListener(type, event => event.stopPropagation()))
 			this.trainingTrigger.addEventListener("click", () => this.openDifficultyControls())
@@ -359,8 +417,8 @@ class PlayerLab {
 			this.controls.id = "difficulty-training-controls"
 			this.controls.setAttribute("role", "dialog")
 			this.controls.setAttribute("aria-modal", "true")
-			this.controls.innerHTML = '<div class="difficulty-training-panel"><div class="difficulty-training-heading"><span>训练选项</span><button type="button" class="difficulty-training-close" aria-label="关闭训练选项">×</button></div>' +
-				'<div class="difficulty-training-tabs"><button type="button" data-training-mode="practice">段落练习</button><button type="button" data-training-mode="ghost">幽灵对战</button><button type="button" data-training-mode="daily">每日挑战</button><button type="button" data-training-mode="recommend">推荐</button></div>' +
+			this.controls.innerHTML = '<div class="difficulty-training-panel"><div class="difficulty-training-heading"><span>' + text.optionsTitle + '</span><button type="button" class="difficulty-training-close" aria-label="' + text.closeOptions + '">×</button></div>' +
+				'<div class="difficulty-training-tabs"><button type="button" data-training-mode="practice">' + text.practiceTab + '</button><button type="button" data-training-mode="ghost">' + text.ghostTab + '</button><button type="button" data-training-mode="daily">' + text.dailyTab + '</button><button type="button" data-training-mode="recommend">' + text.recommendTab + '</button></div>' +
 				'<div class="difficulty-training-body"></div></div>'
 			loader.screen.appendChild(this.controls)
 			;["mousedown", "mouseup", "touchstart", "touchend", "pointerdown", "pointerup", "click"].forEach(type => this.controls.addEventListener(type, event => event.stopPropagation()))
@@ -418,6 +476,7 @@ class PlayerLab {
 
 	renderTrainingMode(mode) {
 		if (!this.controls) return
+		var text = strings.playerLab
 		this.trainingMode = mode
 		this.controls.querySelectorAll("[data-training-mode]").forEach(button => button.classList.toggle("active", button.dataset.trainingMode === mode))
 		var song = this.currentTrainingSong || this.songSelect.songs[this.songSelect.selectedSong]
@@ -428,14 +487,23 @@ class PlayerLab {
 		var trainingConflict = settingsConflict || battleConflict
 		if (mode === "practice") {
 			var practice = PlayerLab.practiceFor(song) || {start: 0, end: 30, loop: true}
-			body.innerHTML = '<p>在当前选中的难度中循环练习一段谱面。</p><div class="difficulty-training-fields"><label>开始 <input data-practice-start type="number" min="0" step="1" value="' + practice.start + '"> 秒</label><label>结束 <input data-practice-end type="number" min="1" step="1" value="' + practice.end + '"> 秒</label><label><input data-practice-loop type="checkbox" ' + (practice.loop !== false ? "checked" : "") + '> 自动循环</label></div><button type="button" data-practice-save>启用练习</button><button type="button" data-practice-clear>清除</button><p class="difficulty-training-status"></p>'
+			body.innerHTML = '<p>' + text.practiceDescription + '</p><div class="difficulty-training-fields"><label>' + text.start + ' <input data-practice-start type="number" min="0" step="1" value="' + practice.start + '"> ' + text.seconds + '</label><label>' + text.end + ' <input data-practice-end type="number" min="1" step="1" value="' + practice.end + '"> ' + text.seconds + '</label><label><input data-practice-loop type="checkbox" ' + (practice.loop !== false ? "checked" : "") + '> ' + text.autoLoop + '</label></div><button type="button" data-practice-save>' + text.enablePractice + '</button><button type="button" data-practice-clear>' + text.clear + '</button><p class="difficulty-training-status"></p>'
+			if (this.hasArmedPractice(song)) body.querySelector(".difficulty-training-status").textContent = text.practiceArmed
+			else if (PlayerLab.practiceFor(song)) body.querySelector(".difficulty-training-status").textContent = text.practiceDraftSaved
 			body.querySelector("[data-practice-save]").addEventListener("click", () => {
 				var start = Number(body.querySelector("[data-practice-start]").value), end = Number(body.querySelector("[data-practice-end]").value), status = body.querySelector(".difficulty-training-status")
-				if (trainingConflict) { status.textContent = "练习与 AI Battle、自动演奏及多人模式互斥。"; status.className = "difficulty-training-status error"; return }
-				if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) { status.textContent = "结束时间必须大于开始时间。"; status.className = "difficulty-training-status error"; return }
-				state.practice = {songId: song.id, start: start, end: end, loop: body.querySelector("[data-practice-loop]").checked}; state.activeMode = "practice"; PlayerLab.saveState(state); status.textContent = "已启用，确认当前难度即可开始。"; status.className = "difficulty-training-status success"
+				if (trainingConflict) { status.textContent = text.modeConflict; status.className = "difficulty-training-status error"; return }
+				if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) { status.textContent = text.invalidRange; status.className = "difficulty-training-status error"; return }
+				var config = this.savePractice(song, {start: start, end: end, loop: body.querySelector("[data-practice-loop]").checked})
+				state.practice = config
+				status.textContent = text.practiceArmed
+				status.className = "difficulty-training-status success"
 			})
-			body.querySelector("[data-practice-clear]").addEventListener("click", () => { state.practice = null; if (state.activeMode === "practice") state.activeMode = null; PlayerLab.saveState(state); body.querySelector(".difficulty-training-status").textContent = "已清除练习区间。" })
+			body.querySelector("[data-practice-clear]").addEventListener("click", () => {
+				this.clearPractice()
+				state.practice = null
+				body.querySelector(".difficulty-training-status").textContent = text.practiceCleared
+			})
 		} else if (mode === "ghost") {
 			var ghostDifficulties = PlayerLab.ghostDifficulties(song)
 			var selectedDiff = this.ghostDifficulty && ghostDifficulties.indexOf(this.ghostDifficulty) !== -1 ? this.ghostDifficulty : this.getSelectedDifficulty()
@@ -444,32 +512,32 @@ class PlayerLab {
 			var ghostSong = {hash: song.hash || song.id, id: song.id, difficulty: selectedDiff || "oni"}
 			var available = !!selectedDiff && PlayerLab.ghostAvailable(ghostSong)
 			var conflict = trainingConflict
-			var labels = {easy: (this.songSelect.difficulty && this.songSelect.difficulty[0]) || "简单", normal: (this.songSelect.difficulty && this.songSelect.difficulty[1]) || "普通", hard: (this.songSelect.difficulty && this.songSelect.difficulty[2]) || "困难", oni: (this.songSelect.difficulty && this.songSelect.difficulty[3]) || "魔王", ura: "里"}
-			body.innerHTML = '<p>在这里直接选择要挑战的难度，不需要移动外层光标。</p><div class="difficulty-training-ghost-difficulties" role="group" aria-label="幽灵难度"></div><p class="difficulty-training-ghost-info"></p><button type="button" data-ghost-start>' + (conflict ? "查看冲突说明" : (available ? "开始幽灵对战" : "如何生成幽灵")) + '</button><label class="difficulty-training-check"><input data-ghost-record type="checkbox" ' + (state.ghostEnabled !== false ? "checked" : "") + '> 普通游玩时记录新幽灵</label><label class="difficulty-training-check"><input data-ghost-virtual-drum type="checkbox" ' + (state.virtualDrumEnabled ? "checked" : "") + '> 开启虚拟鼓</label><p class="difficulty-training-status"></p>'
+			var difficultyLabels = {easy: this.songSelect.difficulty[0] || strings.easy, normal: this.songSelect.difficulty[1] || strings.normal, hard: this.songSelect.difficulty[2] || strings.hard, oni: this.songSelect.difficulty[3] || strings.oni, ura: text.ura}
+			body.innerHTML = '<p>' + text.ghostDescription + '</p><div class="difficulty-training-ghost-difficulties" role="group" aria-label="' + text.ghostDifficulty + '"></div><p class="difficulty-training-ghost-info"></p><button type="button" data-ghost-start>' + (conflict ? text.showConflict : (available ? text.startGhost : text.howToCreateGhost)) + '</button><label class="difficulty-training-check"><input data-ghost-record type="checkbox" ' + (state.ghostEnabled !== false ? "checked" : "") + '> ' + text.recordGhost + '</label><label class="difficulty-training-check"><input data-ghost-virtual-drum type="checkbox" ' + (state.virtualDrumEnabled ? "checked" : "") + '> ' + text.virtualDrum + '</label><p class="difficulty-training-status"></p>'
 			var difficultyButtons = body.querySelector(".difficulty-training-ghost-difficulties")
 			ghostDifficulties.forEach(diff => {
 				var button = document.createElement("button")
 				button.type = "button"
 				button.dataset.ghostDifficulty = diff
-				button.textContent = labels[diff] || diff.toUpperCase()
+				button.textContent = difficultyLabels[diff] || diff.toUpperCase()
 				button.className = (diff === selectedDiff ? "active " : "") + (PlayerLab.ghostAvailable({hash: ghostSong.hash, id: song.id, difficulty: diff}) ? "has-ghost" : "")
 				button.addEventListener("click", () => { this.ghostDifficulty = diff; this.renderTrainingMode("ghost") })
 				difficultyButtons.appendChild(button)
 			})
 			var ghostInfo = body.querySelector(".difficulty-training-ghost-info")
-			ghostInfo.textContent = conflict ? "幽灵对战不能与 AI Battle、自动演奏或实时多人同时使用。" : (available ? labels[selectedDiff] + "难度已有最佳幽灵，可以开始对战。" : (selectedDiff ? labels[selectedDiff] + "难度还没有幽灵记录，请先正常单人游玩一次。" : "当前歌曲没有可用难度。"))
+			ghostInfo.textContent = conflict ? text.ghostModeConflict : (available ? PlayerLab.format(text.ghostReady, difficultyLabels[selectedDiff]) : (selectedDiff ? PlayerLab.format(text.ghostMissing, difficultyLabels[selectedDiff]) : text.noDifficulty))
 			body.querySelector("[data-ghost-record]").addEventListener("change", event => { state.ghostEnabled = event.target.checked; PlayerLab.saveState(state) })
 			body.querySelector("[data-ghost-virtual-drum]").addEventListener("change", event => { state.virtualDrumEnabled = event.target.checked; PlayerLab.saveState(state) })
 			body.querySelector("[data-ghost-start]").addEventListener("click", () => {
-				if (conflict) body.querySelector(".difficulty-training-status").textContent = "请先关闭 AI Battle、自动演奏或多人模式。"
-				else if (!selectedDiff || !available) body.querySelector(".difficulty-training-status").textContent = "先用普通单人模式完成一次所选难度，系统会自动保存幽灵。"
+				if (conflict) body.querySelector(".difficulty-training-status").textContent = text.closeConflictingModes
+				else if (!selectedDiff || !available) body.querySelector(".difficulty-training-status").textContent = text.playToCreateGhost
 				else this.songSelect.startSelectedTrainingMode("ghost", selectedDiff, state.virtualDrumEnabled)
 			})
 			var cloudKey = String(ghostSong.hash)
 			var missingGhostDifficulties = ghostDifficulties.filter(diff => !PlayerLab.ghostAvailable({hash: ghostSong.hash, id: song.id, difficulty: diff}))
 			if (missingGhostDifficulties.length && typeof account !== "undefined" && account.loggedIn && this.ghostSyncKey !== cloudKey) {
 				this.ghostSyncKey = cloudKey
-				body.querySelector(".difficulty-training-status").textContent = "正在同步登录用户的云端幽灵…"
+				body.querySelector(".difficulty-training-status").textContent = text.syncingGhosts
 				Promise.all(missingGhostDifficulties.map(diff => {
 					var cloudSong = {hash: ghostSong.hash, id: song.id, difficulty: diff}
 					return PlayerLab.pullGhost(cloudSong).then(remote => {
@@ -483,16 +551,16 @@ class PlayerLab {
 					}).catch(() => false)
 				})).then(changed => {
 					if (changed.some(Boolean) && this.controls && !this.controls.hidden && this.trainingMode === "ghost") this.renderTrainingMode("ghost")
-					else if (this.controls && !this.controls.hidden && this.trainingMode === "ghost") body.querySelector(".difficulty-training-status").textContent = "云端没有该歌曲的幽灵记录。"
+					else if (this.controls && !this.controls.hidden && this.trainingMode === "ghost") body.querySelector(".difficulty-training-status").textContent = text.noCloudGhost
 				})
 			}
 		} else if (mode === "daily") {
 			var daily = PlayerLab.dailyChallenge(this.songSelect.songs), completed = daily && state.dailyRuns && state.dailyRuns[daily.dateKey]
-			body.innerHTML = daily ? '<p>' + daily.dateKey + " · " + (daily.song.title || daily.song.originalTitle) + " · " + daily.difficulty.toUpperCase() + " · 连续 " + (state.dailyStreak || 0) + " 天" + (completed ? "（已完成）" : "") + '</p><button type="button" data-daily-start ' + (trainingConflict ? "disabled" : "") + '>' + (trainingConflict ? "当前模式不可用" : "开始今日挑战") + '</button>' : "<p>当前曲库没有可用歌曲。</p>"
+			body.innerHTML = daily ? '<p>' + PlayerLab.format(text.dailySummary, daily.dateKey, daily.song.title || daily.song.originalTitle, daily.difficulty.toUpperCase(), state.dailyStreak || 0, completed ? text.completed : "") + '</p><button type="button" data-daily-start ' + (trainingConflict ? "disabled" : "") + '>' + (trainingConflict ? text.modeUnavailable : text.startDaily) + '</button>' : "<p>" + text.noSongs + "</p>"
 			if (daily && !trainingConflict) body.querySelector("[data-daily-start]").addEventListener("click", () => { this.hideDifficultyControls(); this.songSelect.startDailyChallenge(daily) })
 		} else {
 			var recommendation = PlayerLab.recommendation(this.songSelect.songs, typeof scoreStorage !== "undefined" ? scoreStorage.scores : {})
-			body.innerHTML = '<p>' + (trainingConflict ? "推荐训练与 AI Battle、自动演奏及多人模式互斥。" : "当前训练等级约 " + recommendation.skill + "，选择一项开始。") + '</p><ol class="difficulty-training-path"></ol>'
+			body.innerHTML = '<p>' + (trainingConflict ? text.recommendationConflict : PlayerLab.format(text.recommendationSkill, recommendation.skill)) + '</p><ol class="difficulty-training-path"></ol>'
 			var path = body.querySelector(".difficulty-training-path")
 			recommendation.picks.forEach(pick => { var item = document.createElement("li"); item.textContent = (pick.song.title || pick.song.originalTitle) + " · " + pick.difficulty.toUpperCase() + " · " + pick.stars + "★"; if (!trainingConflict) item.addEventListener("click", () => { this.hideDifficultyControls(); this.songSelect.startRecommendedSong(pick) }); else item.classList.add("disabled"); path.appendChild(item) })
 		}
@@ -508,35 +576,36 @@ class PlayerLab {
 			if (modal && modal.opened && typeof modal.remove === "function") modal.remove(false)
 		})
 		this.opened = true
+		var text = strings.playerLab
 		var state = PlayerLab.loadState()
 		var practice = PlayerLab.practiceFor(song) || {start: 0, end: 30, loop: true}
 		this.root = document.createElement("div")
 		this.root.id = "player-lab-overlay"
 		this.root.innerHTML = '<section id="player-lab" role="dialog" aria-modal="true" aria-labelledby="player-lab-title">' +
-			'<button class="player-lab-close" type="button" aria-label="Close">×</button>' +
-			'<h2 id="player-lab-title">训练中心</h2>' +
+			'<button class="player-lab-close" type="button" aria-label="' + text.close + '">×</button>' +
+			'<h2 id="player-lab-title">' + text.trainingCenter + '</h2>' +
 			'<p class="player-lab-song"></p>' +
-			'<div class="player-lab-section"><h3>段落练习</h3>' +
-			'<label>开始（秒）<input name="practice-start" type="number" min="0" step="1"></label>' +
-			'<label>结束（秒）<input name="practice-end" type="number" min="1" step="1"></label>' +
-			'<label class="player-lab-check"><input name="practice-loop" type="checkbox"> 自动循环</label>' +
-			'<div class="player-lab-actions"><button class="player-lab-practice" type="button">下次游玩启用练习</button><button class="player-lab-practice-clear" type="button">清除练习</button></div><span class="player-lab-practice-status"></span></div>' +
-			'<div class="player-lab-section"><h3>幽灵对战</h3>' +
-			'<label class="player-lab-check"><input name="ghost-enabled" type="checkbox"> 记录并挑战本谱面最佳幽灵</label>' +
+			'<div class="player-lab-section"><h3>' + text.practiceTab + '</h3>' +
+			'<label>' + text.start + '（' + text.seconds + '）<input name="practice-start" type="number" min="0" step="1"></label>' +
+			'<label>' + text.end + '（' + text.seconds + '）<input name="practice-end" type="number" min="1" step="1"></label>' +
+			'<label class="player-lab-check"><input name="practice-loop" type="checkbox"> ' + text.autoLoop + '</label>' +
+			'<div class="player-lab-actions"><button class="player-lab-practice" type="button">' + text.enableNextPlay + '</button><button class="player-lab-practice-clear" type="button">' + text.clearPractice + '</button></div><span class="player-lab-practice-status"></span></div>' +
+			'<div class="player-lab-section"><h3>' + text.ghostTab + '</h3>' +
+			'<label class="player-lab-check"><input name="ghost-enabled" type="checkbox"> ' + text.recordBestGhost + '</label>' +
 			'<p class="player-lab-ghost-status"></p></div>' +
-			'<div class="player-lab-section"><h3>每日挑战</h3><p class="player-lab-daily"></p>' +
-			'<button class="player-lab-daily-start" type="button">开始今日挑战</button></div>' +
-			'<div class="player-lab-section"><h3>自适应推荐</h3><p class="player-lab-recommendation"></p><ol class="player-lab-path"></ol></div>' +
+			'<div class="player-lab-section"><h3>' + text.dailyTab + '</h3><p class="player-lab-daily"></p>' +
+			'<button class="player-lab-daily-start" type="button">' + text.startDaily + '</button></div>' +
+			'<div class="player-lab-section"><h3>' + text.recommendTab + '</h3><p class="player-lab-recommendation"></p><ol class="player-lab-path"></ol></div>' +
 			'</section>'
 		this.root.querySelector(".player-lab-song").textContent = song.title || song.originalTitle || String(song.id)
 		this.root.querySelector('[name="practice-start"]').value = practice.start
 		this.root.querySelector('[name="practice-end"]').value = practice.end
 		this.root.querySelector('[name="practice-loop"]').checked = practice.loop !== false
-		if (PlayerLab.practiceFor(song)) this.root.querySelector(".player-lab-practice-status").textContent = "当前歌曲已有待用练习区间。"
+		if (PlayerLab.practiceFor(song)) this.root.querySelector(".player-lab-practice-status").textContent = text.practiceDraftSaved
 		this.root.querySelector('[name="ghost-enabled"]').checked = state.ghostEnabled !== false
 		var ghostDifficulties = Object.keys(song.courses || {})
 		var ghostCount = ghostDifficulties.filter(diff => localStorage.getItem(PlayerLab.ghostKey({hash: song.hash || song.id, difficulty: diff}))).length
-		this.root.querySelector(".player-lab-ghost-status").textContent = ghostCount ? "已有 " + ghostCount + " 个难度的本地幽灵。" : "完成一次正常游玩后会保存首个幽灵。"
+		this.root.querySelector(".player-lab-ghost-status").textContent = ghostCount ? PlayerLab.format(text.localGhostCount, ghostCount) : text.firstGhostHint
 		this.root.querySelector('[name="ghost-enabled"]').addEventListener("change", event => {
 			state.ghostEnabled = event.target.checked
 			PlayerLab.saveState(state)
@@ -546,20 +615,20 @@ class PlayerLab {
 		var dailyButton = this.root.querySelector(".player-lab-daily-start")
 		if (daily) {
 			var completed = state.dailyRuns && state.dailyRuns[daily.dateKey]
-			dailyText.textContent = daily.dateKey + " · " + (daily.song.title || daily.song.originalTitle) + " · " + daily.difficulty.toUpperCase() + " · 连续 " + (state.dailyStreak || 0) + " 天" + (completed ? "（今日已完成）" : "")
+			dailyText.textContent = PlayerLab.format(text.dailySummary, daily.dateKey, daily.song.title || daily.song.originalTitle, daily.difficulty.toUpperCase(), state.dailyStreak || 0, completed ? text.completedToday : "")
 			dailyButton.addEventListener("click", () => {
 				this.remove()
 				this.songSelect.startDailyChallenge(daily)
 			})
 		} else {
-			dailyText.textContent = "当前曲库没有可用歌曲。"
+			dailyText.textContent = text.noSongs
 			dailyButton.disabled = true
 		}
 		var recommendation = PlayerLab.recommendation(this.songSelect.songs, typeof scoreStorage !== "undefined" ? scoreStorage.scores : {})
 		var recommendationText = this.root.querySelector(".player-lab-recommendation")
 		var path = this.root.querySelector(".player-lab-path")
 		if (recommendation.picks.length) {
-			recommendationText.textContent = "当前训练等级约 " + recommendation.skill + "；建议从略高于当前水平的谱面开始。"
+			recommendationText.textContent = PlayerLab.format(text.recommendationAdvice, recommendation.skill)
 			recommendation.picks.forEach((pick, index) => {
 				var item = document.createElement("li")
 				item.textContent = (index + 1) + ". " + (pick.song.title || pick.song.originalTitle) + " · " + pick.difficulty.toUpperCase() + " · " + pick.stars + "★"
@@ -570,7 +639,7 @@ class PlayerLab {
 				path.appendChild(item)
 			})
 		} else {
-			recommendationText.textContent = "暂无可推荐谱面。"
+			recommendationText.textContent = text.noRecommendations
 		}
 		this.root.querySelector(".player-lab-close").addEventListener("click", () => this.remove())
 		this.root.addEventListener("mousedown", event => {
@@ -581,25 +650,24 @@ class PlayerLab {
 			var end = Number(this.root.querySelector('[name="practice-end"]').value)
 			var status = this.root.querySelector(".player-lab-practice-status")
 			if ((typeof EasySettings !== "undefined" && EasySettings.isAiBattleEnabled()) || (typeof p2 !== "undefined" && p2.session)) {
-				status.textContent = "练习模式不能与 AI Battle 或实时多人同时启用。"
+				status.textContent = text.modeConflict
 				status.className = "player-lab-practice-status error"
 				return
 			}
 			if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) {
-				status.textContent = "结束时间必须晚于开始时间。"
+				status.textContent = text.invalidRange
 				status.className = "player-lab-practice-status error"
 				return
 			}
-			state.practice = {songId: song.id, start: start, end: end, loop: this.root.querySelector('[name="practice-loop"]').checked}
-			PlayerLab.saveState(state)
-			status.textContent = "已启用；关闭面板并选择难度开始。"
+			state.practice = this.savePractice(song, {start: start, end: end, loop: this.root.querySelector('[name="practice-loop"]').checked})
+			status.textContent = text.practiceArmed
 			status.className = "player-lab-practice-status success"
 			this.songSelect.playerLabButton.classList.add("practice-active")
 		})
 		this.root.querySelector(".player-lab-practice-clear").addEventListener("click", () => {
+			this.clearPractice()
 			state.practice = null
-			PlayerLab.saveState(state)
-			this.root.querySelector(".player-lab-practice-status").textContent = "练习区间已清除。"
+			this.root.querySelector(".player-lab-practice-status").textContent = text.practiceCleared
 			this.songSelect.playerLabButton.classList.remove("practice-active")
 		})
 		loader.screen.appendChild(this.root)

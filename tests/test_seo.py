@@ -2,6 +2,7 @@ import json
 import re
 import unittest
 import xml.etree.ElementTree as ET
+from unittest.mock import patch
 
 import app as taiko
 
@@ -9,6 +10,32 @@ import app as taiko
 class MultilingualSeoTest(unittest.TestCase):
     def setUp(self):
         self.client = taiko.app.test_client()
+
+    def test_api_config_is_not_cached_across_deployments(self):
+        first_version = {
+            'commit': 'a' * 40,
+            'commit_short': 'first-version',
+            'version': '26.07.27',
+            'url': 'https://example.test/',
+        }
+        second_version = {
+            'commit': 'b' * 40,
+            'commit_short': 'second-version',
+            'version': '26.07.28',
+            'url': 'https://example.test/',
+        }
+        with patch.object(taiko, 'get_version', return_value=first_version):
+            first = self.client.get('/api/config', base_url='http://localhost')
+        with patch.object(taiko, 'get_version', return_value=second_version):
+            second = self.client.get('/api/config', base_url='http://localhost')
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.get_json()['_version']['commit_short'], 'first-version')
+        self.assertEqual(second.get_json()['_version']['commit_short'], 'second-version')
+        self.assertEqual(second.headers['Cache-Control'], 'no-store, max-age=0')
+        self.assertEqual(second.headers['CDN-Cache-Control'], 'no-store')
+        self.assertEqual(second.headers['Pragma'], 'no-cache')
+        self.assertEqual(second.headers['Expires'], '0')
 
     def test_each_language_has_distinct_search_metadata(self):
         expected = {

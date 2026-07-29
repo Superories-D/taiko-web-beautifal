@@ -17,18 +17,34 @@ class Leaderboard {
 		// Create overlay
 		this.overlay = document.createElement("div")
 		this.overlay.id = "leaderboard-overlay"
-		this.overlay.innerHTML = `
-			<div class="leaderboard-container">
-				<div class="leaderboard-header">
-					<h2 class="leaderboard-title">${strings.leaderboardTitle.replace("%s", songTitle)}</h2>
-					<button class="leaderboard-close" type="button" aria-label="${strings.back}" title="${strings.back}">x</button>
-				</div>
-				<div class="leaderboard-content">
-					<div class="leaderboard-loading">Loading...</div>
-				</div>
-				<div class="leaderboard-user-rank"></div>
-			</div>
-		`
+		const container = document.createElement("div")
+		container.className = "leaderboard-container"
+		const header = document.createElement("div")
+		header.className = "leaderboard-header"
+		const title = document.createElement("h2")
+		title.className = "leaderboard-title"
+		title.textContent = strings.leaderboardTitle.replace("%s", String(songTitle || ""))
+		const closeButton = document.createElement("button")
+		closeButton.className = "leaderboard-close"
+		closeButton.type = "button"
+		closeButton.setAttribute("aria-label", strings.back)
+		closeButton.setAttribute("title", strings.back)
+		closeButton.textContent = "x"
+		const content = document.createElement("div")
+		content.className = "leaderboard-content"
+		const loading = document.createElement("div")
+		loading.className = "leaderboard-loading"
+		loading.textContent = "Loading..."
+		const userRank = document.createElement("div")
+		userRank.className = "leaderboard-user-rank"
+
+		header.appendChild(title)
+		header.appendChild(closeButton)
+		content.appendChild(loading)
+		container.appendChild(header)
+		container.appendChild(content)
+		container.appendChild(userRank)
+		this.overlay.appendChild(container)
 		document.body.appendChild(this.overlay)
 
 		// Add styles
@@ -48,7 +64,7 @@ class Leaderboard {
 				this.hide()
 			}
 		}
-		this.closeButton = this.overlay.querySelector(".leaderboard-close")
+		this.closeButton = closeButton
 		this.closeButton.addEventListener("click", this.closeHandler)
 		this.closeButton.addEventListener("touchend", this.closeHandler)
 		document.addEventListener("keydown", this.keyHandler)
@@ -75,38 +91,60 @@ class Leaderboard {
 
 	render() {
 		const content = this.overlay.querySelector(".leaderboard-content")
+		this.clearElement(content)
 
 		if (!this.data || this.data.length === 0) {
-			content.innerHTML = `<div class="leaderboard-empty">${strings.noScores}</div>`
+			const empty = document.createElement("div")
+			empty.className = "leaderboard-empty"
+			empty.textContent = strings.noScores
+			content.appendChild(empty)
 			return
 		}
 
-		let html = '<ul class="leaderboard-list">'
+		const list = document.createElement("ul")
+		list.className = "leaderboard-list"
 		for (const entry of this.data) {
-			const rankClass = entry.rank <= 3 ? `rank-${entry.rank}` : ""
-			html += `
-				<li class="leaderboard-item ${rankClass}">
-					<span class="leaderboard-rank">${entry.rank}.</span>
-					<span class="leaderboard-name">${this.escapeHtml(entry.display_name)}</span>
-					<span class="leaderboard-score">${entry.score_value.toLocaleString()}${strings.points}</span>
-				</li>
-			`
+			const rankValue = Number(entry.rank)
+			const rank = Number.isInteger(rankValue) && rankValue > 0 ? rankValue : 0
+			const item = document.createElement("li")
+			item.className = "leaderboard-item"
+			if (rank >= 1 && rank <= 3) {
+				item.classList.add(`rank-${rank}`)
+			}
+
+			const rankElement = document.createElement("span")
+			rankElement.className = "leaderboard-rank"
+			rankElement.textContent = `${rank}.`
+			const nameElement = document.createElement("span")
+			nameElement.className = "leaderboard-name"
+			nameElement.textContent = String(entry.display_name || "")
+			const scoreElement = document.createElement("span")
+			scoreElement.className = "leaderboard-score"
+			const scoreValue = Number(entry.score_value)
+			const score = Number.isFinite(scoreValue) ? scoreValue : 0
+			scoreElement.textContent = `${score.toLocaleString()}${strings.points}`
+
+			item.appendChild(rankElement)
+			item.appendChild(nameElement)
+			item.appendChild(scoreElement)
+			list.appendChild(item)
 		}
-		html += '</ul>'
-		content.innerHTML = html
+		content.appendChild(list)
 	}
 
 	renderError() {
 		const content = this.overlay.querySelector(".leaderboard-content")
-		content.innerHTML = `<div class="leaderboard-error">${strings.errorOccured}</div>`
+		this.clearElement(content)
+		const error = document.createElement("div")
+		error.className = "leaderboard-error"
+		error.textContent = strings.errorOccured
+		content.appendChild(error)
 	}
 
-	escapeHtml(str) {
-		if (!str) return ""
-		return str.replace(/&/g, "&amp;")
-			.replace(/</g, "&lt;")
-			.replace(/>/g, "&gt;")
-			.replace(/"/g, "&quot;")
+	clearElement(element) {
+		while (element.firstChild) {
+			element.removeChild(element.firstChild)
+		}
 	}
 
 	hide() {
@@ -299,3 +337,7 @@ class Leaderboard {
 }
 
 var leaderboard = new Leaderboard()
+
+if (typeof module !== "undefined") {
+	module.exports = Leaderboard
+}

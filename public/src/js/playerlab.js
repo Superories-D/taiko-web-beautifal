@@ -556,8 +556,22 @@ class PlayerLab {
 			}
 		} else if (mode === "daily") {
 			var daily = PlayerLab.dailyChallenge(this.songSelect.songs), completed = daily && state.dailyRuns && state.dailyRuns[daily.dateKey]
-			body.innerHTML = daily ? '<p>' + PlayerLab.format(text.dailySummary, daily.dateKey, daily.song.title || daily.song.originalTitle, daily.difficulty.toUpperCase(), state.dailyStreak || 0, completed ? text.completed : "") + '</p><button type="button" data-daily-start ' + (trainingConflict ? "disabled" : "") + '>' + (trainingConflict ? text.modeUnavailable : text.startDaily) + '</button>' : "<p>" + text.noSongs + "</p>"
-			if (daily && !trainingConflict) body.querySelector("[data-daily-start]").addEventListener("click", () => { this.hideDifficultyControls(); this.songSelect.startDailyChallenge(daily) })
+			while (body.firstChild) body.removeChild(body.firstChild)
+			var dailySummary = document.createElement("p")
+			if (daily) {
+				dailySummary.textContent = PlayerLab.format(text.dailySummary, daily.dateKey, daily.song.title || daily.song.originalTitle, daily.difficulty.toUpperCase(), state.dailyStreak || 0, completed ? text.completed : "")
+				var dailyStart = document.createElement("button")
+				dailyStart.type = "button"
+				dailyStart.setAttribute("data-daily-start", "")
+				dailyStart.disabled = trainingConflict
+				dailyStart.textContent = trainingConflict ? text.modeUnavailable : text.startDaily
+				body.appendChild(dailySummary)
+				body.appendChild(dailyStart)
+				if (!trainingConflict) dailyStart.addEventListener("click", () => { this.hideDifficultyControls(); this.songSelect.startDailyChallenge(daily) })
+			} else {
+				dailySummary.textContent = text.noSongs
+				body.appendChild(dailySummary)
+			}
 		} else {
 			var recommendation = PlayerLab.recommendation(this.songSelect.songs, typeof scoreStorage !== "undefined" ? scoreStorage.scores : {})
 			body.innerHTML = '<p>' + (trainingConflict ? text.recommendationConflict : PlayerLab.format(text.recommendationSkill, recommendation.skill)) + '</p><ol class="difficulty-training-path"></ol>'

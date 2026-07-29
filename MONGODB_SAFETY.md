@@ -25,6 +25,14 @@ sudo bash setup.sh repair
 
 `setup.sh` keeps an existing `.env` file and only appends missing keys. It also excludes `.env` and `backups` from source sync deletion.
 
+Stored song metadata can be audited without changing or printing the underlying values:
+
+```bash
+python3 scripts/audit_song_metadata.py
+```
+
+The scanner reports collection counts and suspicious record identifiers, field names, reasons, lengths, and short hashes. It exits with status `1` when findings need manual review and never updates or deletes database records.
+
 Dangerous database reset is explicit only:
 
 ```bash

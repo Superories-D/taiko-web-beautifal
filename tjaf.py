@@ -1,6 +1,28 @@
 import os
 import re
+import unicodedata
 from typing import Dict, Optional
+
+METADATA_MAX_LENGTH = 500
+
+
+def validate_metadata_text(value: Optional[str], required: bool, error_code: str, max_length: int = METADATA_MAX_LENGTH) -> None:
+    if value is None:
+        if required:
+            raise ValueError(error_code)
+        return
+    if not isinstance(value, str) or (required and not value) or len(value) > max_length:
+        raise ValueError(error_code)
+    if any(unicodedata.category(char) == "Cc" for char in value):
+        raise ValueError(error_code)
+
+
+def validate_metadata(tja: "Tja", max_length: int = METADATA_MAX_LENGTH) -> None:
+    validate_metadata_text(tja.title, True, "invalid_tja_title", max_length)
+    validate_metadata_text(tja.title_ja, False, "invalid_tja_title", max_length)
+    validate_metadata_text(tja.subtitle, False, "invalid_tja_subtitle", max_length)
+    validate_metadata_text(tja.subtitle_ja, False, "invalid_tja_subtitle", max_length)
+
 
 class Tja:
     def __init__(self, text: str):

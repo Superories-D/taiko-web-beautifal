@@ -3,6 +3,7 @@ const assert = require("node:assert/strict")
 const fs = require("node:fs")
 const path = require("node:path")
 const vm = require("node:vm")
+const {createFakeDocument, findElements} = require("./helpers/fake_dom.js")
 
 global.localStorage = {
 	data: {},
@@ -204,6 +205,49 @@ WAVE: song.wav
 	assert.equal(bad.ok, false)
 	assert.ok(bad.errors.some(message => message.includes("#START/#END")))
 	assert.ok(bad.errors.some(message => message.includes("OGG 或 MP3")))
+})
+
+test("daily challenge renders an untrusted song title as text", () => {
+	const previousDocument = global.document
+	const previousStrings = global.strings
+	global.document = createFakeDocument()
+	global.strings = {
+		playerLab: {
+			dailySummary: "%1 · %2 · %3 · %4 · %5",
+			completed: "Completed",
+			modeUnavailable: "Unavailable",
+			startDaily: "Start",
+			noSongs: "No songs"
+		}
+	}
+	localStorage.data = {}
+	const payload = "<img src=x onerror=alert(1)>"
+	const song = {id: 1, hash: "daily-song", title: payload, courses: {oni: {stars: 8}}}
+	const songSelect = {
+		songs: [song],
+		selectedSong: 0,
+		state: {options: 0},
+		startDailyChallenge() {}
+	}
+	const controls = document.createElement("section")
+	const body = document.createElement("div")
+	body.className = "difficulty-training-body"
+	controls.appendChild(body)
+	const playerLab = new PlayerLab(songSelect)
+	playerLab.controls = controls
+	playerLab.currentTrainingSong = song
+
+	try {
+		playerLab.renderTrainingMode("daily")
+		assert.ok(body.querySelector("p").textContent.includes(payload))
+		assert.ok(body.querySelector("[data-daily-start]"))
+		assert.deepEqual(findElements(body, ["script", "img", "svg", "iframe"]), [])
+	} finally {
+		if (typeof previousDocument === "undefined") delete global.document
+		else global.document = previousDocument
+		if (typeof previousStrings === "undefined") delete global.strings
+		else global.strings = previousStrings
+	}
 })
 
 test("ghost player replays the saved opponent judgement on the shared game clock", () => {

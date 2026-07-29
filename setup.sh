@@ -428,6 +428,46 @@ ensure_base_sync_tools() {
   apt_install rsync curl ca-certificates gnupg
 }
 
+refresh_runtime_version() {
+  local commit=""
+  local commit_short=""
+  local version=""
+  local digest=""
+  local version_path="$INSTALL_DIR/version.json"
+  local temporary_path="$INSTALL_DIR/.version.json.tmp.$$"
+
+  if command -v git >/dev/null 2>&1 &&
+    git -C "$SRC_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    commit=$(git -C "$SRC_DIR" log -1 --format='%H')
+    version=$(git -C "$SRC_DIR" log -1 --date='format:%y.%m.%d' --format='%ad')
+  else
+    version=$(date -u '+%y.%m.%d')
+  fi
+
+  require_cmd sha256sum
+  digest=$(
+    (
+      cd "$INSTALL_DIR"
+      find app.py public/src templates -type f -print0 |
+        LC_ALL=C sort -z |
+        xargs -0 sha256sum |
+        sha256sum
+    ) | awk '{print $1}'
+  )
+  commit_short=${digest:0:12}
+
+  if [ -n "$commit" ]; then
+    printf '{"commit":"%s","commit_short":"%s","version":"%s"}\n' \
+      "$commit" "$commit_short" "$version" >"$temporary_path"
+  else
+    printf '{"commit_short":"%s","version":"%s"}\n' \
+      "$commit_short" "$version" >"$temporary_path"
+  fi
+  chmod 0644 "$temporary_path"
+  mv -f "$temporary_path" "$version_path"
+  log "Frontend cache version refreshed: $commit_short"
+}
+
 sync_source() {
   mkdir -p "$INSTALL_DIR"
   # A deployment may keep the checkout directly in INSTALL_DIR.  rsync
@@ -438,6 +478,7 @@ sync_source() {
   install_real=$(CDPATH= cd -- "$INSTALL_DIR" && pwd -P)
   if [ "$source_real" = "$install_real" ]; then
     log "Source and install directories are identical; skipping self-sync."
+    refresh_runtime_version
     return 0
   fi
   rsync -a --delete \
@@ -454,6 +495,7 @@ sync_source() {
     --exclude 'taiko-editor/build' \
     --exclude 'taiko-editor/dist' \
     "$SRC_DIR/" "$INSTALL_DIR/"
+  refresh_runtime_version
 }
 
 ensure_persistent_secret_key() {

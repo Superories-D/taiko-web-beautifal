@@ -545,6 +545,7 @@ SITE_MESSAGE_MAX_BODY_LENGTH = 5000
 SITE_MESSAGE_MAX_IMAGE_URL_LENGTH = 1000
 UPLOAD_TJA_MAX_BYTES = max(64 * 1024, min(env_int('TAIKO_WEB_UPLOAD_TJA_MAX_BYTES', 2 * 1024 * 1024), 10 * 1024 * 1024))
 UPLOAD_MUSIC_MAX_BYTES = max(1024 * 1024, min(env_int('TAIKO_WEB_UPLOAD_MUSIC_MAX_BYTES', 32 * 1024 * 1024), 128 * 1024 * 1024))
+UPLOAD_METADATA_MAX_LENGTH = 500
 UPLOAD_ALLOWED_MUSIC_TYPES = {'ogg', 'mp3'}
 UPLOAD_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
 app.config['MAX_CONTENT_LENGTH'] = (
@@ -3195,10 +3196,14 @@ def route_api_categories():
     return jsonify(categories)
 
 @app.route(basedir + 'api/config')
-@app.cache.cached(timeout=15)
 def route_api_config():
     config = get_config(credentials=True)
-    return jsonify(config)
+    response = jsonify(config)
+    response.headers['Cache-Control'] = 'no-store, max-age=0'
+    response.headers['CDN-Cache-Control'] = 'no-store'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 @app.route(basedir + 'api/multiplayer/select')
@@ -4108,8 +4113,10 @@ def music_signature_matches(data, music_type):
 
 
 def validate_uploaded_tja(tja, tja_text, music_type):
-    if not tja.title or len(tja.title) > 500:
-        raise UploadValidationError('invalid_tja_title')
+    try:
+        tjaf.validate_metadata(tja, UPLOAD_METADATA_MAX_LENGTH)
+    except ValueError as error:
+        raise UploadValidationError(str(error)) from error
     if not any(tja.courses.values()):
         raise UploadValidationError('missing_tja_courses')
 

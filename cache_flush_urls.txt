@@ -8,6 +8,7 @@ https://taiko.asia/api/config
 https://taiko.asia/src/js/assets.js
 https://taiko.asia/src/js/feedbackanalytics.js
 https://taiko.asia/src/js/game.js
+https://taiko.asia/src/js/leaderboard.js
 https://taiko.asia/src/js/playerlab.js
 https://taiko.asia/src/js/scoresheet.js
 https://taiko.asia/src/js/songselect.js
